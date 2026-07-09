@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+        (request.auth.token.email == "yasseralayub@gmail.com" || 
+         request.auth.token.email.lower() == "yasseralayub@gmail.com");
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Menu Items Rules
+    match /menuItems/{itemId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Settings Rules
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Promotions Rules
+    match /promotions/{promoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Orders Rules
+    match /orders/{orderId} {
+      // Clients can browse their own single order to track its live preparation status
+      allow get: if true;
+      
+      // Only administrators can list all orders or search across them
+      allow list: if isAdmin();
+      
+      // Anyone (guest checkouts) can place an order
+      allow create: if isValidId(orderId) 
+        && incoming().keys().hasAll(['id', 'customerName', 'customerPhone', 'tableOrDelivery', 'items', 'subtotal', 'tax', 'total', 'paymentMethod', 'status', 'whatsappSent', 'createdAt'])
+        && incoming().customerName is string && incoming().customerName.size() <= 100
+        && incoming().customerPhone is string && incoming().customerPhone.size() <= 30
+        && incoming().tableOrDelivery in ['table', 'takeaway', 'delivery']
+        && incoming().status in ['pending', 'searching_driver', 'preparing', 'ready', 'driver_picked_up', 'delivering', 'delivered', 'cancelled']
+        && incoming().paymentMethod in ['cod', 'applepay', 'mada', 'transfer']
+        && incoming().subtotal is number && incoming().subtotal >= 0
+        && incoming().tax is number && incoming().tax >= 0
+        && incoming().total is number && incoming().total >= 0;
+        
+      // Only administrators can update or delete orders
+      allow update: if isAdmin();
+      
+      allow delete: if isAdmin();
+    }
+
+    // Drivers Rules
+    match /drivers/{driverId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Admins List
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

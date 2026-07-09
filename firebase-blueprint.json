@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "A food, drink, or game item in the restaurant & cafe menu",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "nameAr": { "type": "string" },
+        "description": { "type": "string" },
+        "descriptionAr": { "type": "string" },
+        "price": { "type": "number" },
+        "category": { "type": "string" },
+        "image": { "type": "string" },
+        "calories": { "type": "number" },
+        "isPopular": { "type": "boolean" },
+        "isAvailable": { "type": "boolean" }
+      },
+      "required": ["id", "name", "nameAr", "price", "category", "isAvailable"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An order placed by a customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "tableOrDelivery": { "type": "string", "enum": ["table", "takeaway", "delivery"] },
+        "tableNumber": { "type": "string" },
+        "deliveryAddress": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "tax": { "type": "number" },
+        "total": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["cod", "applepay", "mada", "transfer"] },
+        "status": { "type": "string", "enum": ["pending", "searching_driver", "preparing", "ready", "driver_picked_up", "delivering", "delivered", "cancelled"] },
+        "whatsappSent": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "appliedPromoId": { "type": "string" },
+        "promoDiscount": { "type": "number" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "googleMapsUrl": { "type": "string" },
+        "driverId": { "type": "string" },
+        "driverName": { "type": "string" },
+        "driverPhone": { "type": "string" }
+      },
+      "required": ["id", "customerName", "customerPhone", "tableOrDelivery", "items", "subtotal", "tax", "total", "paymentMethod", "status", "whatsappSent", "createdAt"]
+    },
+    "Driver": {
+      "title": "Driver",
+      "description": "A delivery agent / driver in the system",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "isAvailable": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "phone", "isAvailable", "createdAt"]
+    },
+    "Promotion": {
+      "title": "Promotion",
+      "description": "A promotional discount offer with a countdown timer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "titleAr": { "type": "string" },
+        "discountPercent": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "endsAt": { "type": "string", "format": "date-time" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["id", "title", "titleAr", "discountPercent", "isActive", "endsAt"]
+    },
+    "BusinessSettings": {
+      "title": "BusinessSettings",
+      "description": "Information registry containing custom branding style, VAT details, and tax modes",
+      "type": "object",
+      "properties": {
+        "restaurantNameAr": { "type": "string" },
+        "restaurantNameEn": { "type": "string" },
+        "taglineAr": { "type": "string" },
+        "taglineEn": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "addressAr": { "type": "string" },
+        "addressEn": { "type": "string" },
+        "taxEnabled": { "type": "boolean" },
+        "taxPercent": { "type": "number" },
+        "vatNumber": { "type": "string" }
+      },
+      "required": ["restaurantNameAr", "restaurantNameEn", "logoUrl", "whatsappNumber", "taxEnabled", "taxPercent"]
+    }
+  },
+  "firestore": {
+    "/menuItems/{itemId}": {
+      "schema": "MenuItem",
+      "description": "Menu collection storing food, drinks, and games details"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Orders collection storing customer orders and their current status"
+    },
+    "/promotions/{promoId}": {
+      "schema": "Promotion",
+      "description": "Promotional offers with live countdown limits"
+    },
+    "/settings/{docId}": {
+      "schema": "BusinessSettings",
+      "description": "Singleton storing localized values and tax parameters"
+    },
+    "/drivers/{driverId}": {
+      "schema": "Driver",
+      "description": "Drivers collection for delivery agents"
+    }
+  }
+}
