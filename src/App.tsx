@@ -34,6 +34,18 @@ function MenuAndOrdersApp() {
   const [showAdminTab, setShowAdminTab] = useState(() => {
     return localStorage.getItem('show_admin_tab') === 'true';
   });
+  const [isAdminRoute, setIsAdminRoute] = useState(() => {
+    const path = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    return path === '/admin' || params.get('page') === 'admin' || params.get('admin') === 'true';
+  });
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    return sessionStorage.getItem('admin_authenticated') === 'true';
+  });
+  const [adminPassword, setAdminPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotPasswordMessage, setForgotPasswordMessage] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
@@ -152,21 +164,58 @@ function MenuAndOrdersApp() {
     }
   }, [businessSettings?.logoUrl, language]);
 
-  // Check for admin query parameter to reveal the hidden Admin tab
+  // Check for admin query parameter or path to enter isolated Admin mode
   useEffect(() => {
+    const path = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === 'true') {
-      setShowAdminTab(true);
-      localStorage.setItem('show_admin_tab', 'true');
+    if (path === '/admin' || params.get('page') === 'admin' || params.get('admin') === 'true') {
+      setIsAdminRoute(true);
       
-      // Clean up the address bar cleanly so the admin suffix doesn't linger
-      const cleanParams = new URLSearchParams(window.location.search);
-      cleanParams.delete('admin');
-      const suffix = cleanParams.toString();
-      const newUrl = window.location.pathname + (suffix ? `?${suffix}` : '');
-      window.history.replaceState({}, document.title, newUrl);
+      // Clean up the query parameters so they don't linger in the address bar
+      if (params.get('admin') === 'true' || params.get('page') === 'admin') {
+        const cleanParams = new URLSearchParams(window.location.search);
+        cleanParams.delete('admin');
+        cleanParams.delete('page');
+        const suffix = cleanParams.toString();
+        const newUrl = window.location.pathname + (suffix ? `?${suffix}` : '');
+        window.history.replaceState({}, document.title, newUrl);
+      }
     }
   }, []);
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPassword === 'Aa102030@') {
+      setIsAdminAuthenticated(true);
+      sessionStorage.setItem('admin_authenticated', 'true');
+      setLoginError('');
+    } else {
+      setLoginError(language === 'ar' ? 'كلمة المرور غير صحيحة! يرجى المحاولة مجدداً.' : 'Incorrect password! Please try again.');
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setForgotLoading(true);
+    setForgotPasswordMessage('');
+    try {
+      const res = await fetch('/api/admin-forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin: window.location.origin })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setForgotPasswordMessage(language === 'ar' ? 'تم إرسال رابط لوحة التحكم وكلمة المرور إلى تليجرام بنجاح! 🚀' : 'Sent password and link to Telegram successfully! 🚀');
+      } else {
+        setForgotPasswordMessage(data.message || (language === 'ar' ? 'فشل إرسال التنبيه تليجرام.' : 'Failed to send Telegram alert.'));
+      }
+    } catch (err) {
+      console.error(err);
+      setForgotPasswordMessage(language === 'ar' ? 'حدث خطأ في الاتصال بالخادم.' : 'Connection error occurred.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   // 1.95 Check if PWA installer / welcome wizard should show automatically on first visit
   useEffect(() => {
@@ -442,6 +491,123 @@ function MenuAndOrdersApp() {
 
   const cartTotalItemsCount = cart.reduce((sum, c) => sum + c.quantity, 0);
 
+  if (isAdminRoute) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col font-sans selection:bg-yellow/30 selection:text-black select-none">
+        {/* Special clean admin header */}
+        <header className="bg-slate-900 border-b border-slate-800 p-4">
+          <div className="max-w-7xl mx-auto flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-yellow flex items-center justify-center font-bold text-black text-sm">
+                <span>🔑</span>
+              </div>
+              <h1 className="font-serif font-black text-sm md:text-lg text-yellow tracking-wide uppercase">
+                {language === 'ar' ? 'لوحة تحكم رحلة شواء' : 'Grill Journey Admin'}
+              </h1>
+            </div>
+            
+            <button
+              onClick={() => {
+                setIsAdminRoute(false);
+                window.history.replaceState({}, document.title, '/');
+              }}
+              className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-2 rounded-xl border border-slate-700 transition-all cursor-pointer"
+            >
+              {language === 'ar' ? '← العودة للموقع' : '← Back to Website'}
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 flex items-center justify-center p-4">
+          {!isAdminAuthenticated ? (
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 space-y-6 shadow-2xl animate-fade-in text-start">
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-yellow/15 border border-yellow/20 text-yellow rounded-full flex items-center justify-center text-2xl mx-auto shadow-inner">
+                  🛡️
+                </div>
+                <h2 className="text-xl font-black text-white">
+                  {language === 'ar' ? 'تسجيل دخول لوحة التحكم' : 'Admin Area Secure Login'}
+                </h2>
+                <p className="text-xs text-slate-400">
+                  {language === 'ar' ? 'الرجاء إدخال كلمة المرور للوصول إلى لوحة التحكم.' : 'Please enter the administrative password to gain access.'}
+                </p>
+              </div>
+
+              {loginError && (
+                <div className="bg-rose-500/10 border border-rose-500/15 text-rose-400 p-3.5 rounded-xl text-xs font-semibold text-center leading-normal">
+                  ⚠️ {loginError}
+                </div>
+              )}
+
+              {forgotPasswordMessage && (
+                <div className={`p-3.5 rounded-xl text-xs font-semibold text-center leading-normal border ${
+                  forgotPasswordMessage.includes('بنجاح') || forgotPasswordMessage.includes('successfully')
+                    ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400'
+                    : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                }`}>
+                  {forgotPasswordMessage}
+                </div>
+              )}
+
+              <form onSubmit={handleAdminLogin} className="space-y-4">
+                <div className="space-y-1.5 text-start">
+                  <label className="block text-xs font-bold text-slate-400">
+                    {language === 'ar' ? 'كلمة المرور' : 'Password'}
+                  </label>
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder={language === 'ar' ? '••••••••' : '••••••••'}
+                    className="w-full bg-slate-950 text-white border border-slate-800 rounded-2xl p-3.5 outline-none focus:border-yellow text-sm font-mono text-center placeholder:text-slate-600"
+                    required
+                  />
+                </div>
+
+                <div className="flex justify-between items-center pt-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    disabled={forgotLoading}
+                    className="text-amber-400 hover:text-amber-300 font-bold transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {forgotLoading 
+                      ? (language === 'ar' ? 'جاري إرسال التنبيه...' : 'Sending Alert...') 
+                      : (language === 'ar' ? 'نسيت كلمة المرور؟' : 'Forgot Password?')}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3.5 px-4 bg-yellow text-black font-black rounded-2xl cursor-pointer hover:bg-yellow/90 hover:scale-[1.01] transition-all text-sm shadow-md"
+                >
+                  {language === 'ar' ? 'دخول آمن' : 'Secure Login'}
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="w-full bg-white text-dark rounded-3xl p-4 md:p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+              <AdminPanel 
+                onMenuUpdate={handleMenuUpdate} 
+                menuItems={menuItems} 
+                onPromoUpdate={handlePromoUpdate}
+                activePromo={activePromo}
+                businessSettings={businessSettings}
+                onSettingsUpdate={handleSettingsUpdate}
+                onHideAdminTab={() => {
+                  setIsAdminAuthenticated(false);
+                  sessionStorage.removeItem('admin_authenticated');
+                  setIsAdminRoute(false);
+                  window.history.replaceState({}, document.title, '/');
+                }}
+              />
+            </div>
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-[#FCFCFB] text-dark select-none selection:bg-yellow/30 selection:text-black">
       
@@ -452,10 +618,16 @@ function MenuAndOrdersApp() {
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         activeTab={activeTab}
-        onTabChange={(tab) => setActiveTab(tab)}
-        isAdminAuthenticated={localStorage.getItem('last_order_id') !== null}
+        onTabChange={(tab) => {
+          if (tab === 'admin') {
+            setIsAdminRoute(true);
+          } else {
+            setActiveTab(tab);
+          }
+        }}
+        isAdminAuthenticated={isAdminAuthenticated}
         businessSettings={businessSettings}
-        showAdminTab={showAdminTab}
+        showAdminTab={false}
         onWelcomeClick={() => setIsWelcomeOpen(true)}
       />
 

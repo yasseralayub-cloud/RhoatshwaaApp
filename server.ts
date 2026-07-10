@@ -257,6 +257,69 @@ async function startServer() {
     }
   });
 
+  // 3.5. Admin Forgot Password Telegram Notification
+  app.post("/api/admin-forgot-password", async (req: express.Request, res: express.Response) => {
+    try {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const chatId = process.env.TELEGRAM_CHAT_ID;
+
+      if (!botToken || !chatId) {
+        console.warn("[Telegram Config Warning] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing.");
+        return res.status(400).json({
+          success: false,
+          message: "تنبيه: لم يتم ربط البوت بتلجرام بعد في خيارات البيئة. يرجى مراجعة الإعدادات."
+        });
+      }
+
+      const clientOrigin = req.body.origin || req.headers.origin || req.headers.referer || process.env.APP_URL || "https://ais-dev.run.app";
+      const cleanOrigin = clientOrigin.replace(/\/$/, ""); // remove trailing slash if any
+      const passwordVal = "Aa102030@";
+
+      const messageText = `🔑 *طلب استعادة كلمة مرور لوحة التحكم* 🔐\n\n` +
+        `مرحباً بك! لقد تم طلب استعادة كلمة مرور لوحة التحكم بناءً على نقر زر "نسيت كلمة المرور".\n\n` +
+        `*بيانات تسجيل الدخول للوحة التحكم:*\n` +
+        `• الرابط المباشر: [اضغط هنا للدخول](${cleanOrigin}/admin)\n` +
+        `• الرابط البديل: ${cleanOrigin}/?page=admin\n` +
+        `• كلمة المرور الحالية: \`${passwordVal}\`\n\n` +
+        `⚡ _تم إرسال هذا التنبيه التلقائي الآمن لحماية حسابك._`;
+
+      const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+      const response = await fetch(telegramUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: messageText,
+          parse_mode: "Markdown"
+        })
+      });
+
+      const data = await response.json() as any;
+
+      if (!response.ok || !data.ok) {
+        console.error("Telegram API admin password send failed:", data);
+        return res.status(502).json({
+          success: false,
+          message: data.description || "فشل إرسال الرسالة عبر تلجرام."
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "تم إرسال كلمة المرور ورابط لوحة التحكم بنجاح إلى حساب تلجرام الخاص بك!"
+      });
+
+    } catch (err: any) {
+      console.error("Exception in admin-forgot-password:", err);
+      return res.status(500).json({
+        success: false,
+        message: "حدث خطأ داخلي في الخادم أثناء معالجة الطلب."
+      });
+    }
+  });
+
   // 4. Secure server-side Telegram notifications
   app.post("/api/notify-telegram", async (req: express.Request, res: express.Response) => {
     try {

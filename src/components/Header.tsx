@@ -29,6 +29,27 @@ export const Header: React.FC<HeaderProps> = ({
   onWelcomeClick
 }) => {
   const { language, setLanguage, t } = useLanguage();
+  const [logoClicks, setLogoClicks] = React.useState<{ count: number; lastTime: number }>({ count: 0, lastTime: 0 });
+
+  const handleLogoClick = () => {
+    const now = Date.now();
+    if (now - logoClicks.lastTime < 1000) {
+      const nextCount = logoClicks.count + 1;
+      if (nextCount >= 5) {
+        onTabChange('admin');
+        setLogoClicks({ count: 0, lastTime: 0 });
+      } else {
+        setLogoClicks({ count: nextCount, lastTime: now });
+      }
+    } else {
+      setLogoClicks({ count: 1, lastTime: now });
+    }
+    
+    // Maintain default navigation when clicking logo normally
+    if (activeTab !== 'menu') {
+      onTabChange('menu');
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md text-dark shadow-sm border-b border-black/5">
@@ -41,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Brand/Logo Section - occupies full-width on mobile to layout actions beside it */}
           <div className="flex justify-between items-center gap-3 w-full md:w-auto">
-            <div className="flex items-center gap-2.5 md:gap-3.5 cursor-pointer" onClick={() => onTabChange('menu')}>
+            <div className="flex items-center gap-2.5 md:gap-3.5 cursor-pointer" onClick={handleLogoClick}>
               <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-yellow flex items-center justify-center font-bold text-black text-sm md:text-lg shadow-sm font-sans overflow-hidden shrink-0 border border-black/5">
                 {businessSettings?.logoUrl ? (
                   <img src={businessSettings.logoUrl} alt="Logo" referrerPolicy="no-referrer" className="w-[100%] h-[100%] rounded-full object-cover" />
