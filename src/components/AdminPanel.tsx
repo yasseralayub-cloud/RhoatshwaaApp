@@ -16,7 +16,7 @@ import {
   orderBy
 } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { db, auth, handleFirestoreError, OperationType } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, diagnoseFirestoreConnection, DiagnosticsReport } from '../firebase';
 import { INITIAL_MENU_ITEMS, CATEGORIES } from '../initialData';
 import {
   TrendingUp,
@@ -58,7 +58,10 @@ import {
   CheckCircle2,
   Phone,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Activity,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import {
   BarChart,
@@ -110,6 +113,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [authError, setAuthError] = useState('');
   const [authSuccessMessage, setAuthSuccessMessage] = useState('');
   const [showEmailForm, setShowEmailForm] = useState(false);
+
+  // Diagnostic states
+  const [diagnosticsReport, setDiagnosticsReport] = useState<DiagnosticsReport | null>(null);
+  const [runningDiagnostics, setRunningDiagnostics] = useState(false);
+  const [showDiagnosticsPanel, setShowDiagnosticsPanel] = useState(true);
 
   // Firestore status
   const [orders, setOrders] = useState<Order[]>([]);
@@ -670,6 +678,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setAuthLoading(false);
     }
   };
+
+  const runDiagnostics = async () => {
+    setRunningDiagnostics(true);
+    try {
+      const report = await diagnoseFirestoreConnection();
+      setDiagnosticsReport(report);
+    } catch (err) {
+      console.error('Failed to run diagnostics:', err);
+    } finally {
+      setRunningDiagnostics(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin) {
+      runDiagnostics();
+    }
+  }, [isAdmin, currentUser]);
 
   const handleLogout = async () => {
     try {
@@ -1687,6 +1713,181 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           )}
         </div>
       </div>
+
+      {/* Diagnostics panel */}
+      {!isSimulated && isAdmin && (
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
+                <Activity className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800">
+                  {language === 'ar' ? 'فاحص ومُشخّص الاتصال السحابي (Firestore)' : 'Firestore Cloud Connectivity Diagnostician'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {language === 'ar' ? 'أداة حية للتحقق من الاتصال وقواعد الحماية السحابية' : 'Live tool to verify database rules, connection and authentication'}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={runDiagnostics}
+                disabled={runningDiagnostics}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl font-bold transition-all text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-55"
+              >
+                {runningDiagnostics ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>{language === 'ar' ? 'جاري الفحص...' : 'Diagnosing...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'إعادة الفحص والتشخيص' : 'Re-Run Diagnostics'}</span>
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setShowDiagnosticsPanel(!showDiagnosticsPanel)}
+                className="p-1.5 bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg border border-slate-200/60"
+              >
+                {showDiagnosticsPanel ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {showDiagnosticsPanel && (
+            <div className="space-y-4 animate-fade-in text-start">
+              {/* Overall status ribbon */}
+              <div className={`p-4 rounded-2xl border flex items-center gap-3 ${
+                diagnosticsReport?.connected && diagnosticsReport?.tests.listOrdersTest.success
+                  ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
+                  : 'bg-rose-50 border-rose-100 text-rose-800'
+              }`}>
+                <div className={`w-3 h-3 rounded-full animate-ping ${
+                  diagnosticsReport?.connected && diagnosticsReport?.tests.listOrdersTest.success ? 'bg-emerald-500' : 'bg-rose-500'
+                }`} />
+                <div className="text-xs font-semibold leading-relaxed">
+                  {diagnosticsReport?.connected && diagnosticsReport?.tests.listOrdersTest.success ? (
+                    language === 'ar'
+                      ? '✓ تم تأكيد الاتصال السحابي بالكامل وقواعد Firestore تسمح لك بالقراءة والكتابة!'
+                      : '✓ Connected successfully! Cloud Firestore security rules authorize you.'
+                  ) : (
+                    language === 'ar'
+                      ? '⚠️ فشل الوصول الكامل. لم يتم الترخيص بحساب yasseralayub@gmail.com أو أن نافذة جوجل منبثقة محجوبة.'
+                      : '⚠️ Full access failed. Not authorized as yasseralayub@gmail.com or browser is blocking the Firestore stream.'
+                  )}
+                </div>
+              </div>
+
+              {/* Grid of checks */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 font-sans">
+                {/* 1. Browser Internet Check */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      {language === 'ar' ? 'إنترنت المتصفح' : 'Browser Internet'}
+                    </span>
+                    {diagnosticsReport?.online ? (
+                      <span className="text-emerald-500 text-xs font-bold">● {language === 'ar' ? 'متصل' : 'Online'}</span>
+                    ) : (
+                      <span className="text-rose-500 text-xs font-bold">● {language === 'ar' ? 'منقطع' : 'Offline'}</span>
+                    )}
+                  </div>
+                  <p className="text-xs font-bold text-slate-700">
+                    {diagnosticsReport?.online ? (language === 'ar' ? 'شبكة المتصفح نشطة' : 'Browser network active') : (language === 'ar' ? 'لا يوجد اتصال بالإنترنت' : 'No network detected')}
+                  </p>
+                </div>
+
+                {/* 2. Authentication Check */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      {language === 'ar' ? 'الحساب الحالي' : 'Current Account'}
+                    </span>
+                    {diagnosticsReport?.auth.uid ? (
+                      <span className="text-emerald-500 text-xs font-bold">✓ {language === 'ar' ? 'مُسجل' : 'Signed In'}</span>
+                    ) : (
+                      <span className="text-rose-500 text-xs font-bold">✗ {language === 'ar' ? 'غير مسجل' : 'Signed Out'}</span>
+                    )}
+                  </div>
+                  <p className="text-xs font-mono font-bold text-slate-700 truncate" title={diagnosticsReport?.auth.email || ''}>
+                    {diagnosticsReport?.auth.email || (language === 'ar' ? 'جلسة مجهولة' : 'Anonymous/None')}
+                  </p>
+                </div>
+
+                {/* 3. Settings Read Test */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      {language === 'ar' ? 'قراءة الإعدادات' : 'Read Settings Doc'}
+                    </span>
+                    {diagnosticsReport?.tests.readSettingsTest.success ? (
+                      <span className="text-emerald-500 text-xs font-bold">✓ {language === 'ar' ? 'مسموح' : 'Success'}</span>
+                    ) : (
+                      <span className="text-rose-500 text-xs font-bold">✗ {language === 'ar' ? 'مرفوض' : 'Failed'}</span>
+                    )}
+                  </div>
+                  <p className="text-xs font-medium text-slate-500 truncate">
+                    {diagnosticsReport?.tests.readSettingsTest.success 
+                      ? (language === 'ar' ? 'تم جلب معلمات الهوية بنجاح' : 'Fetched business settings successfully')
+                      : diagnosticsReport?.tests.readSettingsTest.error}
+                  </p>
+                </div>
+
+                {/* 4. Orders List Read Test */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      {language === 'ar' ? 'جلب الطلبات' : 'List Orders Stream'}
+                    </span>
+                    {diagnosticsReport?.tests.listOrdersTest.success ? (
+                      <span className="text-emerald-500 text-xs font-bold">✓ {language === 'ar' ? 'مسموح' : 'Success'}</span>
+                    ) : (
+                      <span className="text-rose-500 text-xs font-bold">✗ {language === 'ar' ? 'مرفوض' : 'Failed'}</span>
+                    )}
+                  </div>
+                  <p className="text-xs font-medium text-slate-500 truncate">
+                    {diagnosticsReport?.tests.listOrdersTest.success 
+                      ? (language === 'ar' ? 'قنوات جلب الطلبات حية ومفتوحة' : 'Order list authorization is active')
+                      : diagnosticsReport?.tests.listOrdersTest.error}
+                  </p>
+                </div>
+              </div>
+
+              {/* Suggestions / Help */}
+              {(!diagnosticsReport?.tests.listOrdersTest.success || !diagnosticsReport?.auth.isAuthorizedEmail) && (
+                <div className="p-3.5 bg-amber-50 border border-amber-100 text-amber-800 text-[11px] rounded-xl leading-relaxed">
+                  <strong className="block font-black mb-1">💡 {language === 'ar' ? 'دليل حل مشاكل الاتصال لوصول المشرف:' : 'Connectivity Troubleshooting Guide:'}</strong>
+                  <ul className="list-disc pl-5 rtl:pl-0 rtl:pr-5 space-y-1">
+                    {language === 'ar' ? (
+                      <>
+                        <li>تتطلب قواعد حماية Firestore السحابية تسجيل الدخول كمسؤول باستخدام البريد الإلكتروني <code className="font-mono bg-amber-100/80 px-1 py-0.5 rounded text-amber-900">yasseralayub@gmail.com</code></li>
+                        <li><strong>المشكلة الشائعة:</strong> متصفحات الهاتف وبعض متصفحات الديسك توب تمنع النوافذ المنبثقة (Popup Blocker) عند الضغط على "تسجيل دخول جوجل" مما يمنع إكمال تسجيل الدخول.</li>
+                        <li><strong>الحل السهل:</strong> استخدم زر <strong>"تفعيل الاتصال السحابي الفوري (حل iFrame)"</strong> المتواجد بالأسفل، حيث يسجل الدخول بكلمة المرور مباشرة دون نوافذ منبثقة!</li>
+                      </>
+                    ) : (
+                      <>
+                        <li>The Firestore rules require a signed-in account matching <code className="font-mono bg-amber-100/80 px-1 py-0.5 rounded text-amber-900">yasseralayub@gmail.com</code>.</li>
+                        <li><strong>Common issue:</strong> Browser popup-blockers or iframe sandboxing can block the Google Login pop-up.</li>
+                        <li><strong>Easy bypass:</strong> Click the <strong>"One-Click Iframe Bypass (Instant Cloud Live)"</strong> button below, which logs in instantly without any browser pop-ups!</li>
+                      </>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quick Administration & Order Management Panel */}
       <div className="p-5 bg-stone-50 border border-stone-200/60 rounded-3xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 text-start">
