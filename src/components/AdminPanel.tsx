@@ -255,12 +255,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Listen to Auth State
   useEffect(() => {
-    if (isAdminAuthenticated) {
-      setIsAdmin(true);
-      setIsSimulated(false);
-      return;
-    }
-
     const unsub = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);
       if (user) {
@@ -269,13 +263,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           setIsAdmin(true);
           setIsSimulated(false);
         } else {
-          // Fallback to simulator state with warning
-          setIsAdmin(false);
-          setIsSimulated(true);
-          alert(t('unauthorizedAdmin'));
+          if (isAdminAuthenticated) {
+            // Keep admin state from password, but warn/enable Google Login for live DB sync
+            setIsAdmin(true);
+            setIsSimulated(false);
+          } else {
+            // Fallback to simulator state with warning
+            setIsAdmin(false);
+            setIsSimulated(true);
+            alert(t('unauthorizedAdmin'));
+          }
         }
       } else {
-        setIsAdmin(false);
+        if (isAdminAuthenticated) {
+          setIsAdmin(true);
+          setIsSimulated(false);
+        } else {
+          setIsAdmin(false);
+        }
       }
     });
     return () => unsub();
@@ -1482,13 +1487,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     <div className="max-w-7xl mx-auto p-4 space-y-8 font-sans text-start">
       
       {/* Admin Title banner */}
-      <div className="bg-stone-900 text-stone-100 rounded-3xl p-6 shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden border border-amber-500/20">
+      <div className="bg-stone-900 text-stone-100 rounded-3xl p-6 shadow-lg flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 relative overflow-hidden border border-amber-500/20">
         <div className="absolute -top-12 -right-12 w-44 h-44 bg-amber-600/10 rounded-full blur-2xl pointer-events-none" />
         <div className="z-10 text-start space-y-1">
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="bg-amber-500/25 text-amber-500 text-xs font-mono font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">
               {isSimulated ? 'محاكي الإدارة • Demo Mode' : 'اتصال حي • Connected to Live Cloud DB'}
             </span>
+            {!isSimulated && (!currentUser || currentUser.email !== 'yasseralayub@gmail.com') && (
+              <span className="bg-red-500/25 text-red-400 text-[10px] font-sans font-bold px-2 py-0.5 rounded">
+                {language === 'ar' ? '⚠️ تسجيل دخول جوجل مطلوب' : '⚠️ Google Login Required'}
+              </span>
+            )}
             <button
               onClick={() => {
                 if (soundEnabled) {
@@ -1503,11 +1513,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
           <h2 className="text-xl md:text-2xl font-black text-amber-500">{t('adminWelcome')}</h2>
           <p className="text-xs text-stone-400 font-mono">
-            {currentUser ? `${currentUser.displayName || 'Admin'} (${currentUser.email})` : 'Simulated Session Dashboard'}
+            {currentUser 
+              ? `${currentUser.displayName || 'Admin'} (${currentUser.email})` 
+              : (!isSimulated 
+                  ? (language === 'ar' ? 'بانتظار تسجيل دخول مشرف جوجل المعتمد (yasseralayub@gmail.com)' : 'Awaiting authorized Google login (yasseralayub@gmail.com)...') 
+                  : 'Simulated Session Dashboard')}
           </p>
         </div>
 
-        <div className="z-10 flex gap-2 w-full sm:w-auto">
+        <div className="z-10 flex flex-wrap gap-2 w-full lg:w-auto">
+          {/* Google Auth Button if needed */}
+          {!isSimulated && (!currentUser || currentUser.email !== 'yasseralayub@gmail.com') && (
+            <button
+              onClick={handleGoogleLogin}
+              className="bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-3.5 py-2.5 rounded-xl font-bold transition-colors flex items-center gap-2 cursor-pointer text-xs"
+            >
+              <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google" className="w-4 h-4 bg-white rounded-full p-0.5 shadow-sm" />
+              <span>{language === 'ar' ? 'تسجيل دخول جوجل المشرف' : 'Google Admin Sign In'}</span>
+            </button>
+          )}
           {/* Sounds toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
@@ -1779,15 +1803,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </h4>
                 <p className="text-xs text-red-700 font-medium leading-relaxed">
                   {language === 'ar'
-                    ? 'الحساب الحالي مسجل كمسؤول ولكن قواعد حماية Firestore تمنع جلب قائمة الطلبات، أو أن الاتصال مقطوع حالياً.'
-                    : 'The current account is signed in as admin, but Firestore security rules are preventing the order stream from loading, or the service is offline.'}
+                    ? 'الحساب الحالي مسجل كمسؤول ولكن قواعد حماية Firestore تمنع جلب قائمة الطلبات إلا باستخدام حساب جوجل المعتمد (yasseralayub@gmail.com). يرجى تسجيل الدخول بحساب جوجل لتفعيل الاتصال السحابي الحي.'
+                    : 'The current account is signed in as admin, but Firestore security rules prevent the order stream from loading without the authorized Google account (yasseralayub@gmail.com). Please sign in to enable live cloud sync.'}
                 </p>
                 <p className="text-[10px] font-mono text-red-600 bg-red-100/50 p-2 rounded-lg break-all mt-2 select-all">
                   Error Details: {ordersError}
                 </p>
               </div>
             </div>
-            <div className="flex gap-2 justify-end">
+            <div className="flex flex-wrap gap-2 justify-end">
+              {(!currentUser || currentUser.email !== 'yasseralayub@gmail.com') && (
+                <button
+                  onClick={handleGoogleLogin}
+                  className="bg-stone-900 hover:bg-stone-800 text-white font-bold py-2 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                >
+                  <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google" className="w-4 h-4 bg-white rounded-full p-0.5" />
+                  <span>{language === 'ar' ? 'تسجيل دخول بحساب جوجل المشرف' : 'Sign in with Admin Google Account'}</span>
+                </button>
+              )}
               <button
                 onClick={() => {
                   setIsSimulated(true);
