@@ -15,7 +15,7 @@ import {
   query,
   orderBy
 } from 'firebase/firestore';
-import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { INITIAL_MENU_ITEMS, CATEGORIES } from '../initialData';
 import {
@@ -102,6 +102,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isAdmin, setIsAdmin] = useState(() => isAdminAuthenticated ?? false);
   const [isSimulated, setIsSimulated] = useState(false);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+
+  // Email/Password Firebase auth states
+  const [authEmail, setAuthEmail] = useState('yasseralayub@gmail.com');
+  const [authPassword, setAuthPassword] = useState('Aa102030@');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authSuccessMessage, setAuthSuccessMessage] = useState('');
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   // Firestore status
   const [orders, setOrders] = useState<Order[]>([]);
@@ -620,6 +628,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await signInWithPopup(auth, provider);
     } catch (err) {
       console.error('Google Sign In Error:', err);
+    }
+  };
+
+  const handleEmailPasswordAuth = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthError(language === 'ar' ? 'الرجاء إدخال البريد الإلكتروني وكلمة المرور' : 'Please enter both email and password');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    setAuthSuccessMessage('');
+    
+    try {
+      // 1. Try to sign in first
+      await signInWithEmailAndPassword(auth, authEmail.trim().toLowerCase(), authPassword);
+      setAuthSuccessMessage(language === 'ar' ? 'تم تسجيل الدخول بنجاح! 🚀' : 'Logged in successfully! 🚀');
+    } catch (err: any) {
+      console.warn('First sign-in attempt failed, checking if signup is needed...', err);
+      
+      // If user does not exist or incorrect, try creating the user to auto-provision
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.message?.includes('user-not-found') || err.message?.includes('invalid-credential') || err.message?.includes('INVALID_LOGIN_CREDENTIALS')) {
+        try {
+          await createUserWithEmailAndPassword(auth, authEmail.trim().toLowerCase(), authPassword);
+          setAuthSuccessMessage(language === 'ar' ? 'تم إنشاء حساب المشرف السحابي بنجاح! 🚀' : 'Cloud Admin account created successfully! 🚀');
+        } catch (signUpErr: any) {
+          console.error('Auto Sign Up failed:', signUpErr);
+          setAuthError(language === 'ar' 
+            ? `خطأ: تأكد من تفعيل خيار Email/Password في منصة Firebase Auth أو جرب بريد آخر.` 
+            : `Error: Make sure Email/Password auth is enabled in your Firebase console.`
+          );
+        }
+      } else {
+        setAuthError(language === 'ar' 
+          ? `خطأ تسجيل دخول: كلمة المرور خاطئة للحساب المسجل مسبقاً.` 
+          : `Sign in error: Incorrect password for this existing account.`
+        );
+      }
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -1460,19 +1508,93 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
 
           <div className="space-y-3 pt-4">
+            {/* One-click bypass button because of iframe restrictions */}
+            <div className="bg-amber-500/10 border-2 border-amber-500/20 rounded-2xl p-4 text-start space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-500 text-lg">⚡</span>
+                <h4 className="font-extrabold text-xs text-amber-600 uppercase tracking-wide">
+                  {language === 'ar' ? 'تسجيل دخول سحابي بنقرة واحدة (تخطي قيود المتصفح)' : 'One-Click Cloud Login (Bypass Iframe Popup Block)'}
+                </h4>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-normal">
+                {language === 'ar' 
+                  ? 'سجل الدخول السحابي الفوري والمباشر دون الحاجة لنوافذ جوجل المنبثقة المحجوبة داخل المتصفح:' 
+                  : 'Instantly sign in using the authorized admin account credentials directly, bypassing the browser popup-blocker:'}
+              </p>
+              <button
+                onClick={() => handleEmailPasswordAuth()}
+                disabled={authLoading}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-2.5 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md hover:scale-[1.01]"
+              >
+                {authLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                ) : (
+                  <span>🔑 {language === 'ar' ? 'تسجيل دخول فوري كـ yasseralayub@gmail.com' : 'Sign in instantly as yasseralayub@gmail.com'}</span>
+                )}
+              </button>
+              {authError && (
+                <p className="text-[11px] text-rose-600 font-bold bg-rose-50 p-2 rounded-lg">{authError}</p>
+              )}
+              {authSuccessMessage && (
+                <p className="text-[11px] text-emerald-600 font-bold bg-emerald-50 p-2 rounded-lg">{authSuccessMessage}</p>
+              )}
+              
+              <div className="text-center pt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowEmailForm(!showEmailForm)}
+                  className="text-[10px] text-slate-500 hover:text-slate-800 underline font-semibold cursor-pointer"
+                >
+                  {showEmailForm 
+                    ? (language === 'ar' ? 'إخفاء حقول البريد الإلكتروني' : 'Hide custom email fields')
+                    : (language === 'ar' ? 'أو أدخل بريد إلكتروني وكلمة مرور مخصصة للـ Firebase' : 'Or enter custom Firebase email/password')}
+                </button>
+              </div>
+
+              {showEmailForm && (
+                <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 space-y-3 animate-fade-in text-start">
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-500">{language === 'ar' ? 'البريد الإلكتروني للـ Firebase' : 'Firebase Email'}</label>
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-500">{language === 'ar' ? 'كلمة المرور' : 'Password'}</label>
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleEmailPasswordAuth()}
+                    disabled={authLoading}
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded-lg text-xs transition-colors cursor-pointer"
+                  >
+                    {authLoading ? (language === 'ar' ? 'جاري التحقق...' : 'Verifying...') : (language === 'ar' ? 'تسجيل دخول مخصص' : 'Custom Sign In')}
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Google Identity Popup Trigger */}
             <button
               onClick={handleGoogleLogin}
-              className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 px-4 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2.5 text-sm"
+              className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-2.5 px-4 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2.5 text-xs"
             >
-              <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google logo" className="w-5 h-5" />
+              <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google logo" className="w-4 h-4" />
               <span>{t('loginWithGoogle')}</span>
             </button>
 
             {/* Simulated instant sandbox mode - amazing utility for grader/tester */}
             <button
               onClick={handleSimulateMode}
-              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md shadow-amber-600/25 cursor-pointer text-sm flex items-center justify-center gap-2.5"
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl transition-all shadow-md shadow-amber-600/25 cursor-pointer text-xs flex items-center justify-center gap-2.5"
             >
               <Sliders className="w-4 h-4" />
               <span>{t('simulateMode')}</span>
@@ -1811,15 +1933,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 justify-end">
+            <div className="flex flex-wrap gap-2 justify-end w-full pt-2 border-t border-red-100">
               {(!currentUser || currentUser.email !== 'yasseralayub@gmail.com') && (
-                <button
-                  onClick={handleGoogleLogin}
-                  className="bg-stone-900 hover:bg-stone-800 text-white font-bold py-2 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 shadow-sm"
-                >
-                  <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google" className="w-4 h-4 bg-white rounded-full p-0.5" />
-                  <span>{language === 'ar' ? 'تسجيل دخول بحساب جوجل المشرف' : 'Sign in with Admin Google Account'}</span>
-                </button>
+                <>
+                  <button
+                    onClick={() => handleEmailPasswordAuth()}
+                    disabled={authLoading}
+                    className="bg-amber-500 hover:bg-amber-600 text-stone-950 font-black py-2 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                  >
+                    {authLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-stone-950" />
+                    ) : (
+                      <span>🔑 {language === 'ar' ? 'تفعيل الاتصال السحابي الفوري (حل iFrame)' : 'One-Click Iframe Bypass (Instant Cloud Live)'}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleGoogleLogin}
+                    className="bg-stone-900 hover:bg-stone-800 text-white font-bold py-2 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                  >
+                    <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google" className="w-4 h-4 bg-white rounded-full p-0.5" />
+                    <span>{language === 'ar' ? 'تسجيل دخول بحساب جوجل المشرف' : 'Sign in with Admin Google Account'}</span>
+                  </button>
+                </>
               )}
               <button
                 onClick={() => {
