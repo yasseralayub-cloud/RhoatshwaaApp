@@ -83,6 +83,7 @@ interface AdminPanelProps {
   onSettingsUpdate?: (newSettings: import('../types').BusinessSettings) => void;
   businessSettings?: import('../types').BusinessSettings;
   onHideAdminTab?: () => void;
+  isAdminAuthenticated?: boolean;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
@@ -92,12 +93,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   activePromo,
   onSettingsUpdate,
   businessSettings,
-  onHideAdminTab
+  onHideAdminTab,
+  isAdminAuthenticated
 }) => {
   const { language, t } = useLanguage();
   
   // Real or Sim control
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => isAdminAuthenticated ?? false);
   const [isSimulated, setIsSimulated] = useState(false);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
 
@@ -210,6 +212,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [tapSecretKey, setTapSecretKey] = useState('');
   const [tapPublishableKey, setTapPublishableKey] = useState('');
 
+  // Telegram bot configuration states
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+
   // Print & Invoice Settings State
   const [printingOrder, setPrintingOrder] = useState<import('../types').Order | null>(null);
   const [isTestPrint, setIsTestPrint] = useState(false);
@@ -249,6 +255,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Listen to Auth State
   useEffect(() => {
+    if (isAdminAuthenticated) {
+      setIsAdmin(true);
+      setIsSimulated(false);
+      return;
+    }
+
     const unsub = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);
       if (user) {
@@ -267,7 +279,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
     });
     return () => unsub();
-  }, []);
+  }, [isAdminAuthenticated]);
 
   // Sync activePromo state inputs
   useEffect(() => {
@@ -330,6 +342,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setPaymentGatewayMode(businessSettings.paymentGatewayMode || 'simulated');
       setTapSecretKey(businessSettings.tapSecretKey || '');
       setTapPublishableKey(businessSettings.tapPublishableKey || '');
+
+      // Sync Telegram settings
+      setTelegramBotToken(businessSettings.telegramBotToken || '');
+      setTelegramChatId(businessSettings.telegramChatId || '');
 
       setSetReceiptFontSize(businessSettings.receiptFontSize ?? 11);
       setSetReceiptLogoSize(businessSettings.receiptLogoSize ?? 80);
@@ -401,7 +417,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       paymentGatewayEnabled: paymentGatewayEnabled,
       paymentGatewayMode: paymentGatewayMode,
       tapSecretKey: tapSecretKey,
-      tapPublishableKey: tapPublishableKey
+      tapPublishableKey: tapPublishableKey,
+      telegramBotToken: telegramBotToken,
+      telegramChatId: telegramChatId
     };
 
     if (onSettingsUpdate) {
@@ -2995,6 +3013,67 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     {language === 'ar'
                       ? 'بوابة الدفع الافتراضية المدعومة هي Tap Payments (وهي شركة رائدة تدعم المتاجر والشركات السعودية بشكل كامل لدعم بطاقات مدى وحسابات Apple Pay، ولا يفرق معها البنك المستلم طالما قمت بالتسجيل لديهم ووضع مفاتيحك هنا لاحقاً).'
                       : 'The supported payment provider is Tap Payments (a leading company that fully supports Saudi merchants for Mada and Apple Pay. It works with any Saudi bank once you register and place your keys here later).'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Telegram Bot Configurations Section */}
+            <div className="md:col-span-2 pt-6 border-t border-slate-100 text-start">
+              <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-200">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                      <span>🤖</span>
+                      {language === 'ar' ? 'إعدادات بوت التنبيهات (تلجرام)' : 'Telegram Notification Bot Settings'}
+                    </h3>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {language === 'ar' 
+                        ? 'تكوين الرموز التعريفية ومفاتيح الربط الخاصة ببوت تلجرام لإرسال الطلبات الجديدة وتنبيهات الإدارة فورياً.' 
+                        : 'Configure the Telegram Bot token and Chat ID keys to receive instant real-time order alerts.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {language === 'ar' ? 'رمز البوت (Telegram Bot Token)' : 'Telegram Bot Token'}
+                    </label>
+                    <input
+                      type="text"
+                      value={telegramBotToken}
+                      onChange={(e) => setTelegramBotToken(e.target.value)}
+                      placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {language === 'ar' ? 'معرف الدردشة أو القناة (Telegram Chat ID)' : 'Telegram Chat ID'}
+                    </label>
+                    <input
+                      type="text"
+                      value={telegramChatId}
+                      onChange={(e) => setTelegramChatId(e.target.value)}
+                      placeholder="e.g. -100123456789 or 987654321"
+                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-amber-50/60 border border-amber-100 rounded-2xl p-4 mt-5 text-[10px] leading-relaxed space-y-2 text-amber-900">
+                  <p className="font-bold">💡 {language === 'ar' ? 'كيفية الحصول على بيانات التلجرام الخاص بك لربط التنبيهات:' : 'How to obtain your Telegram keys for notifications:'}</p>
+                  <p>
+                    {language === 'ar' 
+                      ? '1. قم بإنشاء بوت تلجرام جديد عن طريق التحدث مع @BotFather وإرسال الأمر /newbot واتباع الخطوات للحصول على الـ Bot Token.'
+                      : '1. Create a new Telegram bot by chatting with @BotFather, sending /newbot, and copying the Bot Token.'}
+                  </p>
+                  <p>
+                    {language === 'ar'
+                      ? '2. قم بإنشاء مجموعة أو قناة تلجرام جديدة وأضف البوت فيها كـ مشرف، ثم احصل على الـ Chat ID للمجموعة (يمكنك إرسال رسالة في المجموعة ثم زيارة الرابط https://api.telegram.org/bot<TOKEN>/getUpdates لمعرفة رقم الـ chat.id).'
+                      : '2. Create a Telegram channel or group, add the bot as an Admin, and get the Chat ID (send a message in it and open https://api.telegram.org/bot<TOKEN>/getUpdates to find chat.id).'}
                   </p>
                 </div>
               </div>

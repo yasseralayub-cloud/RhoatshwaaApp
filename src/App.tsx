@@ -10,6 +10,7 @@ import { CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_BUSINESS_SETTINGS } from './ini
 import { MenuItem, Promotion, BusinessSettings, CartItem, CartItemOption } from './types';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { sendTelegramNotification } from './utils/telegram';
 import { Flame, Star, Coffee, AlertCircle, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PromotionCountdown } from './components/PromotionCountdown';
@@ -197,6 +198,8 @@ function MenuAndOrdersApp() {
   const handleForgotPassword = async () => {
     setForgotLoading(true);
     setForgotPasswordMessage('');
+    
+    let serverSuccess = false;
     try {
       const res = await fetch('/api/admin-forgot-password', {
         method: 'POST',
@@ -205,16 +208,57 @@ function MenuAndOrdersApp() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        serverSuccess = true;
         setForgotPasswordMessage(language === 'ar' ? 'تم إرسال رابط لوحة التحكم وكلمة المرور إلى تليجرام بنجاح! 🚀' : 'Sent password and link to Telegram successfully! 🚀');
-      } else {
-        setForgotPasswordMessage(data.message || (language === 'ar' ? 'فشل إرسال التنبيه تليجرام.' : 'Failed to send Telegram alert.'));
       }
     } catch (err) {
-      console.error(err);
-      setForgotPasswordMessage(language === 'ar' ? 'حدث خطأ في الاتصال بالخادم.' : 'Connection error occurred.');
-    } finally {
-      setForgotLoading(false);
+      console.warn('Server forgot password endpoint failed, triggering client fallback...', err);
     }
+
+    if (!serverSuccess) {
+      // Client-side fallback
+      const botToken = businessSettings?.telegramBotToken || (import.meta as any).env.VITE_TELEGRAM_BOT_TOKEN;
+      const chatId = businessSettings?.telegramChatId || (import.meta as any).env.VITE_TELEGRAM_CHAT_ID;
+
+      if (!botToken || !chatId) {
+        setForgotPasswordMessage(
+          language === 'ar' 
+            ? 'خطأ: لم يتم تهيئة إعدادات بوت تلجرام في لوحة التحكم بعد لتلقي هذا التنبيه.' 
+            : 'Error: Telegram Bot has not been configured in control panel settings yet.'
+        );
+        setForgotLoading(false);
+        return;
+      }
+
+      try {
+        const adminUrl = window.location.origin + '/admin';
+        const messageText = `⚠️ *طلب استعادة كلمة المرور للوحة التحكم* ⚠️\n\n` +
+          `• *رابط لوحة التحكم:* ${adminUrl}\n` +
+          `• *كلمة المرور:* \`Aa102030@\`\n\n` +
+          `⚡ _تم إرسال هذا التنبيه من متصفح المسؤول مباشرة (Vercel Direct Link)_`;
+
+        const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: messageText,
+            parse_mode: 'Markdown'
+          })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.ok) {
+          setForgotPasswordMessage(language === 'ar' ? 'تم إرسال رابط لوحة التحكم وكلمة المرور إلى تليجرام بنجاح! 🚀' : 'Sent password and link to Telegram successfully! 🚀');
+        } else {
+          setForgotPasswordMessage(language === 'ar' ? 'فشل إرسال التنبيه تليجرام. يرجى التحقق من توكن البوت والـ Chat ID.' : 'Failed to send Telegram alert. Please check your bot token and chat ID.');
+        }
+      } catch (err) {
+        console.error('Client-side Telegram message failed:', err);
+        setForgotPasswordMessage(language === 'ar' ? 'حدث خطأ في الاتصال بالشبكة.' : 'Connection error occurred.');
+      }
+    }
+    setForgotLoading(false);
   };
 
   // 1.95 Check if PWA installer / welcome wizard should show automatically on first visit
@@ -267,13 +311,10 @@ function MenuAndOrdersApp() {
                   whatsappSent: true
                 });
 
-                // Securely trigger server-side Telegram bot order notification dispatch for verified online payment
+                // Trigger Telegram bot order notification dispatch (server-side with client fallback)
                 try {
-                  fetch('/api/notify-telegram', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ order: updatedOrder })
-                  }).catch(e => console.warn('Telegram payment notification dispatcher error:', e));
+                  sendTelegramNotification(updatedOrder as any, businessSettings)
+                    .catch(e => console.warn('Telegram payment notification dispatcher error:', e));
                 } catch (teleErr) {
                   console.warn('Telegram payment notification trigger failed:', teleErr);
                 }
@@ -588,6 +629,7 @@ function MenuAndOrdersApp() {
           ) : (
             <div className="w-full bg-white text-dark rounded-3xl p-4 md:p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
               <AdminPanel 
+                isAdminAuthenticated={isAdminAuthenticated}
                 onMenuUpdate={handleMenuUpdate} 
                 menuItems={menuItems} 
                 onPromoUpdate={handlePromoUpdate}
@@ -792,6 +834,7 @@ function MenuAndOrdersApp() {
         {/* Admin administrative controllers */}
         {activeTab === 'admin' && showAdminTab && (
           <AdminPanel 
+            isAdminAuthenticated={isAdminAuthenticated}
             onMenuUpdate={handleMenuUpdate} 
             menuItems={menuItems} 
             onPromoUpdate={handlePromoUpdate}

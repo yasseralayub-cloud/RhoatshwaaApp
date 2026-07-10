@@ -124,6 +124,8 @@ export interface BusinessSettings {
   paymentGatewayMode?: 'live' | 'simulated';
   tapSecretKey?: string;
   tapPublishableKey?: string;
+  telegramBotToken?: string;
+  telegramChatId?: string;
 }
 
 export interface Category {

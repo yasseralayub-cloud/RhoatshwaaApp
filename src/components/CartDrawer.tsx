@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { MenuItem, Order, CartItem } from '../types';
+import { sendTelegramNotification } from '../utils/telegram';
 import { useLanguage } from './LanguageContext';
 import { X, Trash2, MapPin, Store, CreditCard, ChevronLeft, Plus, Minus, Send, PhoneCall, ShoppingBag, Clock, AlertTriangle, Copy, Check, Landmark, Wallet, Navigation, Loader2 } from 'lucide-react';
 import { collection, doc, setDoc } from 'firebase/firestore';
@@ -446,13 +447,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       console.warn('Firestore sync failed or offline. Continuing gracefully with local fallback:', firebaseErr);
     }
 
-    // Securely trigger server-side Telegram bot order notification dispatch
+    // Trigger Telegram bot order notification dispatch (server-side with client fallback)
     try {
-      fetch('/api/notify-telegram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: orderData })
-      }).catch(e => console.warn('Telegram notification dispatcher error:', e));
+      sendTelegramNotification(orderData, businessSettings || null)
+        .catch(e => console.warn('Telegram notification dispatcher error:', e));
     } catch (teleErr) {
       console.warn('Telegram notification trigger failed:', teleErr);
     }
