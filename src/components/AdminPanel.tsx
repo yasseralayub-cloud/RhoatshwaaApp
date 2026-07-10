@@ -15,8 +15,8 @@ import {
   query,
   orderBy
 } from 'firebase/firestore';
-import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { db, auth, handleFirestoreError, OperationType, diagnoseFirestoreConnection, DiagnosticsReport } from '../firebase';
+import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
+import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { INITIAL_MENU_ITEMS, CATEGORIES } from '../initialData';
 import {
   TrendingUp,
@@ -58,10 +58,7 @@ import {
   CheckCircle2,
   Phone,
   ToggleLeft,
-  ToggleRight,
-  Activity,
-  ChevronUp,
-  ChevronDown
+  ToggleRight
 } from 'lucide-react';
 import {
   BarChart,
@@ -86,7 +83,6 @@ interface AdminPanelProps {
   onSettingsUpdate?: (newSettings: import('../types').BusinessSettings) => void;
   businessSettings?: import('../types').BusinessSettings;
   onHideAdminTab?: () => void;
-  isAdminAuthenticated?: boolean;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
@@ -96,28 +92,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   activePromo,
   onSettingsUpdate,
   businessSettings,
-  onHideAdminTab,
-  isAdminAuthenticated
+  onHideAdminTab
 }) => {
   const { language, t } = useLanguage();
   
   // Real or Sim control
-  const [isAdmin, setIsAdmin] = useState(() => isAdminAuthenticated ?? false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isSimulated, setIsSimulated] = useState(false);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-
-  // Email/Password Firebase auth states
-  const [authEmail, setAuthEmail] = useState('yasseralayub@gmail.com');
-  const [authPassword, setAuthPassword] = useState('Aa102030@');
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState('');
-  const [authSuccessMessage, setAuthSuccessMessage] = useState('');
-  const [showEmailForm, setShowEmailForm] = useState(false);
-
-  // Diagnostic states
-  const [diagnosticsReport, setDiagnosticsReport] = useState<DiagnosticsReport | null>(null);
-  const [runningDiagnostics, setRunningDiagnostics] = useState(false);
-  const [showDiagnosticsPanel, setShowDiagnosticsPanel] = useState(true);
 
   // Firestore status
   const [orders, setOrders] = useState<Order[]>([]);
@@ -228,10 +210,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [tapSecretKey, setTapSecretKey] = useState('');
   const [tapPublishableKey, setTapPublishableKey] = useState('');
 
-  // Telegram bot configuration states
-  const [telegramBotToken, setTelegramBotToken] = useState('');
-  const [telegramChatId, setTelegramChatId] = useState('');
-
   // Print & Invoice Settings State
   const [printingOrder, setPrintingOrder] = useState<import('../types').Order | null>(null);
   const [isTestPrint, setIsTestPrint] = useState(false);
@@ -279,28 +257,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           setIsAdmin(true);
           setIsSimulated(false);
         } else {
-          if (isAdminAuthenticated) {
-            // Keep admin state from password, but warn/enable Google Login for live DB sync
-            setIsAdmin(true);
-            setIsSimulated(false);
-          } else {
-            // Fallback to simulator state with warning
-            setIsAdmin(false);
-            setIsSimulated(true);
-            alert(t('unauthorizedAdmin'));
-          }
+          // Fallback to simulator state with warning
+          setIsAdmin(false);
+          setIsSimulated(true);
+          alert(t('unauthorizedAdmin'));
         }
       } else {
-        if (isAdminAuthenticated) {
-          setIsAdmin(true);
-          setIsSimulated(false);
-        } else {
-          setIsAdmin(false);
-        }
+        setIsAdmin(false);
       }
     });
     return () => unsub();
-  }, [isAdminAuthenticated]);
+  }, []);
 
   // Sync activePromo state inputs
   useEffect(() => {
@@ -363,10 +330,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setPaymentGatewayMode(businessSettings.paymentGatewayMode || 'simulated');
       setTapSecretKey(businessSettings.tapSecretKey || '');
       setTapPublishableKey(businessSettings.tapPublishableKey || '');
-
-      // Sync Telegram settings
-      setTelegramBotToken(businessSettings.telegramBotToken || '');
-      setTelegramChatId(businessSettings.telegramChatId || '');
 
       setSetReceiptFontSize(businessSettings.receiptFontSize ?? 11);
       setSetReceiptLogoSize(businessSettings.receiptLogoSize ?? 80);
@@ -438,9 +401,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       paymentGatewayEnabled: paymentGatewayEnabled,
       paymentGatewayMode: paymentGatewayMode,
       tapSecretKey: tapSecretKey,
-      tapPublishableKey: tapPublishableKey,
-      telegramBotToken: telegramBotToken,
-      telegramChatId: telegramChatId
+      tapPublishableKey: tapPublishableKey
     };
 
     if (onSettingsUpdate) {
@@ -638,64 +599,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       console.error('Google Sign In Error:', err);
     }
   };
-
-  const handleEmailPasswordAuth = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!authEmail.trim() || !authPassword.trim()) {
-      setAuthError(language === 'ar' ? 'الرجاء إدخال البريد الإلكتروني وكلمة المرور' : 'Please enter both email and password');
-      return;
-    }
-    setAuthLoading(true);
-    setAuthError('');
-    setAuthSuccessMessage('');
-    
-    try {
-      // 1. Try to sign in first
-      await signInWithEmailAndPassword(auth, authEmail.trim().toLowerCase(), authPassword);
-      setAuthSuccessMessage(language === 'ar' ? 'تم تسجيل الدخول بنجاح! 🚀' : 'Logged in successfully! 🚀');
-    } catch (err: any) {
-      console.warn('First sign-in attempt failed, checking if signup is needed...', err);
-      
-      // If user does not exist or incorrect, try creating the user to auto-provision
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.message?.includes('user-not-found') || err.message?.includes('invalid-credential') || err.message?.includes('INVALID_LOGIN_CREDENTIALS')) {
-        try {
-          await createUserWithEmailAndPassword(auth, authEmail.trim().toLowerCase(), authPassword);
-          setAuthSuccessMessage(language === 'ar' ? 'تم إنشاء حساب المشرف السحابي بنجاح! 🚀' : 'Cloud Admin account created successfully! 🚀');
-        } catch (signUpErr: any) {
-          console.error('Auto Sign Up failed:', signUpErr);
-          setAuthError(language === 'ar' 
-            ? `خطأ: تأكد من تفعيل خيار Email/Password في منصة Firebase Auth أو جرب بريد آخر.` 
-            : `Error: Make sure Email/Password auth is enabled in your Firebase console.`
-          );
-        }
-      } else {
-        setAuthError(language === 'ar' 
-          ? `خطأ تسجيل دخول: كلمة المرور خاطئة للحساب المسجل مسبقاً.` 
-          : `Sign in error: Incorrect password for this existing account.`
-        );
-      }
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const runDiagnostics = async () => {
-    setRunningDiagnostics(true);
-    try {
-      const report = await diagnoseFirestoreConnection();
-      setDiagnosticsReport(report);
-    } catch (err) {
-      console.error('Failed to run diagnostics:', err);
-    } finally {
-      setRunningDiagnostics(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isAdmin) {
-      runDiagnostics();
-    }
-  }, [isAdmin, currentUser]);
 
   const handleLogout = async () => {
     try {
@@ -1534,93 +1437,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
 
           <div className="space-y-3 pt-4">
-            {/* One-click bypass button because of iframe restrictions */}
-            <div className="bg-amber-500/10 border-2 border-amber-500/20 rounded-2xl p-4 text-start space-y-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-amber-500 text-lg">⚡</span>
-                <h4 className="font-extrabold text-xs text-amber-600 uppercase tracking-wide">
-                  {language === 'ar' ? 'تسجيل دخول سحابي بنقرة واحدة (تخطي قيود المتصفح)' : 'One-Click Cloud Login (Bypass Iframe Popup Block)'}
-                </h4>
-              </div>
-              <p className="text-[11px] text-slate-600 leading-normal">
-                {language === 'ar' 
-                  ? 'سجل الدخول السحابي الفوري والمباشر دون الحاجة لنوافذ جوجل المنبثقة المحجوبة داخل المتصفح:' 
-                  : 'Instantly sign in using the authorized admin account credentials directly, bypassing the browser popup-blocker:'}
-              </p>
-              <button
-                onClick={() => handleEmailPasswordAuth()}
-                disabled={authLoading}
-                className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-2.5 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md hover:scale-[1.01]"
-              >
-                {authLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                ) : (
-                  <span>🔑 {language === 'ar' ? 'تسجيل دخول فوري كـ yasseralayub@gmail.com' : 'Sign in instantly as yasseralayub@gmail.com'}</span>
-                )}
-              </button>
-              {authError && (
-                <p className="text-[11px] text-rose-600 font-bold bg-rose-50 p-2 rounded-lg">{authError}</p>
-              )}
-              {authSuccessMessage && (
-                <p className="text-[11px] text-emerald-600 font-bold bg-emerald-50 p-2 rounded-lg">{authSuccessMessage}</p>
-              )}
-              
-              <div className="text-center pt-1.5">
-                <button
-                  type="button"
-                  onClick={() => setShowEmailForm(!showEmailForm)}
-                  className="text-[10px] text-slate-500 hover:text-slate-800 underline font-semibold cursor-pointer"
-                >
-                  {showEmailForm 
-                    ? (language === 'ar' ? 'إخفاء حقول البريد الإلكتروني' : 'Hide custom email fields')
-                    : (language === 'ar' ? 'أو أدخل بريد إلكتروني وكلمة مرور مخصصة للـ Firebase' : 'Or enter custom Firebase email/password')}
-                </button>
-              </div>
-
-              {showEmailForm && (
-                <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 space-y-3 animate-fade-in text-start">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-slate-500">{language === 'ar' ? 'البريد الإلكتروني للـ Firebase' : 'Firebase Email'}</label>
-                    <input
-                      type="email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs outline-none focus:border-amber-500"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-slate-500">{language === 'ar' ? 'كلمة المرور' : 'Password'}</label>
-                    <input
-                      type="password"
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs outline-none focus:border-amber-500"
-                    />
-                  </div>
-                  <button
-                    onClick={() => handleEmailPasswordAuth()}
-                    disabled={authLoading}
-                    className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded-lg text-xs transition-colors cursor-pointer"
-                  >
-                    {authLoading ? (language === 'ar' ? 'جاري التحقق...' : 'Verifying...') : (language === 'ar' ? 'تسجيل دخول مخصص' : 'Custom Sign In')}
-                  </button>
-                </div>
-              )}
-            </div>
-
             {/* Google Identity Popup Trigger */}
             <button
               onClick={handleGoogleLogin}
-              className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-2.5 px-4 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2.5 text-xs"
+              className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 px-4 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2.5 text-sm"
             >
-              <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google logo" className="w-4 h-4" />
+              <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google logo" className="w-5 h-5" />
               <span>{t('loginWithGoogle')}</span>
             </button>
 
             {/* Simulated instant sandbox mode - amazing utility for grader/tester */}
             <button
               onClick={handleSimulateMode}
-              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl transition-all shadow-md shadow-amber-600/25 cursor-pointer text-xs flex items-center justify-center gap-2.5"
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md shadow-amber-600/25 cursor-pointer text-sm flex items-center justify-center gap-2.5"
             >
               <Sliders className="w-4 h-4" />
               <span>{t('simulateMode')}</span>
@@ -1635,18 +1464,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     <div className="max-w-7xl mx-auto p-4 space-y-8 font-sans text-start">
       
       {/* Admin Title banner */}
-      <div className="bg-stone-900 text-stone-100 rounded-3xl p-6 shadow-lg flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 relative overflow-hidden border border-amber-500/20">
+      <div className="bg-stone-900 text-stone-100 rounded-3xl p-6 shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden border border-amber-500/20">
         <div className="absolute -top-12 -right-12 w-44 h-44 bg-amber-600/10 rounded-full blur-2xl pointer-events-none" />
         <div className="z-10 text-start space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <span className="bg-amber-500/25 text-amber-500 text-xs font-mono font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">
               {isSimulated ? 'محاكي الإدارة • Demo Mode' : 'اتصال حي • Connected to Live Cloud DB'}
             </span>
-            {!isSimulated && (!currentUser || currentUser.email !== 'yasseralayub@gmail.com') && (
-              <span className="bg-red-500/25 text-red-400 text-[10px] font-sans font-bold px-2 py-0.5 rounded">
-                {language === 'ar' ? '⚠️ تسجيل دخول جوجل مطلوب' : '⚠️ Google Login Required'}
-              </span>
-            )}
             <button
               onClick={() => {
                 if (soundEnabled) {
@@ -1661,25 +1485,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
           <h2 className="text-xl md:text-2xl font-black text-amber-500">{t('adminWelcome')}</h2>
           <p className="text-xs text-stone-400 font-mono">
-            {currentUser 
-              ? `${currentUser.displayName || 'Admin'} (${currentUser.email})` 
-              : (!isSimulated 
-                  ? (language === 'ar' ? 'بانتظار تسجيل دخول مشرف جوجل المعتمد (yasseralayub@gmail.com)' : 'Awaiting authorized Google login (yasseralayub@gmail.com)...') 
-                  : 'Simulated Session Dashboard')}
+            {currentUser ? `${currentUser.displayName || 'Admin'} (${currentUser.email})` : 'Simulated Session Dashboard'}
           </p>
         </div>
 
-        <div className="z-10 flex flex-wrap gap-2 w-full lg:w-auto">
-          {/* Google Auth Button if needed */}
-          {!isSimulated && (!currentUser || currentUser.email !== 'yasseralayub@gmail.com') && (
-            <button
-              onClick={handleGoogleLogin}
-              className="bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-3.5 py-2.5 rounded-xl font-bold transition-colors flex items-center gap-2 cursor-pointer text-xs"
-            >
-              <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google" className="w-4 h-4 bg-white rounded-full p-0.5 shadow-sm" />
-              <span>{language === 'ar' ? 'تسجيل دخول جوجل المشرف' : 'Google Admin Sign In'}</span>
-            </button>
-          )}
+        <div className="z-10 flex gap-2 w-full sm:w-auto">
           {/* Sounds toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
@@ -1713,181 +1523,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           )}
         </div>
       </div>
-
-      {/* Diagnostics panel */}
-      {!isSimulated && isAdmin && (
-        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
-                <Activity className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-sm text-slate-800">
-                  {language === 'ar' ? 'فاحص ومُشخّص الاتصال السحابي (Firestore)' : 'Firestore Cloud Connectivity Diagnostician'}
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  {language === 'ar' ? 'أداة حية للتحقق من الاتصال وقواعد الحماية السحابية' : 'Live tool to verify database rules, connection and authentication'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <button
-                onClick={runDiagnostics}
-                disabled={runningDiagnostics}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl font-bold transition-all text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-55"
-              >
-                {runningDiagnostics ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>{language === 'ar' ? 'جاري الفحص...' : 'Diagnosing...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>{language === 'ar' ? 'إعادة الفحص والتشخيص' : 'Re-Run Diagnostics'}</span>
-                  </>
-                )}
-              </button>
-              
-              <button
-                onClick={() => setShowDiagnosticsPanel(!showDiagnosticsPanel)}
-                className="p-1.5 bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg border border-slate-200/60"
-              >
-                {showDiagnosticsPanel ? (
-                  <ChevronUp className="w-4 h-4" />
-                ) : (
-                  <ChevronDown className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          {showDiagnosticsPanel && (
-            <div className="space-y-4 animate-fade-in text-start">
-              {/* Overall status ribbon */}
-              <div className={`p-4 rounded-2xl border flex items-center gap-3 ${
-                diagnosticsReport?.connected && diagnosticsReport?.tests.listOrdersTest.success
-                  ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
-                  : 'bg-rose-50 border-rose-100 text-rose-800'
-              }`}>
-                <div className={`w-3 h-3 rounded-full animate-ping ${
-                  diagnosticsReport?.connected && diagnosticsReport?.tests.listOrdersTest.success ? 'bg-emerald-500' : 'bg-rose-500'
-                }`} />
-                <div className="text-xs font-semibold leading-relaxed">
-                  {diagnosticsReport?.connected && diagnosticsReport?.tests.listOrdersTest.success ? (
-                    language === 'ar'
-                      ? '✓ تم تأكيد الاتصال السحابي بالكامل وقواعد Firestore تسمح لك بالقراءة والكتابة!'
-                      : '✓ Connected successfully! Cloud Firestore security rules authorize you.'
-                  ) : (
-                    language === 'ar'
-                      ? '⚠️ فشل الوصول الكامل. لم يتم الترخيص بحساب yasseralayub@gmail.com أو أن نافذة جوجل منبثقة محجوبة.'
-                      : '⚠️ Full access failed. Not authorized as yasseralayub@gmail.com or browser is blocking the Firestore stream.'
-                  )}
-                </div>
-              </div>
-
-              {/* Grid of checks */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 font-sans">
-                {/* 1. Browser Internet Check */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                      {language === 'ar' ? 'إنترنت المتصفح' : 'Browser Internet'}
-                    </span>
-                    {diagnosticsReport?.online ? (
-                      <span className="text-emerald-500 text-xs font-bold">● {language === 'ar' ? 'متصل' : 'Online'}</span>
-                    ) : (
-                      <span className="text-rose-500 text-xs font-bold">● {language === 'ar' ? 'منقطع' : 'Offline'}</span>
-                    )}
-                  </div>
-                  <p className="text-xs font-bold text-slate-700">
-                    {diagnosticsReport?.online ? (language === 'ar' ? 'شبكة المتصفح نشطة' : 'Browser network active') : (language === 'ar' ? 'لا يوجد اتصال بالإنترنت' : 'No network detected')}
-                  </p>
-                </div>
-
-                {/* 2. Authentication Check */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                      {language === 'ar' ? 'الحساب الحالي' : 'Current Account'}
-                    </span>
-                    {diagnosticsReport?.auth.uid ? (
-                      <span className="text-emerald-500 text-xs font-bold">✓ {language === 'ar' ? 'مُسجل' : 'Signed In'}</span>
-                    ) : (
-                      <span className="text-rose-500 text-xs font-bold">✗ {language === 'ar' ? 'غير مسجل' : 'Signed Out'}</span>
-                    )}
-                  </div>
-                  <p className="text-xs font-mono font-bold text-slate-700 truncate" title={diagnosticsReport?.auth.email || ''}>
-                    {diagnosticsReport?.auth.email || (language === 'ar' ? 'جلسة مجهولة' : 'Anonymous/None')}
-                  </p>
-                </div>
-
-                {/* 3. Settings Read Test */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                      {language === 'ar' ? 'قراءة الإعدادات' : 'Read Settings Doc'}
-                    </span>
-                    {diagnosticsReport?.tests.readSettingsTest.success ? (
-                      <span className="text-emerald-500 text-xs font-bold">✓ {language === 'ar' ? 'مسموح' : 'Success'}</span>
-                    ) : (
-                      <span className="text-rose-500 text-xs font-bold">✗ {language === 'ar' ? 'مرفوض' : 'Failed'}</span>
-                    )}
-                  </div>
-                  <p className="text-xs font-medium text-slate-500 truncate">
-                    {diagnosticsReport?.tests.readSettingsTest.success 
-                      ? (language === 'ar' ? 'تم جلب معلمات الهوية بنجاح' : 'Fetched business settings successfully')
-                      : diagnosticsReport?.tests.readSettingsTest.error}
-                  </p>
-                </div>
-
-                {/* 4. Orders List Read Test */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                      {language === 'ar' ? 'جلب الطلبات' : 'List Orders Stream'}
-                    </span>
-                    {diagnosticsReport?.tests.listOrdersTest.success ? (
-                      <span className="text-emerald-500 text-xs font-bold">✓ {language === 'ar' ? 'مسموح' : 'Success'}</span>
-                    ) : (
-                      <span className="text-rose-500 text-xs font-bold">✗ {language === 'ar' ? 'مرفوض' : 'Failed'}</span>
-                    )}
-                  </div>
-                  <p className="text-xs font-medium text-slate-500 truncate">
-                    {diagnosticsReport?.tests.listOrdersTest.success 
-                      ? (language === 'ar' ? 'قنوات جلب الطلبات حية ومفتوحة' : 'Order list authorization is active')
-                      : diagnosticsReport?.tests.listOrdersTest.error}
-                  </p>
-                </div>
-              </div>
-
-              {/* Suggestions / Help */}
-              {(!diagnosticsReport?.tests.listOrdersTest.success || !diagnosticsReport?.auth.isAuthorizedEmail) && (
-                <div className="p-3.5 bg-amber-50 border border-amber-100 text-amber-800 text-[11px] rounded-xl leading-relaxed">
-                  <strong className="block font-black mb-1">💡 {language === 'ar' ? 'دليل حل مشاكل الاتصال لوصول المشرف:' : 'Connectivity Troubleshooting Guide:'}</strong>
-                  <ul className="list-disc pl-5 rtl:pl-0 rtl:pr-5 space-y-1">
-                    {language === 'ar' ? (
-                      <>
-                        <li>تتطلب قواعد حماية Firestore السحابية تسجيل الدخول كمسؤول باستخدام البريد الإلكتروني <code className="font-mono bg-amber-100/80 px-1 py-0.5 rounded text-amber-900">yasseralayub@gmail.com</code></li>
-                        <li><strong>المشكلة الشائعة:</strong> متصفحات الهاتف وبعض متصفحات الديسك توب تمنع النوافذ المنبثقة (Popup Blocker) عند الضغط على "تسجيل دخول جوجل" مما يمنع إكمال تسجيل الدخول.</li>
-                        <li><strong>الحل السهل:</strong> استخدم زر <strong>"تفعيل الاتصال السحابي الفوري (حل iFrame)"</strong> المتواجد بالأسفل، حيث يسجل الدخول بكلمة المرور مباشرة دون نوافذ منبثقة!</li>
-                      </>
-                    ) : (
-                      <>
-                        <li>The Firestore rules require a signed-in account matching <code className="font-mono bg-amber-100/80 px-1 py-0.5 rounded text-amber-900">yasseralayub@gmail.com</code>.</li>
-                        <li><strong>Common issue:</strong> Browser popup-blockers or iframe sandboxing can block the Google Login pop-up.</li>
-                        <li><strong>Easy bypass:</strong> Click the <strong>"One-Click Iframe Bypass (Instant Cloud Live)"</strong> button below, which logs in instantly without any browser pop-ups!</li>
-                      </>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Quick Administration & Order Management Panel */}
       <div className="p-5 bg-stone-50 border border-stone-200/60 rounded-3xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 text-start">
@@ -2126,37 +1761,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </h4>
                 <p className="text-xs text-red-700 font-medium leading-relaxed">
                   {language === 'ar'
-                    ? 'الحساب الحالي مسجل كمسؤول ولكن قواعد حماية Firestore تمنع جلب قائمة الطلبات إلا باستخدام حساب جوجل المعتمد (yasseralayub@gmail.com). يرجى تسجيل الدخول بحساب جوجل لتفعيل الاتصال السحابي الحي.'
-                    : 'The current account is signed in as admin, but Firestore security rules prevent the order stream from loading without the authorized Google account (yasseralayub@gmail.com). Please sign in to enable live cloud sync.'}
+                    ? 'الحساب الحالي مسجل كمسؤول ولكن قواعد حماية Firestore تمنع جلب قائمة الطلبات، أو أن الاتصال مقطوع حالياً.'
+                    : 'The current account is signed in as admin, but Firestore security rules are preventing the order stream from loading, or the service is offline.'}
                 </p>
                 <p className="text-[10px] font-mono text-red-600 bg-red-100/50 p-2 rounded-lg break-all mt-2 select-all">
                   Error Details: {ordersError}
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 justify-end w-full pt-2 border-t border-red-100">
-              {(!currentUser || currentUser.email !== 'yasseralayub@gmail.com') && (
-                <>
-                  <button
-                    onClick={() => handleEmailPasswordAuth()}
-                    disabled={authLoading}
-                    className="bg-amber-500 hover:bg-amber-600 text-stone-950 font-black py-2 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 shadow-sm"
-                  >
-                    {authLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-stone-950" />
-                    ) : (
-                      <span>🔑 {language === 'ar' ? 'تفعيل الاتصال السحابي الفوري (حل iFrame)' : 'One-Click Iframe Bypass (Instant Cloud Live)'}</span>
-                    )}
-                  </button>
-                  <button
-                    onClick={handleGoogleLogin}
-                    className="bg-stone-900 hover:bg-stone-800 text-white font-bold py-2 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 shadow-sm"
-                  >
-                    <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google" className="w-4 h-4 bg-white rounded-full p-0.5" />
-                    <span>{language === 'ar' ? 'تسجيل دخول بحساب جوجل المشرف' : 'Sign in with Admin Google Account'}</span>
-                  </button>
-                </>
-              )}
+            <div className="flex gap-2 justify-end">
               <button
                 onClick={() => {
                   setIsSimulated(true);
@@ -3382,67 +2995,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     {language === 'ar'
                       ? 'بوابة الدفع الافتراضية المدعومة هي Tap Payments (وهي شركة رائدة تدعم المتاجر والشركات السعودية بشكل كامل لدعم بطاقات مدى وحسابات Apple Pay، ولا يفرق معها البنك المستلم طالما قمت بالتسجيل لديهم ووضع مفاتيحك هنا لاحقاً).'
                       : 'The supported payment provider is Tap Payments (a leading company that fully supports Saudi merchants for Mada and Apple Pay. It works with any Saudi bank once you register and place your keys here later).'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Telegram Bot Configurations Section */}
-            <div className="md:col-span-2 pt-6 border-t border-slate-100 text-start">
-              <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-200">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                      <span>🤖</span>
-                      {language === 'ar' ? 'إعدادات بوت التنبيهات (تلجرام)' : 'Telegram Notification Bot Settings'}
-                    </h3>
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      {language === 'ar' 
-                        ? 'تكوين الرموز التعريفية ومفاتيح الربط الخاصة ببوت تلجرام لإرسال الطلبات الجديدة وتنبيهات الإدارة فورياً.' 
-                        : 'Configure the Telegram Bot token and Chat ID keys to receive instant real-time order alerts.'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                      {language === 'ar' ? 'رمز البوت (Telegram Bot Token)' : 'Telegram Bot Token'}
-                    </label>
-                    <input
-                      type="text"
-                      value={telegramBotToken}
-                      onChange={(e) => setTelegramBotToken(e.target.value)}
-                      placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
-                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                      {language === 'ar' ? 'معرف الدردشة أو القناة (Telegram Chat ID)' : 'Telegram Chat ID'}
-                    </label>
-                    <input
-                      type="text"
-                      value={telegramChatId}
-                      onChange={(e) => setTelegramChatId(e.target.value)}
-                      placeholder="e.g. -100123456789 or 987654321"
-                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-amber-50/60 border border-amber-100 rounded-2xl p-4 mt-5 text-[10px] leading-relaxed space-y-2 text-amber-900">
-                  <p className="font-bold">💡 {language === 'ar' ? 'كيفية الحصول على بيانات التلجرام الخاص بك لربط التنبيهات:' : 'How to obtain your Telegram keys for notifications:'}</p>
-                  <p>
-                    {language === 'ar' 
-                      ? '1. قم بإنشاء بوت تلجرام جديد عن طريق التحدث مع @BotFather وإرسال الأمر /newbot واتباع الخطوات للحصول على الـ Bot Token.'
-                      : '1. Create a new Telegram bot by chatting with @BotFather, sending /newbot, and copying the Bot Token.'}
-                  </p>
-                  <p>
-                    {language === 'ar'
-                      ? '2. قم بإنشاء مجموعة أو قناة تلجرام جديدة وأضف البوت فيها كـ مشرف، ثم احصل على الـ Chat ID للمجموعة (يمكنك إرسال رسالة في المجموعة ثم زيارة الرابط https://api.telegram.org/bot<TOKEN>/getUpdates لمعرفة رقم الـ chat.id).'
-                      : '2. Create a Telegram channel or group, add the bot as an Admin, and get the Chat ID (send a message in it and open https://api.telegram.org/bot<TOKEN>/getUpdates to find chat.id).'}
                   </p>
                 </div>
               </div>
