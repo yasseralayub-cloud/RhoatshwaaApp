@@ -23,7 +23,9 @@ interface WelcomePortalModalProps {
 
 export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, onClose, businessSettings }) => {
   const { language, t } = useLanguage();
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(() => {
+    return (window as any).deferredPrompt || null;
+  });
   const [isAlreadyInstalled, setIsAlreadyInstalled] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [testChimePlayed, setTestChimePlayed] = useState(false);
@@ -54,6 +56,7 @@ export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, 
     // Listen to BeforeInstallPrompt for standard Android/Chrome PWA
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
+      (window as any).deferredPrompt = e;
       setDeferredPrompt(e);
       console.log('Applet installation prompt is available and deferred.');
     };
@@ -103,14 +106,20 @@ export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, 
 
   // Trigger standard Android/Chrome prompt
   const handleInstallApp = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log(`Add To Home Screen outcome: ${outcome}`);
-      if (outcome === 'accepted') {
-        setIsAlreadyInstalled(true);
+    const promptEvent = deferredPrompt || (window as any).deferredPrompt;
+    if (promptEvent) {
+      try {
+        promptEvent.prompt();
+        const { outcome } = await promptEvent.userChoice;
+        console.log(`Add To Home Screen outcome: ${outcome}`);
+        if (outcome === 'accepted') {
+          setIsAlreadyInstalled(true);
+        }
+        setDeferredPrompt(null);
+        (window as any).deferredPrompt = null;
+      } catch (err) {
+        console.error("Error launching native PWA prompt inside modal:", err);
       }
-      setDeferredPrompt(null);
     } else {
       // General fallbacks if standard prompt is missing
       alert(language === 'ar'
@@ -123,165 +132,149 @@ export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, 
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-md animate-fade-in text-start">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in text-start">
         <motion.div 
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
-          className="w-full max-w-lg bg-white border border-black/5 rounded-[2.5rem] shadow-2xl relative text-dark overflow-hidden max-h-[92vh] flex flex-col"
+          className="w-full max-w-lg bg-white border border-slate-100 rounded-[2.5rem] shadow-2xl relative text-dark overflow-hidden max-h-[92vh] flex flex-col"
         >
-          {/* Header branding background block with elegant deep dark & gold BBQ gradient */}
-          <div className="bg-neutral-950 p-6 md:p-7 text-white relative">
-            <div className="absolute top-0 right-0 left-0 bottom-0 bg-radial-gradient from-yellow/10 to-transparent pointer-events-none" />
-            <div className="absolute -bottom-12 -start-12 w-32 h-32 bg-yellow/5 rounded-full blur-xl" />
+          {/* Header branding background block with elegant orange gradient */}
+          <div className="bg-gradient-to-br from-amber-600 via-orange-600 to-red-600 p-6 text-white relative">
+            <div className="absolute top-0 right-0 left-0 bottom-0 bg-black/10 mix-blend-overlay" />
+            <div className="absolute -bottom-12 -start-12 w-32 h-32 bg-white/10 rounded-full blur-xl" />
             
             <button 
               onClick={onClose}
-              className="absolute top-4 end-4 bg-white/10 hover:bg-white/20 text-white p-2 rounded-full cursor-pointer transition-all border border-white/5 z-10"
+              className="absolute top-4 end-4 bg-white/15 hover:bg-white/25 text-white p-2 rounded-full cursor-pointer transition-all border border-white/10 z-10"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
             </button>
 
             <div className="flex items-center gap-3 relative z-10">
-              <div className="w-14 h-14 bg-neutral-900 rounded-2xl flex items-center justify-center p-1 shadow-md border border-yellow/20 overflow-hidden shrink-0">
-                {businessSettings?.logoUrl ? (
-                  <img src={businessSettings.logoUrl} alt="Rehla Grill Icon" className="w-full h-full object-cover rounded-xl" />
-                ) : (
-                  <div className="w-full h-full bg-yellow rounded-xl flex items-center justify-center font-bold text-black text-lg">🍖</div>
-                )}
+              <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center p-0.5 shadow-md border border-white/20 overflow-hidden shrink-0">
+                <img src={businessSettings?.logoUrl || '/pwa-icon.jpg'} alt="Rehla Grill App Icon" className="w-full h-full object-cover rounded-xl" />
               </div>
               <div className="space-y-0.5">
-                <div className="flex items-center gap-1.5 bg-yellow/15 text-yellow border border-yellow/20 text-[9px] uppercase font-bold tracking-widest px-2.5 py-0.5 rounded-full w-max font-mono">
+                <div className="flex items-center gap-1.5 bg-white/20 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full w-max">
                   <Sparkles className="w-3 h-3 text-yellow animate-pulse" />
-                  <span>{language === 'ar' ? 'رحلة شواء الأصيلة' : 'Rehla BBQ Smart App'}</span>
+                  <span>{language === 'ar' ? 'تطبيق رحلة شواء الذكي' : 'Rehla BBQ Smart App'}</span>
                 </div>
-                <h3 className="text-xl font-serif font-black tracking-wide leading-tight mt-1 text-white">
-                  {language === 'ar' ? 'مرحباً بك في تطبيق رحلة شواء' : 'Welcome to Rehla BBQ'}
+                <h3 className="text-xl font-serif font-black tracking-wide leading-tight mt-1">
+                  {language === 'ar' ? 'مرحباً بك في مطعم رحلة شواء' : 'Welcome to Rehla BBQ'}
                 </h3>
               </div>
             </div>
           </div>
 
-          {/* Dialog Tabs Navigation with Brand Colors */}
-          <div className="grid grid-cols-2 bg-neutral-50 border-b border-black/5 font-bold text-xs">
+          {/* Dialog Tabs Navigation */}
+          <div className="grid grid-cols-2 bg-slate-50 border-b border-slate-100 font-bold text-xs">
             <button
               onClick={() => setActiveStep(1)}
-              className={`py-4 border-b-2 transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              className={`py-3.5 border-b-2 transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 activeStep === 1 
-                  ? 'border-yellow text-yellow-600 font-black bg-white shadow-xs' 
+                  ? 'border-orange-600 text-orange-600 font-extrabold bg-white' 
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Bell className="w-4 h-4 shrink-0" />
-              <span>{language === 'ar' ? '١. تفعيل التنبيهات والأصوات' : '1. Sounds & Alerts'}</span>
+              <Bell className="w-4 h-4" />
+              <span>{language === 'ar' ? '1. الصوت والتنبيهات' : '1. Sounds & Alerts'}</span>
             </button>
             <button
               onClick={() => setActiveStep(2)}
-              className={`py-4 border-b-2 transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              className={`py-3.5 border-b-2 transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 activeStep === 2 
-                  ? 'border-yellow text-yellow-600 font-black bg-white shadow-xs' 
+                  ? 'border-orange-600 text-orange-600 font-extrabold bg-white' 
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Smartphone className="w-4 h-4 shrink-0" />
-              <span>{language === 'ar' ? '٢. تثبيت المنيو على الشاشة' : '2. Pin to Screen'}</span>
+              <Smartphone className="w-4 h-4" />
+              <span>{language === 'ar' ? '2. التثبيت على الشاشة' : '2. Pin to Screen'}</span>
             </button>
           </div>
 
           {/* Modal Content Scroll Area */}
-          <div className="p-6 md:p-7 overflow-y-auto space-y-6 flex-1 text-slate-700 bg-[#FCFCFB]">
+          <div className="p-6 overflow-y-auto space-y-6 flex-1 text-slate-700">
             
             {activeStep === 1 && (
               <motion.div 
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="space-y-6 text-start"
+                className="space-y-5"
               >
-                {/* Brand Banner Card */}
-                <div className="bg-amber-500/10 border border-amber-500/15 p-4 rounded-3xl flex items-start gap-3.5">
-                  <div className="bg-yellow p-2.5 text-black rounded-2xl shrink-0 shadow-xs">
-                    <UtensilsCrossed className="w-5 h-5" />
+                <div className="bg-slate-50 p-4 border border-slate-200/50 rounded-2xl flex items-start gap-4">
+                  <div className="bg-amber-100 p-2 text-amber-700 rounded-xl shrink-0">
+                    <UtensilsCrossed className="w-5 h-5 animate-pulse" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-sm font-black text-neutral-900">
-                      {language === 'ar' ? 'تابع استواء لحومك الطازجة بكل ثقة! 🍖' : 'Follow your premium barbecue live!'}
+                    <h4 className="text-sm font-black text-slate-800">
+                      {language === 'ar' ? 'تابع طلبك الطازج بكل ثقة 🍗' : 'Track your fresh feast with ease'}
                     </h4>
-                    <p className="text-[11px] md:text-xs text-neutral-600 leading-relaxed font-medium">
+                    <p className="text-xs text-slate-500 leading-relaxed">
                       {language === 'ar' 
-                        ? 'لكي لا يفوتك أي تحديث بخصوص طلبك، نرجو منك تفعيل الإشعارات وتنبيهات الصوت الفورية لنتمكن من إشعارك فوراً بنغمة مميزة عند بدء تحضير طلبك، أو عندما ينضج على جمر الغضا ويكون جاهزاً للاستلام!'
-                        : 'To stay fully updated with your order state, please authorize alerts. We will chime your browser when your order is placed, cooking, or perfectly ready for dine-in/pickup.'}
+                        ? 'لكي لا يفوتك أي تحديث بخصوص طلبك، نرجو منك الموافقة على منح إذن الإشعارات لتصلك نغمات التنبيه الرائعة فوراً عند البدء في شواء وتحضير لحومك الطازجة أو خروجها مع دليفري التوصيل!'
+                        : 'To stay updated about your order status, please enable web notifications to hear delightful auditory chime alerts when preparing your meat or when arriving at your table/home.'}
                     </p>
                   </div>
                 </div>
 
                 {/* Notification Status Block */}
-                <div className="bg-white border border-black/5 p-5 rounded-3xl space-y-5 shadow-xs">
-                  <div className="flex justify-between items-center bg-neutral-50 p-3.5 rounded-2xl border border-black/5">
-                    <span className="text-xs font-bold text-neutral-500">{language === 'ar' ? 'حالة التفعيل الحالية بمتصفحك:' : 'Browser permission state:'}</span>
-                    <span className={`text-[10px] md:text-xs font-black uppercase px-3 py-1 rounded-full ${
+                <div className="bg-slate-50 border border-slate-100 p-5 rounded-3xl space-y-4">
+                  <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200/50">
+                    <span className="text-xs font-bold text-slate-500">{language === 'ar' ? 'حالة الإذن الحالي للمتصفح:' : 'Browser permission state:'}</span>
+                    <span className={`text-xs font-black uppercase px-2.5 py-1 rounded-full ${
                       notificationPermission === 'granted' 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-500/10'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                         : notificationPermission === 'denied' 
-                        ? 'bg-rose-50 text-rose-600 border border-rose-500/10'
-                        : 'bg-amber-50 text-amber-700 border border-amber-500/10'
+                        ? 'bg-red-50 text-red-600 border border-red-100'
+                        : 'bg-amber-50 text-amber-700 border border-amber-100'
                     }`}>
-                      {notificationPermission === 'granted' && (language === 'ar' ? 'مفعّلة ونشطة ✅' : 'Active & Connected ✅')}
-                      {notificationPermission === 'denied' && (language === 'ar' ? 'محجوبة 🚫' : 'Blocked 🚫')}
-                      {notificationPermission === 'default' && (language === 'ar' ? 'في انتظار تفعيلك ⏳' : 'Not Activated Yet ⏳')}
+                      {notificationPermission === 'granted' && (language === 'ar' ? 'مفعّلة ومتصلة بنجاح ✅' : 'Granted ✅')}
+                      {notificationPermission === 'denied' && (language === 'ar' ? 'محجوبة للأسف 🚫' : 'Blocked 🚫')}
+                      {notificationPermission === 'default' && (language === 'ar' ? 'في انتظار تفعيلك ⏳' : 'Pending ⏳')}
                     </span>
                   </div>
 
                   {notificationPermission !== 'granted' ? (
-                    <div className="space-y-3">
-                      {/* Highly visual glowing yellow interactive button */}
-                      <button
-                        type="button"
-                        onClick={handleEnableNotifications}
-                        className="w-full flex items-center justify-center gap-3 py-4 px-5 bg-yellow text-black font-black rounded-2xl text-xs md:text-sm uppercase cursor-pointer transition-all hover:bg-yellow/90 hover:scale-[1.01] shadow-md active:scale-[0.98] ring-4 ring-yellow/30 animate-pulse border border-yellow/20"
-                      >
-                        <Bell className="w-5 h-5 shrink-0 animate-bounce text-black" />
-                        <span className="tracking-wide">
-                          {language === 'ar' 
-                            ? 'اضغط هنا لتفعيل التنبيهات الصوتية ونغمة الطلب' 
-                            : 'CLICK HERE TO ACTIVATE ORDER SOUNDS & ALERTS'}
-                        </span>
-                      </button>
-                      <p className="text-[10px] text-neutral-400 text-center font-medium leading-normal">
+                    <button
+                      type="button"
+                      onClick={handleEnableNotifications}
+                      className="w-full flex items-center justify-center gap-2.5 py-3.5 px-4 bg-orange-650 hover:bg-orange-700 text-white font-extrabold rounded-2xl text-xs uppercase tracking-wide cursor-pointer transition-all shadow-md active:scale-[0.98]"
+                    >
+                      <Bell className="w-4 h-4 shrink-0 animate-bounce" />
+                      <span>
                         {language === 'ar' 
-                          ? '💡 بعد الضغط على الزر أعلاه، يرجى النقر على "سماح" أو "Allow" إذا ظهرت لك نافذة المتصفح لتأكيد الإذن.' 
-                          : '💡 After clicking, make sure to tap "Allow" in your browser pop-up prompt if requested.'}
-                      </p>
-                    </div>
+                          ? '🔔 اضغط هنا لتفعيل التنبيهات والإشعارات بالنغمة' 
+                          : '🔔 Opt-in to receive premium notifications & melodies'}
+                      </span>
+                    </button>
                   ) : (
-                    <div className="space-y-3">
-                      <div className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl text-xs font-semibold flex items-center gap-2.5 border border-emerald-100">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                        <div className="text-start">
-                          <span className="block font-black">{language === 'ar' ? 'تهانينا! التنبيهات الصوتية مفعّلة بنجاح' : 'Order Alerts Active & Verified!'}</span>
-                          <span className="text-[10px] text-emerald-700/80">{language === 'ar' ? 'جهازك متصل الآن لاستلام نغمة تحضير واستلام المشويات.' : 'Your device is fully configured to receive live BBQ status chimes.'}</span>
-                        </div>
+                    <div className="space-y-2">
+                      <div className="p-3 bg-emerald-50/50 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2 border border-emerald-100">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>{language === 'ar' ? 'إذن الإشعارات مفعّل ومثبّت بنجاح على هذا المتصفح!' : 'Notification authorization validated!'}</span>
                       </div>
                       
                       <button
                         type="button"
                         onClick={handleTestSoundOnly}
-                        className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-neutral-900 hover:bg-black text-yellow font-black rounded-2xl text-xs cursor-pointer transition-all border border-neutral-850 shadow-xs"
+                        className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-[11px] cursor-pointer transition-all border border-slate-250/20"
                       >
-                        <Volume2 className="w-4 h-4 text-yellow shrink-0 animate-pulse" />
+                        <Volume2 className="w-4 h-4 text-orange-600 shrink-0" />
                         <span>
                           {language === 'ar'
-                            ? 'اختبار جرس استلام الطلب الفوري (تشغيل نغمة تجريبية)'
-                            : 'Test Custom Kitchen Chime (Play Demo Sound)'}
+                            ? 'إعادة تشغيل نغمة وجرس التنبيه (اختبار الصوت)'
+                            : 'Replay audio chime (Test audio channel)'}
                         </span>
                       </button>
                     </div>
                   )}
 
                   {testChimePlayed && (
-                    <p className="text-xs text-emerald-600 text-center font-bold animate-pulse">
-                      {language === 'ar' ? '🎶 تم تشغيل جرس شواء "المطبخ" بنجاح! بالهناء والشفاء.' : '🎶 Grill kitchen chime sound synthesized successfully!'}
+                    <p className="text-[10px] text-emerald-600 text-center font-semibold animate-pulse">
+                      {language === 'ar' ? '🎶 تم تشغيل جرس "كابتن المطبخ" بنجاح، هل استمعت إليه؟' : '🎶 Kitchen captain chime synthesized successfully!'}
                     </p>
                   )}
                 </div>
@@ -292,106 +285,96 @@ export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, 
               <motion.div 
                 initial={{ opacity: 0, x: 10 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="space-y-6 text-start"
+                className="space-y-5"
               >
-                {/* Brand Banner Card */}
-                <div className="bg-amber-500/10 border border-amber-500/15 p-4 rounded-3xl flex items-start gap-3.5">
-                  <div className="bg-yellow p-2.5 text-black rounded-2xl shrink-0 shadow-xs">
-                    <Smartphone className="w-5 h-5" />
+                <div className="bg-slate-50 p-4 border border-slate-200/50 rounded-2xl flex items-start gap-4">
+                  <div className="bg-orange-100 p-2 text-orange-700 rounded-xl shrink-0">
+                    <Smartphone className="w-5 h-5 animate-pulse" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-sm font-black text-neutral-900">
-                      {language === 'ar' ? 'تثبيت تطبيق رحلة شواء على شاشتك 📱' : 'Pin Rehla App to your phone homescreen!'}
+                    <h4 className="text-sm font-black text-slate-800">
+                      {language === 'ar' ? 'تثبيت "بروشور المنيو والطلب" بشاشتك 📱' : 'Pin Rehla menu for direct instant taps'}
                     </h4>
-                    <p className="text-[11px] md:text-xs text-neutral-600 leading-relaxed font-medium">
+                    <p className="text-xs text-slate-500 leading-relaxed">
                       {language === 'ar' 
-                        ? 'احصل على تطبيق متكامل بأيقونة فاخرة مثبتة دائماً على شاشتك الرئيسية! تصفّح المنيو، وتتبع واستلم طلبك بضغطة زر واحدة دون حاجة لكتابة الرابط في كل مرة.'
-                        : 'Get a full-screen smart app experience by pinning Rehla BBQ directly to your device. Access the menu, track steps, and receive orders with a single tap.'}
+                        ? 'تجاوز حدود المتصفح المزدحم! احصل على تطبيق كامل أيقونته موجودة دائماً على شاشتك الرئيسية لتصل للمطعم بلمسة واحدة وتقوم بالاستعراض والطلب الفوري دون حاجة لكتابة الرابط مجدداً.'
+                        : 'Transform your web browser into an immersive, standalone app icon on your device launcher! Enjoy rapid layouts without address bar controls.'}
                     </p>
                   </div>
                 </div>
 
                 {isAlreadyInstalled ? (
-                  <div className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl text-xs font-semibold flex items-center gap-2 border border-emerald-100">
+                  <div className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl text-xs font-semibold flex items-center gap-2 border border-emerald-100/70">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                     <div className="text-start">
-                      <span className="block font-black">{language === 'ar' ? 'رائع! أنت تستخدم التطبيق المثبت حالياً' : 'Awesome! Standalone App Installed'}</span>
-                      <span className="text-[10px] text-emerald-700/80">{language === 'ar' ? 'أنت تستمتع حالياً بتجربة التطبيق الكاملة والخالية من شريط المتصفح.' : 'You are currently enjoying the fully integrated standalone layout.'}</span>
+                      <span className="block font-black">{language === 'ar' ? 'رائع! التطبيق مثبّت حالياً لديك' : 'Excellent! Rehla BBQ is already installed'}</span>
+                      <span className="text-[10px] text-emerald-700/80">{language === 'ar' ? 'أنت تستخدم التطبيق الآن كبرنامج مستقل بالكامل.' : 'You are currently browsing the standalone layout.'}</span>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {/* Device Custom Guides */}
                     {isIOS ? (
-                      /* iOS Safari Add to Home Screen Instructions */
-                      <div className="bg-white border border-black/5 p-5 rounded-3xl space-y-4 shadow-xs">
-                        <span className="text-xs font-black text-neutral-900 flex items-center gap-2 justify-start border-b border-black/5 pb-2.5">
-                          <AlertCircle className="w-4 h-4 text-amber-500" />
-                          {language === 'ar' ? 'خطوات تثبيت التطبيق على الـ iPhone والـ iPad:' : 'How to install on iPhone or iPad:'}
+                      /* iOS Safari Add to Home Screen Instructions (Manual approach needed for iOS devices) */
+                      <div className="bg-amber-50/50 border border-amber-200/50 p-5 rounded-3xl space-y-3.5">
+                        <span className="text-xs font-black text-amber-800 flex items-center gap-1.5 justify-start">
+                          <AlertCircle className="w-4 h-4" />
+                          {language === 'ar' ? 'خطوات التثبيت على أجهزة iPhone / iPad:' : 'Installation guide for iPhone & iPad:'}
                         </span>
                         
-                        <div className="space-y-2.5 text-xs text-neutral-700 leading-relaxed font-medium">
-                          <div className="flex items-center gap-3 bg-neutral-50 p-3 rounded-xl border border-black/5">
-                            <span className="bg-yellow text-black font-black w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0">١</span>
+                        <div className="space-y-2 text-xs text-amber-900 leading-relaxed">
+                          <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-amber-200/10 shadow-xs">
+                            <span className="bg-amber-100 text-amber-800 font-extrabold w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0">١</span>
                             <span className="flex items-center gap-1.5 flex-wrap">
-                              {language === 'ar' ? 'انقر على زر المشاركة' : 'Tap on the Share icon'}
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white rounded border border-black/10 font-black text-[10px] text-neutral-800">
-                                <Share className="w-3.5 h-3.5 text-blue-600" />
+                              {language === 'ar' ? 'اضغط على زر المشاركة' : 'Tap on the Share / Utility button'}
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-neutral-100 rounded border border-neutral-300 font-black text-[10px] text-neutral-800">
+                                <Share className="w-3.5 h-3.5 text-blue-650" />
                               </span>
-                              {language === 'ar' ? 'في أسفل شاشة متصفح Safari.' : 'at the bottom toolbar in Safari.'}
+                              {language === 'ar' ? 'بأسفل شاشة متصفح Safari بـ iPhone.' : 'in your mobile Safari browser panel.'}
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-3 bg-neutral-50 p-3 rounded-xl border border-black/5">
-                            <span className="bg-yellow text-black font-black w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0">٢</span>
+                          <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-amber-200/10 shadow-xs">
+                            <span className="bg-amber-100 text-amber-800 font-extrabold w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0">٢</span>
                             <span className="flex items-center gap-1.5 flex-wrap">
-                              {language === 'ar' ? 'اسحب القائمة للأعلى ثم اختر "إضافة إلى الصفحة الرئيسية"' : 'Scroll and select "Add to Home Screen"'}
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white rounded border border-black/10 font-black text-[10px] text-neutral-800">
-                                <PlusSquare className="w-3.5 h-3.5 text-neutral-700" />
+                              {language === 'ar' ? 'اسحب القائمة للأعلى ثم اختر إضافة للشاشة الرئيسية' : 'Scroll down and choose "Add to Home Screen"'}
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-neutral-100 rounded border border-neutral-300 font-black text-[10px] text-neutral-800">
+                                <PlusSquare className="w-3.5 h-3.5" />
                               </span>
                             </span>
                           </div>
                           
-                          <div className="flex items-center gap-3 bg-neutral-50 p-3 rounded-xl border border-black/5">
-                            <span className="bg-yellow text-black font-black w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0">٣</span>
-                            <span>{language === 'ar' ? 'انقر على "إضافة" بالزاوية العلوية لتأكيد التثبيت على شاشتك.' : 'Tap "Add" at the top right header to confirm.'}</span>
+                          <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-amber-200/10 shadow-xs">
+                            <span className="bg-amber-100 text-amber-800 font-extrabold w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0">٣</span>
+                            <span>{language === 'ar' ? 'انقر على "إضافة" بالزاوية العلوية لتظهر أيقونة التطبيق الكلاسيكية.' : 'Tap "Add" at the top right header to pin Rehla BBQ icon.'}</span>
                           </div>
                         </div>
                       </div>
                     ) : (
                       /* Android, Chrome, Edge automated prompt trigger */
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         {deferredPrompt ? (
                           <button
                             type="button"
                             onClick={handleInstallApp}
-                            className="w-full flex items-center justify-center gap-2.5 py-4 px-5 bg-yellow text-black font-black rounded-2xl text-xs md:text-sm uppercase cursor-pointer transition-all hover:bg-yellow/90 hover:scale-[1.01] shadow-md active:scale-[0.98]"
+                            className="w-full flex items-center justify-center gap-2 py-4 px-4 bg-emerald-650 hover:bg-emerald-700 text-white font-extrabold rounded-2xl text-xs uppercase tracking-wide cursor-pointer transition-all shadow-md active:scale-[0.98]"
                           >
-                            <Smartphone className="w-5 h-5 shrink-0 animate-pulse text-black" />
+                            <Smartphone className="w-4 h-4 shrink-0 animate-pulse" />
                             <span>
                               {language === 'ar' 
-                                ? 'تثبيت التطبيق فوراً على الشاشة الرئيسية' 
-                                : 'Install Rehla App to Home Screen instantly'}
+                                ? '📱 اضغط هنا للتثبيت الفوري على الشاشة الرئيسية' 
+                                : '📱 Install Rehla App to Home Screen instantly'}
                             </span>
                           </button>
                         ) : (
-                          <div className="bg-white border border-black/5 p-5 rounded-3xl space-y-3 shadow-xs">
-                            <span className="font-black text-neutral-900 block text-start text-xs border-b border-black/5 pb-2">
-                              {language === 'ar' ? '💡 لتثبيت تطبيق المنيو بشاشتك الرئيسية:' : '💡 Pin Web App to your desktop/android launcher:'}
+                          <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl text-xs space-y-2.5">
+                            <span className="font-extrabold text-slate-800 block text-start">
+                              {language === 'ar' ? '💡 لتنزيل وتثبيت المنيو كأيقونة على شاشتك الرئيسية:' : '💡 To download and add web app shortcut to your home screen:'}
                             </span>
-                            <div className="space-y-2 text-xs text-neutral-600 leading-relaxed font-semibold">
-                              <div className="flex items-center gap-2">
-                                <span className="w-4 h-4 rounded-full bg-neutral-100 flex items-center justify-center text-[10px] text-neutral-800 border border-black/5 font-mono">1</span>
-                                <span>{language === 'ar' ? 'انقر على خيارات المتصفح (⋮) أو (⚙️) بالأعلى.' : 'Click on browser settings or menu button (⋮).'}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="w-4 h-4 rounded-full bg-neutral-100 flex items-center justify-center text-[10px] text-neutral-800 border border-black/5 font-mono">2</span>
-                                <span>{language === 'ar' ? 'اختر "تثبيت التطبيق" أو "إضافة إلى الشاشة الرئيسية".' : 'Select "Install app" or "Add to Home Screen".'}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="w-4 h-4 rounded-full bg-neutral-100 flex items-center justify-center text-[10px] text-neutral-800 border border-black/5 font-mono">3</span>
-                                <span>{language === 'ar' ? 'ستظهر لك أيقونة المشويات الفاخرة على واجهتك فوراً!' : 'Enjoy the app right from your home launcher!'}</span>
-                              </div>
+                            <div className="space-y-1.5 text-slate-600 leading-relaxed font-semibold">
+                              <div>{language === 'ar' ? '١. انقر على زر ثلاثة نقاط (⋮) بمتصفحك الحالي بالزاوية العليا.' : '1. Click on the 3-dot (⋮) browser configurations menu.'}</div>
+                              <div>{language === 'ar' ? '٢. اختر "تثبيت التطبيق" أو "إضافة إلى الشاشة الرئيسية".' : '2. Select "Install app" or "Add to Home Screen".'}</div>
+                              <div>{language === 'ar' ? '٣. ستظهر أيقونة الشواء الفاخرة على واجهتك فوراً!' : '3. A luxury Rehla BBQ icon will pin to your launcher!'}</div>
                             </div>
                           </div>
                         )}
@@ -404,21 +387,21 @@ export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, 
 
           </div>
 
-          {/* Modal Footer Controls styled with brand colors */}
-          <div className="p-5 md:p-6 bg-neutral-50 border-t border-black/5 flex gap-3 justify-end items-center font-bold text-xs">
+          {/* Modal Footer Controls */}
+          <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end items-center">
             {activeStep === 1 ? (
               <button
                 type="button"
                 onClick={() => setActiveStep(2)}
-                className="px-5 py-3 bg-neutral-900 hover:bg-black text-yellow font-black rounded-xl cursor-pointer transition-all hover:scale-[1.01]"
+                className="px-5 py-3 bg-orange-600 hover:bg-orange-700 text-white font-extrabold rounded-xl text-xs cursor-pointer transition-all"
               >
-                {language === 'ar' ? 'الخطوة التالية (التثبيت) ←' : 'Next Step (PWA Pin) →'}
+                {language === 'ar' ? 'الخطوة التالية (تثبيت الأيقونة) ←' : 'Next Step (Pin Screen) →'}
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => setActiveStep(1)}
-                className="px-5 py-3 bg-white border border-black/10 text-neutral-600 hover:text-neutral-800 rounded-xl cursor-pointer transition-all"
+                className="px-5 py-3 bg-white border border-slate-200 text-slate-600 hover:text-slate-800 font-bold rounded-xl text-xs cursor-pointer transition-all"
               >
                 {language === 'ar' ? 'السابق' : 'Previous'}
               </button>
@@ -426,9 +409,9 @@ export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, 
 
             <button
               onClick={onClose}
-              className="px-5 py-3 bg-yellow hover:bg-yellow/90 text-black font-black rounded-xl cursor-pointer transition-all hover:scale-[1.01] shadow-xs"
+              className="px-5 py-3 bg-stone-900 hover:bg-black text-white font-extrabold rounded-xl text-xs cursor-pointer transition-all"
             >
-              {language === 'ar' ? 'تصفح المنيو والطلب الآن' : 'Browse Menu & Place Order'}
+              {language === 'ar' ? 'تصفح المنيو والبدء بالطلب' : 'Browse Menu & Place Orders'}
             </button>
           </div>
 

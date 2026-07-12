@@ -14,8 +14,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && 
-        (request.auth.token.email == "yasseralayub@gmail.com" || 
-         request.auth.token.email.lower() == "yasseralayub@gmail.com");
+        request.auth.token.email == "yasseralayub@gmail.com";
     }
 
     function incoming() {
@@ -27,7 +26,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     // Menu Items Rules
@@ -50,11 +49,8 @@ service cloud.firestore {
 
     // Orders Rules
     match /orders/{orderId} {
-      // Clients can browse their own single order to track its live preparation status
-      allow get: if true;
-      
-      // Only administrators can list all orders or search across them
-      allow list: if isAdmin();
+      // Anyone can read orders to allow real-time driver dispatcher syncing and guest tracking
+      allow read: if true;
       
       // Anyone (guest checkouts) can place an order
       allow create: if isValidId(orderId) 
@@ -62,22 +58,60 @@ service cloud.firestore {
         && incoming().customerName is string && incoming().customerName.size() <= 100
         && incoming().customerPhone is string && incoming().customerPhone.size() <= 30
         && incoming().tableOrDelivery in ['table', 'takeaway', 'delivery']
-        && incoming().status in ['pending', 'searching_driver', 'preparing', 'ready', 'driver_picked_up', 'delivering', 'delivered', 'cancelled']
         && incoming().paymentMethod in ['cod', 'applepay', 'mada', 'transfer']
         && incoming().subtotal is number && incoming().subtotal >= 0
         && incoming().tax is number && incoming().tax >= 0
         && incoming().total is number && incoming().total >= 0;
         
-      // Only administrators can update or delete orders
-      allow update: if isAdmin();
+      // Only administrators can update or delete orders, OR guest can transition status, OR driver can accept/update/broadcast delivery order
+      allow update: if isAdmin() || (
+        existing().status == 'pending' &&
+        incoming().status in ['preparing', 'cancelled'] &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'whatsappSent'])
+      ) || (
+        // Driver self-assignment or broadcast assignment
+        existing().tableOrDelivery == 'delivery' &&
+        (!('driverId' in existing()) || existing().driverId == null || existing().driverId == 'broadcast') &&
+        'driverId' in incoming() && incoming().driverId != null &&
+        incoming().status == 'on_the_way' &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['driverId', 'driverName', 'driverPhone', 'status'])
+      ) || (
+        // Driver updating their assigned order status
+        existing().tableOrDelivery == 'delivery' &&
+        'driverId' in existing() && existing().driverId != null &&
+        incoming().driverId == existing().driverId &&
+        incoming().status in ['on_the_way', 'delivered'] &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+      );
       
-      allow delete: if isAdmin();
+      // Allow administrators to delete any order, or allow assigned drivers to delete completed deliveries
+      allow delete: if isAdmin() || (
+        existing().tableOrDelivery == 'delivery' &&
+        'driverId' in existing() && existing().driverId != null
+      );
     }
 
     // Drivers Rules
     match /drivers/{driverId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'suspendedUntil', 'completedCount', 'totalEarnings']) &&
+        incoming().status in ['available', 'busy', 'suspended']
+      );
+    }
+
+    // Pending Drivers Rules
+    match /pending_drivers/{pendingId} {
+      allow read: if isAdmin();
+      allow create: if isValidId(pendingId)
+        && incoming().keys().hasAll(['name', 'phone', 'carRegistrationImg', 'status', 'createdAt'])
+        && incoming().name is string && incoming().name.size() <= 200
+        && incoming().phone is string && incoming().phone.size() <= 100
+        && incoming().carRegistrationImg is string
+        && incoming().status == 'pending'
+        && incoming().createdAt is string;
+      allow update, delete: if isAdmin();
     }
 
     // Admins List

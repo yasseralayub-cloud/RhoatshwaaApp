@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { MenuItem, Order, Driver, Promotion } from '../types';
+import { MenuItem, Order, Driver, PendingDriver } from '../types';
 import { useLanguage } from './LanguageContext';
-import { playOrderChime } from './AudioAlert';
+import { playOrderChime, startContinuousAlarm, stopContinuousAlarm } from './AudioAlert';
 import { generateZatcaQr } from '../utils/time';
 import {
   collection,
@@ -15,7 +15,7 @@ import {
   query,
   orderBy
 } from 'firebase/firestore';
-import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { INITIAL_MENU_ITEMS, CATEGORIES } from '../initialData';
 import {
@@ -48,17 +48,15 @@ import {
   Settings,
   Landmark,
   MessageSquare,
+  Truck,
   Upload,
   X,
   AlertTriangle,
   Info,
-  MapPin,
-  User,
-  Navigation,
-  CheckCircle2,
-  Phone,
-  ToggleLeft,
-  ToggleRight
+  Lock,
+  Mail,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import {
   BarChart,
@@ -85,6 +83,41 @@ interface AdminPanelProps {
   onHideAdminTab?: () => void;
 }
 
+const PendingCountdown = ({ createdAt, onTimeout }: { createdAt: string; onTimeout?: () => void }) => {
+  const [timeLeft, setTimeLeft] = useState(60);
+
+  useEffect(() => {
+    const calculateTime = () => {
+      const elapsed = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
+      const remaining = Math.max(0, 60 - elapsed);
+      setTimeLeft(remaining);
+      if (remaining === 0 && onTimeout) {
+        onTimeout();
+      }
+    };
+
+    calculateTime();
+    const interval = setInterval(calculateTime, 1000);
+    return () => clearInterval(interval);
+  }, [createdAt]);
+
+  if (timeLeft > 0) {
+    return (
+      <div className="bg-amber-500/10 text-amber-700 text-[11px] font-bold px-2.5 py-1.5 rounded-xl border border-amber-500/20 flex items-center gap-1.5 animate-pulse mt-1.5 justify-center md:justify-start">
+        <span className="text-xs">⏳</span>
+        <span>متبقي للتعديل/الإلغاء: {timeLeft} ثانية</span>
+      </div>
+    );
+  } else {
+    return (
+      <div className="bg-red-500/10 text-red-700 text-[11px] font-extrabold px-2.5 py-1.5 rounded-xl border border-red-500/20 flex items-center gap-1.5 mt-1.5 justify-center md:justify-start">
+        <span className="text-xs">🚨</span>
+        <span>انتهت مهلة الـ 60 ثانية! التنبيه مستمر..</span>
+      </div>
+    );
+  }
+};
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
   onMenuUpdate, 
   menuItems,
@@ -101,10 +134,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isSimulated, setIsSimulated] = useState(false);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
 
+  // Email & password sign-in state
+  const [loginEmail, setLoginEmail] = useState('yasseralayub@gmail.com');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
   // Firestore status
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
-  const [ordersError, setOrdersError] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
@@ -194,6 +233,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [setTaxMethod, setSetTaxMethod] = useState<'inclusive' | 'exclusive'>('inclusive');
   const [setWorkingHoursStart, setSetWorkingHoursStart] = useState('17:00');
   const [setWorkingHoursEnd, setSetWorkingHoursEnd] = useState('02:00');
+  const [setDeliveryFee, setSetDeliveryFee] = useState(15);
 
   // Bank transfer state variables
   const [bankNameAr, setBankNameAr] = useState('مصرف الراجحي');
@@ -203,12 +243,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [bankAccountNumber, setBankAccountNumber] = useState('432608010007890');
   const [bankIban, setBankIban] = useState('SA8380000432608010007890');
   const [bankQrUrl, setBankQrUrl] = useState('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=432608010007890');
-
-  // Payment gateway configuration states
-  const [paymentGatewayEnabled, setPaymentGatewayEnabled] = useState(false);
-  const [paymentGatewayMode, setPaymentGatewayMode] = useState<'live' | 'simulated'>('simulated');
-  const [tapSecretKey, setTapSecretKey] = useState('');
-  const [tapPublishableKey, setTapPublishableKey] = useState('');
 
   // Print & Invoice Settings State
   const [printingOrder, setPrintingOrder] = useState<import('../types').Order | null>(null);
@@ -235,15 +269,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [clearingOrders, setClearingOrders] = useState(false);
   const [isDraggingQr, setIsDraggingQr] = useState(false);
 
-  // Delivery Drivers state
+  // Driver Management States
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [newDriverName, setNewDriverName] = useState('');
-  const [newDriverPhone, setNewDriverPhone] = useState('');
-  const [savingDriver, setSavingDriver] = useState(false);
-  const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
-  const [editingDriverName, setEditingDriverName] = useState('');
-  const [editingDriverPhone, setEditingDriverPhone] = useState('');
-  const [savingDriverEdit, setSavingDriverEdit] = useState(false);
+  const [loadingDrivers, setLoadingDrivers] = useState(false);
+  const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
+  const [updatingDriverId, setUpdatingDriverId] = useState<string | null>(null);
+  const [pendingDrivers, setPendingDrivers] = useState<PendingDriver[]>([]);
+  const [loadingPendingDrivers, setLoadingPendingDrivers] = useState(false);
+  const [selectedDocPreview, setSelectedDocPreview] = useState<string | null>(null);
 
   const previousOrdersCountRef = useRef<number>(0);
 
@@ -257,17 +291,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           setIsAdmin(true);
           setIsSimulated(false);
         } else {
-          // Fallback to simulator state with warning
           setIsAdmin(false);
-          setIsSimulated(true);
-          alert(t('unauthorizedAdmin'));
+          setIsSimulated(false);
+          setLoginError(language === 'ar' 
+            ? 'عذراً! هذا البريد الإلكتروني غير مصرح له كمسؤول لمشاهدة الطلبات الحية.' 
+            : 'Unauthorized! This email is not authorized as an administrator.');
+          auth.signOut();
         }
       } else {
         setIsAdmin(false);
+        setIsSimulated(false);
       }
     });
     return () => unsub();
-  }, []);
+  }, [language]);
 
   // Sync activePromo state inputs
   useEffect(() => {
@@ -314,6 +351,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSetTaxMethod(businessSettings.taxMethod || 'inclusive');
       setSetWorkingHoursStart(businessSettings.workingHoursStart || '17:00');
       setSetWorkingHoursEnd(businessSettings.workingHoursEnd || '02:00');
+      setSetDeliveryFee(businessSettings.deliveryFee ?? 15);
       setSetReceiptWidth(businessSettings.receiptWidth || '80mm');
       
       // Sync bank settings
@@ -324,13 +362,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setBankAccountNumber(businessSettings.bankAccountNumber || '432608010007890');
       setBankIban(businessSettings.bankIban || 'SA8380000432608010007890');
       setBankQrUrl(businessSettings.bankQrUrl || 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=432608010007890');
-      
-      // Sync payment gateway settings
-      setPaymentGatewayEnabled(businessSettings.paymentGatewayEnabled ?? false);
-      setPaymentGatewayMode(businessSettings.paymentGatewayMode || 'simulated');
-      setTapSecretKey(businessSettings.tapSecretKey || '');
-      setTapPublishableKey(businessSettings.tapPublishableKey || '');
-
       setSetReceiptFontSize(businessSettings.receiptFontSize ?? 11);
       setSetReceiptLogoSize(businessSettings.receiptLogoSize ?? 80);
       setSetShowKitchenSlipOnPrint(businessSettings.showKitchenSlipOnPrint ?? true);
@@ -398,10 +429,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       kitchenPrinterIp: kitchenPrinterIp,
       kitchenPrinterPort: Number(kitchenPrinterPort),
       printRoutingMode: printRoutingMode,
-      paymentGatewayEnabled: paymentGatewayEnabled,
-      paymentGatewayMode: paymentGatewayMode,
-      tapSecretKey: tapSecretKey,
-      tapPublishableKey: tapPublishableKey
+      deliveryFee: Number(setDeliveryFee)
     };
 
     if (onSettingsUpdate) {
@@ -434,7 +462,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         ordersQuery,
         (snapshot) => {
           setLoadingOrders(false);
-          setOrdersError(''); // Clear previous error
           const docs: Order[] = [];
           snapshot.forEach((snap) => {
             docs.push(snap.data() as Order);
@@ -452,92 +479,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         (error) => {
           setLoadingOrders(false);
           console.error('Failed snapshot orders:', error);
-          setOrdersError(error.message);
+          try {
+            handleFirestoreError(error, OperationType.LIST, 'orders');
+          } catch (e) {
+            // Error logged to console gracefully, prevent app crash
+          }
         }
       );
     } else if (isSimulated) {
-      const loadSimulatedOrders = () => {
-        const savedOrders = localStorage.getItem('simulated_orders');
-        if (savedOrders) {
-          try {
-            const parsed = JSON.parse(savedOrders);
-            if (parsed.length > previousOrdersCountRef.current && previousOrdersCountRef.current > 0) {
-              if (soundEnabled) {
-                playOrderChime();
-              }
-            }
-            previousOrdersCountRef.current = parsed.length;
-            setOrders(parsed);
-          } catch (e) {
-            console.error('Failed to parse simulated orders:', e);
+      // Mock loading of sample orders to establish standard analytics
+      const savedOrders = localStorage.getItem('simulated_orders');
+      if (savedOrders) {
+        const parsed = JSON.parse(savedOrders);
+        setOrders(parsed);
+        previousOrdersCountRef.current = parsed.length;
+      } else {
+        const dummy: Order[] = [
+          {
+            id: 'Rehla-7001',
+            customerName: 'محمد الربيعان',
+            customerPhone: '0551029302',
+            tableOrDelivery: 'table',
+            tableNumber: '3',
+            items: [
+              { id: 'g1', name: 'Beef Kabab (4 Skewers)', nameAr: 'كباب لحم نفر 4 سيخ', price: 25, quantity: 2 },
+              { id: 'c1', name: 'Plain Arabic Coffee', nameAr: 'قهوة سادة', price: 10, quantity: 1 }
+            ],
+            subtotal: 60,
+            tax: 9,
+            total: 69,
+            paymentMethod: 'mada',
+            status: 'preparing',
+            whatsappSent: true,
+            createdAt: new Date().toISOString()
+          },
+          {
+            id: 'Rehla-7002',
+            customerName: 'محمد الربيعان',
+            customerPhone: '0502030405',
+            tableOrDelivery: 'delivery',
+            deliveryAddress: 'المربع، شارع خالد بن الوليد، مخرج 3',
+            items: [
+              { id: 's1', name: 'Sarookh Shawarma', nameAr: 'شاورما صاروخ', price: 9, quantity: 3 },
+              { id: 'd1', name: 'Cheese Beehive Bread', nameAr: 'خلية جبن', price: 10, quantity: 1 }
+            ],
+            subtotal: 37,
+            tax: 5.55,
+            total: 42.55,
+            paymentMethod: 'applepay',
+            status: 'delivered',
+            whatsappSent: true,
+            createdAt: new Date(Date.now() - 3600000).toISOString()
           }
-        } else {
-          const dummy: Order[] = [
-            {
-              id: 'Rehla-7001',
-              customerName: 'محمد الربيعان',
-              customerPhone: '0551029302',
-              tableOrDelivery: 'table',
-              tableNumber: '3',
-              items: [
-                { id: 'g1', name: 'Beef Kabab (4 Skewers)', nameAr: 'كباب لحم نفر 4 سيخ', price: 25, quantity: 2 },
-                { id: 'c1', name: 'Plain Arabic Coffee', nameAr: 'قهوة سادة', price: 10, quantity: 1 }
-              ],
-              subtotal: 60,
-              tax: 9,
-              total: 69,
-              paymentMethod: 'mada',
-              status: 'preparing',
-              whatsappSent: true,
-              createdAt: new Date().toISOString()
-            },
-            {
-              id: 'Rehla-7002',
-              customerName: 'محمد الربيعان (توصيل)',
-              customerPhone: '0502030405',
-              tableOrDelivery: 'delivery',
-              deliveryAddress: 'المربع، شارع خالد بن الوليد، مخرج 3',
-              items: [
-                { id: 's1', name: 'Sarookh Shawarma', nameAr: 'شاورما صاروخ', price: 9, quantity: 3 },
-                { id: 'd1', name: 'Cheese Beehive Bread', nameAr: 'خلية جبن', price: 10, quantity: 1 }
-              ],
-              subtotal: 37,
-              tax: 5.55,
-              total: 42.55,
-              paymentMethod: 'applepay',
-              status: 'delivered',
-              whatsappSent: true,
-              createdAt: new Date(Date.now() - 3600000).toISOString()
-            }
-          ];
-          localStorage.setItem('simulated_orders', JSON.stringify(dummy));
-          setOrders(dummy);
-          previousOrdersCountRef.current = dummy.length;
-        }
-      };
-
-      loadSimulatedOrders();
-
-      const handleStorageChange = (e: StorageEvent) => {
-        if (e.key === 'simulated_orders') {
-          loadSimulatedOrders();
-        }
-      };
-
-      const handleCustomEvent = () => {
-        loadSimulatedOrders();
-      };
-
-      window.addEventListener('storage', handleStorageChange);
-      window.addEventListener('simulated_orders_changed', handleCustomEvent);
-
-      const intervalId = setInterval(loadSimulatedOrders, 1000);
-
-      unsub = () => {
-        window.removeEventListener('storage', handleStorageChange);
-        window.removeEventListener('simulated_orders_changed', handleCustomEvent);
-        clearInterval(intervalId);
-      };
+        ];
+        localStorage.setItem('simulated_orders', JSON.stringify(dummy));
+        setOrders(dummy);
+        previousOrdersCountRef.current = dummy.length;
+      }
     }
 
     return () => unsub();
@@ -548,55 +546,229 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     let unsub = () => {};
 
     if (isAdmin) {
-      const q = query(collection(db, 'drivers'), orderBy('createdAt', 'desc'));
+      setLoadingDrivers(true);
+      const driversQuery = query(collection(db, 'drivers'), orderBy('createdAt', 'desc'));
+      
       unsub = onSnapshot(
-        q,
+        driversQuery,
         (snapshot) => {
-          const list: Driver[] = [];
+          setLoadingDrivers(false);
+          const docs: Driver[] = [];
           snapshot.forEach((snap) => {
-            list.push({ id: snap.id, ...snap.data() } as Driver);
+            docs.push(snap.data() as Driver);
           });
-          setDrivers(list);
+          setDrivers(docs);
         },
         (error) => {
+          setLoadingDrivers(false);
           console.error('Failed snapshot drivers:', error);
-          // Let's log but not throw so it doesn't break app boot on empty permissions
         }
       );
+    } else if (isSimulated) {
+      const savedDrivers = localStorage.getItem('simulated_drivers');
+      if (savedDrivers) {
+        setDrivers(JSON.parse(savedDrivers));
+      } else {
+        const initialDrivers: Driver[] = [
+          { id: 'drv-1', name: 'محمد الربيعان', phone: '0512345678', status: 'available', createdAt: new Date().toISOString() },
+          { id: 'drv-2', name: 'محمد الربيعان', phone: '0598765432', status: 'busy', createdAt: new Date().toISOString() },
+        ];
+        localStorage.setItem('simulated_drivers', JSON.stringify(initialDrivers));
+        setDrivers(initialDrivers);
+      }
     } else {
-      // Local/simulated session drivers
-      const loadSimulatedDrivers = () => {
-        const saved = localStorage.getItem('simulated_drivers');
-        if (saved) {
-          try {
-            setDrivers(JSON.parse(saved));
-          } catch (e) {
-            console.error('Failed to parse simulated drivers:', e);
-          }
-        } else {
-          const dummy: Driver[] = [
-            { id: 'drv-1', name: 'أحمد التميمي', phone: '0501234567', isAvailable: true, createdAt: new Date().toISOString() },
-            { id: 'drv-2', name: 'ياسر الحربي', phone: '0559876543', isAvailable: false, createdAt: new Date().toISOString() }
-          ];
-          localStorage.setItem('simulated_drivers', JSON.stringify(dummy));
-          setDrivers(dummy);
-        }
-      };
-      
-      loadSimulatedDrivers();
-      const intervalId = setInterval(loadSimulatedDrivers, 3000);
-      unsub = () => clearInterval(intervalId);
+      setDrivers([]);
     }
 
     return () => unsub();
   }, [isAdmin, isSimulated]);
 
+  // Fetch pending drivers from Firestore
+  useEffect(() => {
+    let unsub = () => {};
+
+    if (isAdmin) {
+      setLoadingPendingDrivers(true);
+      const pendingQuery = query(collection(db, 'pending_drivers'), orderBy('createdAt', 'desc'));
+      
+      unsub = onSnapshot(
+        pendingQuery,
+        (snapshot) => {
+          setLoadingPendingDrivers(false);
+          const docs: PendingDriver[] = [];
+          snapshot.forEach((snap) => {
+            docs.push({ id: snap.id, ...snap.data() } as PendingDriver);
+          });
+          setPendingDrivers(docs);
+        },
+        (error) => {
+          setLoadingPendingDrivers(false);
+          console.error('Failed snapshot pending drivers:', error);
+        }
+      );
+    } else {
+      setPendingDrivers([]);
+    }
+
+    return () => unsub();
+  }, [isAdmin]);
+
+  // Continuous alarm checker for pending orders whose 60-second customer grace period has ended
+  useEffect(() => {
+    if (!soundEnabled) {
+      stopContinuousAlarm();
+      return;
+    }
+
+    const checkAndTriggerAlarm = () => {
+      const now = Date.now();
+      const needsAlarm = orders.some((ord) => {
+        if (ord.status === 'pending') {
+          const createdAtTime = new Date(ord.createdAt).getTime();
+          const elapsedMs = now - createdAtTime;
+          // Trigger continuous alarm only after 60 seconds (60000ms) has expired
+          return elapsedMs >= 60000;
+        }
+        return false;
+      });
+
+      if (needsAlarm) {
+        startContinuousAlarm();
+      } else {
+        stopContinuousAlarm();
+      }
+    };
+
+    // Run the check immediately and then every 1 second
+    checkAndTriggerAlarm();
+    const interval = setInterval(checkAndTriggerAlarm, 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [orders, soundEnabled]);
+
+  // Clean up alarm only when the AdminPanel component unmounts entirely
+  useEffect(() => {
+    return () => {
+      stopContinuousAlarm();
+    };
+  }, []);
+
+  const getNextStatus = (current: string, deliveryType: 'table' | 'takeaway' | 'delivery' | string) => {
+    if (current === 'pending') return 'received';
+    if (current === 'received') return deliveryType === 'delivery' ? 'searching_driver' : 'preparing';
+    if (current === 'searching_driver') return 'preparing';
+    if (current === 'preparing') return 'ready';
+    if (current === 'ready') return deliveryType === 'delivery' ? 'driver_picked_up' : 'delivered';
+    if (current === 'driver_picked_up') return 'on_the_way';
+    if (current === 'on_the_way') return 'delivered';
+    return null;
+  };
+
+  const getNextStatusLabelAr = (next: string) => {
+    switch (next) {
+      case 'received': return 'تأكيد واستلام الطلب ✅';
+      case 'searching_driver': return 'البحث عن مندوب توصيل 🔍';
+      case 'preparing': return 'بدء التحضير والطهي 🔥';
+      case 'ready': return 'تجهيز الطلب للتسليم 📦';
+      case 'driver_picked_up': return 'تم الاستلام بواسطة المندوب 🚴';
+      case 'on_the_way': return 'بدء خطوة التوصيل 📍';
+      case 'delivered': return 'تسليم الطلب للعميل 🎉';
+      default: return next;
+    }
+  };
+
+  const getNextStatusLabelEn = (next: string) => {
+    switch (next) {
+      case 'received': return 'Accept & Receive Order ✅';
+      case 'searching_driver': return 'Search for Driver 🔍';
+      case 'preparing': return 'Start Preparing / Cooking 🔥';
+      case 'ready': return 'Mark Ready 📦';
+      case 'driver_picked_up': return 'Mark Picked Up by Driver 🚴';
+      case 'on_the_way': return 'Start Delivery 📍';
+      case 'delivered': return 'Complete & Deliver 🎉';
+      default: return next;
+    }
+  };
+
+  const getStatusLabelAr = (status: string) => {
+    switch (status) {
+      case 'pending': return 'بانتظار التأكيد ⏳';
+      case 'received': return 'تم استلام الطلب ✅';
+      case 'searching_driver': return 'البحث عن مندوب 🔍';
+      case 'preparing': return 'جاري التجهيز والتحضير 🔥';
+      case 'ready': return 'الطلب جاهز للتسليم 📦';
+      case 'driver_picked_up': return 'استلم المندوب 🚴';
+      case 'on_the_way': return 'جاري التوصيل 📍';
+      case 'delivered': return 'تم التوصيل والتسليم 🎉';
+      case 'cancelled': return 'ملغى ❌';
+      default: return status;
+    }
+  };
+
+  const getStatusLabelEn = (status: string) => {
+    switch (status) {
+      case 'pending': return 'Pending Acceptance ⏳';
+      case 'received': return 'Order Received ✅';
+      case 'searching_driver': return 'Searching for Driver 🔍';
+      case 'preparing': return 'Preparing / Cooking 🔥';
+      case 'ready': return 'Order Ready 📦';
+      case 'driver_picked_up': return 'Picked Up by Driver 🚴';
+      case 'on_the_way': return 'On the Way 📍';
+      case 'delivered': return 'Delivered 🎉';
+      case 'cancelled': return 'Cancelled ❌';
+      default: return status;
+    }
+  };
+
   const handleGoogleLogin = async () => {
+    setLoginError('');
+    setLoginLoading(true);
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Google Sign In Error:', err);
+      let errMsg = err.message;
+      if (err.code === 'auth/popup-blocked' || err.message?.includes('popup')) {
+        errMsg = language === 'ar'
+          ? 'تم حظر نافذة تسجيل الدخول المنبثقة من قِبل المتصفح. يُرجى النقر على زر "فتح لوحة التحكم في نافذة مستقلة" بالأعلى لفتح الموقع في تبويب جديد وتفادي قيود إطار المعاينة، أو استخدم نموذج البريد الإلكتروني وكلمة المرور بالأسفل.'
+          : 'Login popup blocked by your browser. Please click the "Open Admin Panel in New Tab" button above to access the dashboard directly without iframe restrictions, or use the Email & Password form below.';
+      } else {
+        errMsg = language === 'ar'
+          ? `فشل تسجيل الدخول عبر Google: ${err.message || 'خطأ غير معروف'}`
+          : `Google Sign In failed: ${err.message || 'Unknown error'}`;
+      }
+      setLoginError(errMsg);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, loginEmail, loginPassword);
+        showNotification(language === 'ar' ? 'تم تسجيل وتعيين كلمة مرور المسؤول بنجاح!' : 'Admin account registered successfully!', 'success');
+      } else {
+        await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+        showNotification(language === 'ar' ? 'تم تسجيل الدخول بنجاح!' : 'Logged in successfully!', 'success');
+      }
+    } catch (err: any) {
+      console.error('Email Auth Error:', err);
+      let errMsg = err.message;
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        errMsg = language === 'ar'
+          ? 'خطأ في البريد الإلكتروني أو كلمة المرور. يرجى التأكد من كتابة كلمة المرور بشكل صحيح، أو تفعيل خيار "إنشاء حساب مسؤول جديد" بالأسفل لتعيين كلمة المرور.'
+          : 'Incorrect email or password. Please make sure they are correct, or check the option "Create new admin account" below to set a new password.';
+      }
+      setLoginError(errMsg);
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -614,116 +786,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleSimulateMode = () => {
     setIsSimulated(true);
     setIsAdmin(false);
-  };
-
-  // Driver Management Handlers
-  const handleAddDriver = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDriverName.trim() || !newDriverPhone.trim()) {
-      showNotification(language === 'ar' ? 'الرجاء إدخال اسم المندوب ورقم الجوال' : 'Please fill both driver name and phone fields', 'warning');
-      return;
-    }
-
-    setSavingDriver(true);
-    const driverId = 'drv-' + Date.now();
-    const newDrv: Driver = {
-      id: driverId,
-      name: newDriverName.trim(),
-      phone: newDriverPhone.trim(),
-      isAvailable: true,
-      createdAt: new Date().toISOString()
-    };
-
-    if (isAdmin) {
-      try {
-        await setDoc(doc(db, 'drivers', driverId), newDrv);
-        showNotification(language === 'ar' ? 'تمت إضافة المندوب بنجاح! 🎉' : 'Driver registered successfully!', 'success');
-        setNewDriverName('');
-        setNewDriverPhone('');
-      } catch (err) {
-        console.error('Failed to save driver:', err);
-        // Let's not crash if we get permissions error, but show notification
-        showNotification(language === 'ar' ? 'حدث خطأ في صلاحيات قاعدة البيانات عند إضافة المندوب' : 'Database permission error saving driver', 'error');
-      } finally {
-        setSavingDriver(false);
-      }
-    } else {
-      const updated = [newDrv, ...drivers];
-      localStorage.setItem('simulated_drivers', JSON.stringify(updated));
-      setDrivers(updated);
-      showNotification(language === 'ar' ? 'تمت إضافة المندوب في المحاكي بنجاح! 🎉' : 'Driver added to simulator sessions.', 'success');
-      setNewDriverName('');
-      setNewDriverPhone('');
-      setSavingDriver(false);
-    }
-  };
-
-  const handleToggleDriverStatus = async (id: string, currentAvailable: boolean) => {
-    if (isAdmin) {
-      try {
-        await updateDoc(doc(db, 'drivers', id), { isAvailable: !currentAvailable });
-        showNotification(language === 'ar' ? 'تم تحديث حالة المندوب!' : 'Driver availability status toggled!', 'success');
-      } catch (err) {
-        console.error('Failed to toggle status:', err);
-        showNotification(language === 'ar' ? 'خطأ في تحديث حالة المندوب' : 'Failed to update driver status', 'error');
-      }
-    } else {
-      const updated = drivers.map(d => d.id === id ? { ...d, isAvailable: !currentAvailable } : d);
-      localStorage.setItem('simulated_drivers', JSON.stringify(updated));
-      setDrivers(updated);
-      showNotification(language === 'ar' ? 'تم تحديث حالة المندوب!' : 'Driver availability toggled in simulator!', 'success');
-    }
-  };
-
-  const handleDeleteDriver = async (id: string) => {
-    if (isAdmin) {
-      try {
-        await deleteDoc(doc(db, 'drivers', id));
-        showNotification(language === 'ar' ? 'تم حذف المندوب بنجاح' : 'Driver deleted successfully', 'success');
-      } catch (err) {
-        console.error('Failed to delete driver:', err);
-        showNotification(language === 'ar' ? 'فشل في حذف المندوب' : 'Failed to delete driver', 'error');
-      }
-    } else {
-      const updated = drivers.filter(d => d.id !== id);
-      localStorage.setItem('simulated_drivers', JSON.stringify(updated));
-      setDrivers(updated);
-      showNotification(language === 'ar' ? 'تم حذف المندوب من المحاكي' : 'Driver removed from simulator sessions', 'success');
-    }
-  };
-
-  const handleEditDriver = async (e: React.FormEvent, id: string) => {
-    e.preventDefault();
-    if (!editingDriverName.trim() || !editingDriverPhone.trim()) {
-      showNotification(language === 'ar' ? 'الرجاء إدخال اسم المندوب ورقم الجوال' : 'Please fill both driver name and phone fields', 'warning');
-      return;
-    }
-
-    setSavingDriverEdit(true);
-    const updatedFields = {
-      name: editingDriverName.trim(),
-      phone: editingDriverPhone.trim(),
-    };
-
-    if (isAdmin) {
-      try {
-        await updateDoc(doc(db, 'drivers', id), updatedFields);
-        showNotification(language === 'ar' ? 'تم تحديث بيانات المندوب بنجاح! 🎉' : 'Driver details updated successfully!', 'success');
-        setEditingDriverId(null);
-      } catch (err) {
-        console.error('Failed to update driver details:', err);
-        showNotification(language === 'ar' ? 'حدث خطأ في صلاحيات قاعدة البيانات عند تعديل بيانات المندوب' : 'Database permission error updating driver details', 'error');
-      } finally {
-        setSavingDriverEdit(false);
-      }
-    } else {
-      const updated = drivers.map(d => d.id === id ? { ...d, ...updatedFields } : d);
-      localStorage.setItem('simulated_drivers', JSON.stringify(updated));
-      setDrivers(updated);
-      showNotification(language === 'ar' ? 'تم تحديث المندوب في المحاكي بنجاح! 🎉' : 'Driver updated in simulator sessions.', 'success');
-      setEditingDriverId(null);
-      setSavingDriverEdit(false);
-    }
   };
 
   // Seeding Default database menu items to Firebase
@@ -765,36 +827,100 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // State status changer
-  const handleUpdateStatus = async (
-    orderId: string, 
-    nextStatus: 'pending' | 'searching_driver' | 'preparing' | 'ready' | 'driver_picked_up' | 'delivering' | 'delivered' | 'cancelled',
-    driverInfo?: { name: string; phone: string }
-  ) => {
+  const handleUpdateStatus = async (orderId: string, nextStatus: string) => {
     const originalOrders = [...orders];
 
     // Optimistic local state update for instant client responsiveness
     const optimisticOrders = orders.map((o) => {
       if (o.id === orderId) {
-        const update: any = { ...o, status: nextStatus };
-        if (driverInfo) {
-          update.assignedDriverName = driverInfo.name;
-          update.assignedDriverPhone = driverInfo.phone;
-        }
-        return update;
+        return { ...o, status: nextStatus };
       }
       return o;
     });
     setOrders(optimisticOrders);
     setUpdatingId(orderId);
 
+    // Send the WhatsApp notification to customer
+    const orderToUpdate = orders.find(o => o.id === orderId);
+    if (orderToUpdate) {
+      let cleanPhone = orderToUpdate.customerPhone.replace(/\D/g, "");
+      if (cleanPhone.startsWith("05") && cleanPhone.length === 10) {
+        cleanPhone = "966" + cleanPhone.substring(1);
+      } else if (cleanPhone.startsWith("5") && cleanPhone.length === 9) {
+        cleanPhone = "966" + cleanPhone;
+      }
+
+      const trackingLink = `${window.location.origin}/?orderId=${orderId}`;
+      let welcome = `يا هلا والله بـ ${orderToUpdate.customerName} 👋`;
+      let body = "";
+
+      switch (nextStatus) {
+        case 'received':
+          welcome = `يا هلا والله بـ ${orderToUpdate.customerName} 😍 أبشرك طلبك تم قبوله الحين!`;
+          const transferNote = orderToUpdate.paymentMethod === 'transfer'
+            ? `\n\n🌸 لطفاً ومحبة، بما أنك اخترت الدفع عبر التحويل البنكي، يسعدنا جداً لو ترسل لنا صورة إيصال التحويل هنا في الواتساب لتأكيد طلبك وتجهيزه فوراً! ❤️`
+            : '';
+          body = `طلبك رقم (#${orderId}) صار مؤكد وبدأنا بالتحضير الفوري. خلك ريلاكس وتابع طلبك خطوة بخطوة من هنا:\n${trackingLink}&transferNote\n\nشكراً لاختيارك لنا يا غالي! ❤️`;
+          break;
+        case 'preparing':
+          welcome = `يا هلا يا ${orderToUpdate.customerName} 🔥`;
+          const preparingTransferNote = orderToUpdate.paymentMethod === 'transfer'
+            ? `\n\n🌸 تذكير لطيف: إذا لم تقم بإرسال إيصال التحويل بعد، يرجى مشاركته معنا هنا في الواتساب لتأكيد الدفع. شكراً لك! ❤️`
+            : '';
+          body = `طلبك رقم (#${orderId}) الحين على الجمر وبدأ يستوي على كيف كيفك! 🍢🥤\nتابع حالته مباشرة من هنا:\ndots${trackingLink}dots${preparingTransferNote}`;
+          break;
+        case 'ready':
+          if (orderToUpdate.tableOrDelivery === 'delivery') {
+            welcome = `أبشر بالخير يا ${orderToUpdate.customerName} 📦`;
+            body = `طلبك رقم (#${orderId}) صار جاهز وساخن ومنتظر المندوب يستلمه الآن للحركة!\nتتبع من هنا:\n${trackingLink}`;
+          } else {
+            welcome = `يا هلا يا ${orderToUpdate.customerName} 🎉`;
+            const locationType = orderToUpdate.tableOrDelivery === 'table' ? `طاولة رقم ${orderToUpdate.tableNumber}` : 'قسم الاستلام سفري';
+            const readyTransferNote = orderToUpdate.paymentMethod === 'transfer'
+              ? `\n\n🌸 يرجى إبراز إيصال التحويل البنكي للموظف عند الاستلام لتأكيد الدفع. شكراً جزيلاً لك! ❤️`
+              : '';
+            body = `طلبك رقم (#${orderId}) صار جاهز وساخن ولذيذ وينتظرك في (${locationType})! بالهناء والعافية على قلبك 😍\nرابط تتبع الطلب:\n${trackingLink}${readyTransferNote}`;
+          }
+          break;
+        case 'on_the_way':
+        case 'driver_picked_up':
+          welcome = `يا هلا والله بـ ${orderToUpdate.customerName} 🚴`;
+          const driverInfo = orderToUpdate.driverName 
+            ? `\nاسم المندوب: ${orderToUpdate.driverName}\nرقم المندوب: ${orderToUpdate.driverPhone}`
+            : '';
+          let paymentNote = '';
+          if (orderToUpdate.paymentMethod === 'cod') {
+            const fee = orderToUpdate.deliveryFee ?? (orderToUpdate.tableOrDelivery === 'delivery' ? (businessSettings?.deliveryFee ?? 15) : 0);
+            const totalWithFee = orderToUpdate.total;
+            const mealPrice = orderToUpdate.total - fee;
+            paymentNote = `\n\n⚠️ الدفع عند الاستلام: يرجى تجهيز كامل المبلغ المطلوب للمندوب عند الاستلام وهو: ${totalWithFee} ريال (قيمة الوجبات: ${mealPrice} ريال + رسوم التوصيل: ${fee} ريال).`;
+          } else if (orderToUpdate.paymentMethod === 'transfer') {
+            paymentNote = `\n\n🌸 لطفاً ومحبة، بما أن طريقة الدفع هي التحويل البنكي، يرجى إرفاق وإرسال صورة إيصال التحويل هنا عبر الواتساب أو مشاركتها مباشرة مع المندوب البطل لتأكيد الدفع والاستلام بنجاح! شكراً لتعاونك ولطفك الدائم يا غالي! ❤️`;
+          } else {
+            paymentNote = `\n\n✅ حالة الدفع: [مدفوع مسبقاً إلكترونياً] 💳\nتم سداد قيمة الطلب إلكترونياً بنجاح! لا يتوجب عليك دفع أي مبالغ للمندوب للوجبات.`;
+          }
+          body = `طلبك رقم (#${orderId}) طار الحين مع المندوب وهو بالطريق يوصله لك طازج وحار! 🍢${driverInfo}\nتتبع موقع المندوب والطلب مباشرة من هنا:\n${trackingLink}${paymentNote}`;
+          break;
+        case 'delivered':
+          welcome = `يا هلا والله بـ ${orderToUpdate.customerName} 🎉`;
+          body = `ألف عافية وصحة على قلبك! طلبك رقم (#${orderId}) تم تسليمه بنجاح. 😍\nيسعدنا لو تشاركنا رأيك وتقييمك وتنورنا المرات الجاية ❤️`;
+          break;
+        case 'cancelled':
+          welcome = `يا هلا يا ${orderToUpdate.customerName} 😔`;
+          body = `نعتذر منك جداً، طلبك رقم (#${orderId}) تم إلغاؤه من قبل الإدارة لعدم التوفر أو لسبب طارئ. نتشرف بخدمتك في وقت آخر وعساك على القوة!`;
+          break;
+        default:
+          body = `طلبك رقم (#${orderId}) تم تحديث حالته إلى: ${nextStatus}\nرابط تتبع:\n${trackingLink}`;
+      }
+
+      const fullMessage = `${welcome}\n\n${body}`;
+      const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(fullMessage)}`;
+      window.open(waUrl, '_blank');
+    }
+
     if (isAdmin) {
       try {
-        const payload: any = { status: nextStatus };
-        if (driverInfo) {
-          payload.assignedDriverName = driverInfo.name;
-          payload.assignedDriverPhone = driverInfo.phone;
-        }
-        await updateDoc(doc(db, 'orders', orderId), payload);
+        await updateDoc(doc(db, 'orders', orderId), { status: nextStatus });
       } catch (err) {
         console.error("Failed to commit order status, rolling back:", err);
         setOrders(originalOrders);
@@ -806,118 +932,222 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       localStorage.setItem('simulated_orders', JSON.stringify(optimisticOrders));
       setUpdatingId(null);
     }
+  };
 
-    // Automatically trigger the customized WhatsApp message compose helper!
-    const targetOrder = optimisticOrders.find(o => o.id === orderId);
-    if (targetOrder) {
-      triggerWhatsAppNotification(targetOrder, nextStatus);
+    // Add/Edit driver
+  const handleSaveDriver = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!driverName || !driverPhone) {
+      showNotification(language === 'ar' ? 'الرجاء ملء جميع الحقول المطلوبة!' : 'Please fill in all fields!', 'error');
+      return;
+    }
+
+    const cleanPhone = driverPhone.trim();
+    const newDriver: Driver = {
+      id: `drv-${Date.now()}`,
+      name: driverName.trim(),
+      phone: cleanPhone,
+      status: 'available',
+      createdAt: new Date().toISOString()
+    };
+
+    const originalDrivers = [...drivers];
+    let updatedDrivers = [...drivers];
+
+    updatedDrivers.unshift(newDriver);
+
+    if (isAdmin) {
+      try {
+        await setDoc(doc(db, 'drivers', newDriver.id), newDriver);
+        showNotification(language === 'ar' ? 'تم إضافة المندوب بنجاح!' : 'Driver added successfully!', 'success');
+      } catch (err) {
+        console.error("Failed to add driver:", err);
+        handleFirestoreError(err, OperationType.WRITE, `drivers/${newDriver.id}`);
+      }
+    } else if (isSimulated) {
+      setDrivers(updatedDrivers);
+      localStorage.setItem('simulated_drivers', JSON.stringify(updatedDrivers));
+      showNotification(language === 'ar' ? 'تم إضافة المندوب في المحاكاة!' : 'Driver added in simulator!', 'success');
+    }
+
+    setDriverName('');
+    setDriverPhone('');
+  };
+
+  // Toggle driver availability
+  const handleToggleDriverStatus = async (driverId: string, currentStatus: 'available' | 'busy') => {
+    const nextStatus = currentStatus === 'available' ? 'busy' : 'available';
+    const originalDrivers = [...drivers];
+    const updatedDrivers = drivers.map((d) => {
+      if (d.id === driverId) {
+        return { ...d, status: nextStatus };
+      }
+      return d;
+    });
+
+    if (isAdmin) {
+      setUpdatingDriverId(driverId);
+      try {
+        await updateDoc(doc(db, 'drivers', driverId), { status: nextStatus });
+        showNotification(language === 'ar' ? 'تم تحديث حالة المندوب!' : 'Driver status updated!', 'success');
+      } catch (err) {
+        console.error("Failed to update driver status:", err);
+        handleFirestoreError(err, OperationType.UPDATE, `drivers/${driverId}`);
+      } finally {
+        setUpdatingDriverId(null);
+      }
+    } else if (isSimulated) {
+      setDrivers(updatedDrivers);
+      localStorage.setItem('simulated_drivers', JSON.stringify(updatedDrivers));
+      showNotification(language === 'ar' ? 'تم تحديث حالة المندوب في المحاكاة!' : 'Driver status updated in simulator!', 'success');
     }
   };
 
-  const triggerWhatsAppNotification = (ord: Order, status: string) => {
-    const customerPhone = ord.customerPhone || '';
-    let cleanPhone = customerPhone.replace(/\D/g, "");
+  // Delete driver
+  const handleDeleteDriver = async (driverId: string) => {
+    const originalDrivers = [...drivers];
+    const updatedDrivers = drivers.filter((d) => d.id !== driverId);
+
+    if (isAdmin) {
+      setUpdatingDriverId(driverId);
+      try {
+        await deleteDoc(doc(db, 'drivers', driverId));
+        showNotification(language === 'ar' ? 'تم حذف المندوب بنجاح!' : 'Driver deleted successfully!', 'success');
+      } catch (err) {
+        console.error("Failed to delete driver:", err);
+        handleFirestoreError(err, OperationType.DELETE, `drivers/${driverId}`);
+      } finally {
+        setUpdatingDriverId(null);
+      }
+    } else if (isSimulated) {
+      setDrivers(updatedDrivers);
+      localStorage.setItem('simulated_drivers', JSON.stringify(updatedDrivers));
+      showNotification(language === 'ar' ? 'تم حذف المندوب في المحاكاة!' : 'Driver deleted in simulator!', 'success');
+    }
+  };
+
+  // Approve pending driver registration
+  const handleApprovePendingDriver = async (pending: PendingDriver) => {
+    if (!isAdmin) return;
+    setUpdatingDriverId(pending.id);
+    try {
+      const newDriver: Driver = {
+        id: `drv-${Date.now()}`,
+        name: pending.name,
+        phone: pending.phone,
+        status: 'available',
+        createdAt: new Date().toISOString()
+      };
+      
+      // 1. Add to drivers collection
+      await setDoc(doc(db, 'drivers', newDriver.id), newDriver);
+      
+      // 2. Delete from pending_drivers
+      await deleteDoc(doc(db, 'pending_drivers', pending.id));
+      
+      showNotification(language === 'ar' ? 'تم قبول المندوب وإضافته للمعتمدين بنجاح! ✅' : 'Driver approved and registered successfully! ✅', 'success');
+    } catch (err) {
+      console.error("Failed to approve driver:", err);
+      showNotification(language === 'ar' ? 'فشل قبول المندوب' : 'Failed to approve driver', 'error');
+    } finally {
+      setUpdatingDriverId(null);
+    }
+  };
+
+  // Reject pending driver registration
+  const handleRejectPendingDriver = async (pendingId: string) => {
+    if (!isAdmin) return;
+    setUpdatingDriverId(pendingId);
+    try {
+      await deleteDoc(doc(db, 'pending_drivers', pendingId));
+      showNotification(language === 'ar' ? 'تم رفض طلب التسجيل وحذفه ❌' : 'Registration request rejected and removed ❌', 'success');
+    } catch (err) {
+      console.error("Failed to reject driver registration:", err);
+      showNotification(language === 'ar' ? 'فشل رفض المندوب' : 'Failed to reject driver', 'error');
+    } finally {
+      setUpdatingDriverId(null);
+    }
+  };
+
+  // Assign driver to order
+  const handleAssignDriver = async (orderId: string, driver: Driver | null) => {
+    const originalOrders = [...orders];
+    const optimisticOrders = orders.map((o) => {
+      if (o.id === orderId) {
+        return {
+          ...o,
+          driverId: driver ? driver.id : null,
+          driverName: driver ? driver.name : null,
+          driverPhone: driver ? driver.phone : null
+        } as Order;
+      }
+      return o;
+    });
+
+    setOrders(optimisticOrders);
+
+    if (isAdmin) {
+      try {
+        await updateDoc(doc(db, 'orders', orderId), {
+          driverId: driver ? driver.id : null,
+          driverName: driver ? driver.name : null,
+          driverPhone: driver ? driver.phone : null
+        });
+        showNotification(language === 'ar' ? 'تم تعيين المندوب للطلب بنجاح!' : 'Driver assigned to order successfully!', 'success');
+      } catch (err) {
+        console.error("Failed to assign driver:", err);
+        setOrders(originalOrders);
+        handleFirestoreError(err, OperationType.UPDATE, `orders/${orderId}`);
+      }
+    } else if (isSimulated) {
+      localStorage.setItem('simulated_orders', JSON.stringify(optimisticOrders));
+      showNotification(language === 'ar' ? 'تم تعيين المندوب في المحاكاة!' : 'Driver assigned in simulator!', 'success');
+    }
+  };
+
+  // Send WhatsApp message with order details to assigned driver
+  const handleSendDriverDetails = (ord: Order) => {
+    if (!ord.driverPhone) return;
+
+    // Format driver phone
+    let cleanPhone = ord.driverPhone.replace(/\D/g, "");
     if (cleanPhone.startsWith("05") && cleanPhone.length === 10) {
       cleanPhone = "966" + cleanPhone.substring(1);
     } else if (cleanPhone.startsWith("5") && cleanPhone.length === 9) {
       cleanPhone = "966" + cleanPhone;
     }
 
-    const rNameAr = setRestaurantNameAr || 'رحلة شواء';
-    const rNameEn = setRestaurantNameEn || 'Grilling Journey';
+    // Format order items
+    const itemsText = ord.items.map(it => `- ${it.nameAr} x${it.quantity}`).join('\n');
 
-    let msg = '';
-    if (language === 'ar') {
-      msg = `أهلاً بك يا ${ord.customerName} 👋\n\n*تحديث مهم لطلبك من مطعم ${rNameAr}* 🍢🥤\n\n` +
-            `*رقم الطلب:* \`${ord.id}\`\n` +
-            `*حالة الطلب الحالية:* `;
-
-      switch (status) {
-        case 'pending':
-          msg += `⏳ تم استلام الطلب وهو قيد الانتظار للموافقة.`;
-          break;
-        case 'searching_driver':
-          msg += `🔍 تم قبول طلبك وجاري البحث عن مندوب لتوصيله إليك بأقرب وقت.`;
-          break;
-        case 'preparing':
-          msg += `🔥 بدأنا الآن بتحضيره وطهيه على الجمر الحار لتستمتع بمذاقه طازجاً.`;
-          break;
-        case 'ready':
-          if (ord.tableOrDelivery === 'delivery') {
-            msg += `📦 وجبتك الشهية جاهزة وساخنة الآن! المندوب يستعد لاستلامها وتوصيلها إليك.`;
-          } else if (ord.tableOrDelivery === 'table') {
-            msg += `🍽️ وجبتك الشهية جاهزة الآن! يسعدنا خدمتك على طاولة رقم ${ord.tableNumber || ''}.`;
-          } else {
-            msg += `🛍️ طلبك جاهز الساخن للاستلام من الفرع الآن بالعافية.`;
-          }
-          break;
-        case 'driver_picked_up':
-          msg += `🛵 استلم قائد التوصيل طلبك الساخن وهو يجهزه للمغادرة الآن.`;
-          break;
-        case 'delivering':
-          const dName = ord.assignedDriverName || 'المندوب';
-          const dPhone = ord.assignedDriverPhone || '';
-          const mapsLinkAr = ord.googleMapsUrl || (ord.latitude && ord.longitude ? `https://maps.google.com/?q=${ord.latitude},${ord.longitude}` : '');
-          msg += `🚀 طلبك طار في الطريق إليك الآن مع المندوب ${dName} ${dPhone ? `(جوال: ${dPhone})` : ''}.` +
-                 (mapsLinkAr ? `\n\n📍 تتبع موقع التوصيل: ${mapsLinkAr}` : '');
-          break;
-        case 'delivered':
-          msg += `🎉 تم تسليم طلبك بنجاح! بالعافية والشهية الطيبة 🍢🌸 نسعد بطلبك القادم دائماً!`;
-          break;
-        case 'cancelled':
-          msg += `❌ تم إلغاء طلبك. إذا كان لديك أي استفسار يسعدنا تواصلك معنا دائماً.`;
-          break;
-        default:
-          msg += status;
-      }
-
-      msg += `\n\nيمكنك متابعة حالة الطلب الفورية بأي وقت عبر الرابط:\n${window.location.origin}/?orderId=${ord.id}\n\n_شكراً لاختيارك رحلة شواء!_`;
-    } else {
-      msg = `Hello ${ord.customerName} 👋\n\n*Important order update from ${rNameEn}* 🍢🥤\n\n` +
-            `*Order Code:* \`${ord.id}\`\n` +
-            `*Current Status:* `;
-
-      switch (status) {
-        case 'pending':
-          msg += `⏳ Order received and pending approval.`;
-          break;
-        case 'searching_driver':
-          msg += `🔍 Order accepted! Searching for a driver to dispatch.`;
-          break;
-        case 'preparing':
-          msg += `🔥 Grilling and preparing on hot coals right now.`;
-          break;
-        case 'ready':
-          if (ord.tableOrDelivery === 'delivery') {
-            msg += `📦 Your meal is ready! Driver is picking it up now.`;
-          } else if (ord.tableOrDelivery === 'table') {
-            msg += `🍽️ Your meal is ready! Serving you at Table ${ord.tableNumber || ''}.`;
-          } else {
-            msg += `🛍️ Your hot order is ready for branch pickup! Enjoy.`;
-          }
-          break;
-        case 'driver_picked_up':
-          msg += `🛵 Driver picked up your hot order and preparing to leave.`;
-          break;
-        case 'delivering':
-          const dn = ord.assignedDriverName || 'Driver';
-          const dp = ord.assignedDriverPhone || '';
-          const mapsLinkEn = ord.googleMapsUrl || (ord.latitude && ord.longitude ? `https://maps.google.com/?q=${ord.latitude},${ord.longitude}` : '');
-          msg += `🚀 Your order is on the way with driver ${dn} ${dp ? `(Phone: ${dp})` : ''}.` +
-                 (mapsLinkEn ? `\n\n📍 Track delivery location: ${mapsLinkEn}` : '');
-          break;
-        case 'delivered':
-          msg += `🎉 Order delivered successfully! Enjoy your meal 🍢🌸 Looking forward to serving you again!`;
-          break;
-        case 'cancelled':
-          msg += `❌ Order cancelled. Contact us if you have any questions.`;
-          break;
-        default:
-          msg += status;
-      }
-
-      msg += `\n\nYou can track your live order status here:\n${window.location.origin}/?orderId=${ord.id}\n\n_Thank you for choosing us!_`;
+    // Format location
+    let locationText = ord.deliveryAddress || 'لم يحدد العنوان بالتفصيل';
+    if (ord.latitude && ord.longitude) {
+      locationText += `\n📍 رابط موقع العميل على الخريطة:\nhttps://www.google.com/maps?q=${ord.latitude},${ord.longitude}`;
     }
+
+    // Format delivery fee from settings
+    const fee = ord.deliveryFee ?? (ord.tableOrDelivery === 'delivery' ? (businessSettings?.deliveryFee ?? 15) : 0);
+    const totalDue = ord.total;
+    const mealPrice = ord.total - fee;
+
+    let paymentText = '';
+    if (ord.paymentMethod === 'cod') {
+      paymentText = `⚠️ الدفع: [كاش عند الاستلام] 💵\n🚨 تنبيه هام جداً للمندوب: يجب عليك تحصيل كامل المبلغ من العميل (قيمة الطلب + رسوم التوصيل)! يرجى عدم تسليم الطلب للعميل إلا بعد استلام كامل المبلغ المذكور أدناه 🚨\n\n💰 قيمة الطلب (الوجبات): ${mealPrice} ريال\n🚴 رسوم التوصيل: ${fee} ريال\n💵 إجمالي المبلغ المطلوب تحصيله بالكامل: ${totalDue} ريال`;
+    } else if (ord.paymentMethod === 'transfer') {
+      paymentText = `🏦 الدفع: [تحويل بنكي] 🧾\n⚠️ يرجى من المندوب التأكد من رؤية/استلام صورة إيصال التحويل البنكي من العميل لتأكيد الدفع قبل تسليم الطلب!`;
+    } else {
+      paymentText = `✅ الدفع: [مدفوع مسبقاً إلكترونياً] 💳\n(تم سداد قيمة الطلب إلكترونياً بنجاح! لا تحصّل أي مبالغ من العميل للوجبات)`;
+    }
+
+    const msg = `يا هلا بـ مندوبنا البطل 🚴\nإليك تفاصيل طلب التوصيل الجديد رقم (#${ord.id}):\n\n` +
+      `👤 اسم العميل: ${ord.customerName}\n` +
+      `📞 رقم العميل: ${ord.customerPhone}\n` +
+      `📍 موقع التوصيل: ${locationText}\n\n` +
+      `📋 تفاصيل الطلب:\n${itemsText}\n` +
+      `${ord.notes ? `📝 ملاحظات: ${ord.notes}\n` : ''}\n` +
+      `${paymentText}\n\n` +
+      `تأكد من تسليم الوجبة ساخنة وطازجة ولذيذة يا بطل! بالتوفيق ❤️`;
 
     window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -1411,49 +1641,164 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Login authentication request gate
   if (!isAdmin && !isSimulated) {
+    const adminUrl = `${window.location.origin}/?admin=true`;
+    
     return (
-      <div className="max-w-xl mx-auto p-6 font-sans">
-        <div className="bg-white rounded-3xl border border-slate-100 p-8 shadow-xl text-center space-y-6">
+      <div className="max-w-xl mx-auto p-4 md:p-6 font-sans">
+        <div className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-xl text-center space-y-6">
           <div className="w-16 h-16 rounded-2xl bg-amber-600/10 text-amber-600 flex items-center justify-center mx-auto">
             <ShieldAlert className="w-9 h-9" />
           </div>
           
           <div className="space-y-2">
-            <h2 className="text-2xl font-extrabold text-stone-900">{t('demoAdminLogin')}</h2>
+            <h2 className="text-2xl font-extrabold text-stone-900">
+              {language === 'ar' ? 'لوحة تحكم المسؤولين (اتصال حقيقي)' : 'Admin Dashboard (Live Cloud)'}
+            </h2>
             <p className="text-slate-500 text-xs md:text-sm">
               {language === 'ar'
-                ? 'لوحة الإداريين محمية ومقفلة لصالح مالك المطعم والمشرفين لمتابعة الصّفقة وتحضير الطلبات الحقيقية.'
-                : 'Management workspace is password-protected. Admins use this to prepare steaks/drinks and update tracking steps.'}
+                ? 'لوحة الإداريين محمية وتتصل بقاعدة بيانات فايربيس الحية لمتابعة الطلبات وتعديل المنيو.'
+                : 'Workspace is password-protected and connects to live Firebase DB for tracking and menu edits.'}
             </p>
           </div>
 
-          <div className="p-3.5 bg-amber-50 border border-amber-100 text-amber-800 text-xs rounded-xl flex items-center gap-2 text-start">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>
-              {language === 'ar'
-                ? 'الحق في الدخول كمشرف متاح حصراً للبريد الإلكتروني المالي الموثق في قواعد النظام.'
-                : 'Live DB write rules are strictly restricted to verified owner accounts.'}
-            </span>
+          {/* Copyable direct URL Section for resolving iframe issue */}
+          <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-start space-y-3">
+            <div className="flex gap-2 text-amber-800 text-xs font-semibold">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                {language === 'ar'
+                  ? 'تنبيه: لتجنب مشاكل تسجيل الدخول في إطار المعاينة، يُنصح بفتح الموقع في نافذة مستقلة:'
+                  : 'Note: To avoid iframe login issues, we highly recommend opening the site in a new browser tab:'}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2 bg-white border border-amber-200 rounded-xl p-2.5 text-xs font-mono text-slate-600 overflow-x-auto">
+              <span className="flex-1 select-all truncate">{adminUrl}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(adminUrl);
+                  showNotification(language === 'ar' ? 'تم نسخ الرابط المباشر!' : 'Direct URL copied!', 'success');
+                }}
+                className="shrink-0 bg-stone-100 hover:bg-stone-200 text-stone-700 px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer text-[11px] font-sans font-bold"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {language === 'ar' ? 'نسخ' : 'Copy'}
+              </button>
+            </div>
+            
+            <a
+              href={adminUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-2 text-center"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>{language === 'ar' ? 'فتح لوحة التحكم في نافذة مستقلة' : 'Open Admin Panel in New Tab'}</span>
+            </a>
           </div>
 
-          <div className="space-y-3 pt-4">
-            {/* Google Identity Popup Trigger */}
-            <button
-              onClick={handleGoogleLogin}
-              className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 px-4 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2.5 text-sm"
-            >
-              <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google logo" className="w-5 h-5" />
-              <span>{t('loginWithGoogle')}</span>
-            </button>
+          {/* Real Auth Methods */}
+          <div className="space-y-4 pt-2">
+            
+            {/* Google Sign In Option */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 px-4 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2.5 text-sm"
+              >
+                <img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" alt="Google logo" className="w-5 h-5" />
+                <span>{language === 'ar' ? 'تسجيل الدخول بواسطة Google' : 'Sign in with Google'}</span>
+              </button>
+            </div>
 
-            {/* Simulated instant sandbox mode - amazing utility for grader/tester */}
-            <button
-              onClick={handleSimulateMode}
-              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md shadow-amber-600/25 cursor-pointer text-sm flex items-center justify-center gap-2.5"
-            >
-              <Sliders className="w-4 h-4" />
-              <span>{t('simulateMode')}</span>
-            </button>
+            <div className="relative flex items-center justify-center py-2">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200"></div>
+              </div>
+              <span className="relative px-3 bg-white text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {language === 'ar' ? 'أو تسجيل مباشر (بريد وكلمة مرور)' : 'Or direct email & password'}
+              </span>
+            </div>
+
+            {/* Email & Password Form */}
+            <form onSubmit={handleEmailLogin} className="space-y-4 text-start">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-600 block flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-slate-400" />
+                  {language === 'ar' ? 'البريد الإلكتروني للمسؤول' : 'Admin Email'}
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="yasseralayub@gmail.com"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-600 block flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  {language === 'ar' ? 'كلمة المرور' : 'Password'}
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                />
+              </div>
+
+              {loginError && (
+                <div className="p-3 bg-red-50 border border-red-100 text-red-700 text-xs rounded-xl flex items-start gap-2 leading-relaxed">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{loginError}</span>
+                </div>
+              )}
+
+              {/* Register / Setup password toggle check */}
+              <div className="flex items-center gap-2 py-1">
+                <input
+                  id="toggle-register"
+                  type="checkbox"
+                  checked={isRegistering}
+                  onChange={(e) => {
+                    setIsRegistering(e.target.checked);
+                    setLoginError('');
+                  }}
+                  className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
+                />
+                <label htmlFor="toggle-register" className="text-xs font-bold text-slate-600 cursor-pointer select-none">
+                  {language === 'ar'
+                    ? 'إنشاء حساب مسؤول جديد وتعيين كلمة المرور هذه'
+                    : 'Create new admin account and set this password'}
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loginLoading}
+                className="w-full bg-stone-900 hover:bg-stone-850 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {loginLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+                ) : (
+                  <ShieldAlert className="w-4 h-4 text-amber-500" />
+                )}
+                <span>
+                  {loginLoading
+                    ? (language === 'ar' ? 'جاري التحميل...' : 'Please wait...')
+                    : isRegistering
+                    ? (language === 'ar' ? 'إنشاء حساب وتعيين كلمة المرور الحية' : 'Create Account & Set Live Password')
+                    : (language === 'ar' ? 'تسجيل الدخول الآمن' : 'Secure Login')}
+                </span>
+              </button>
+            </form>
           </div>
         </div>
       </div>
@@ -1731,7 +2076,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
           {/* Quick Filter Pill list */}
           <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100/80 rounded-xl">
-            {['all', 'pending', 'preparing', 'delivered', 'cancelled'].map((st) => (
+            {['all', 'pending', 'received', 'searching_driver', 'preparing', 'ready', 'driver_picked_up', 'on_the_way', 'delivered', 'cancelled'].map((st) => (
               <button
                 id={`filter-${st}`}
                 key={st}
@@ -1742,49 +2087,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     : 'text-slate-600 hover:text-slate-800'
                 }`}
               >
-                {st === 'all' ? t('allStatus') : t(st)}
+                {st === 'all' ? t('allStatus') : (language === 'ar' ? getStatusLabelAr(st) : getStatusLabelEn(st))}
               </button>
             ))}
           </div>
         </div>
 
         {/* Real-time Order lists container */}
-        {ordersError && (
-          <div className="bg-red-50 border-2 border-red-100 rounded-2xl p-5 text-start space-y-3.5 mb-4 animate-fade-in">
-            <div className="flex gap-3">
-              <div className="w-10 h-10 rounded-xl bg-red-100/80 text-red-700 flex items-center justify-center shrink-0">
-                <ShieldAlert className="w-5.5 h-5.5" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="font-extrabold text-sm text-red-900">
-                  {language === 'ar' ? 'فشل الاتصال بقاعدة البيانات السحابية (Firestore)' : 'Firestore Connection Error'}
-                </h4>
-                <p className="text-xs text-red-700 font-medium leading-relaxed">
-                  {language === 'ar'
-                    ? 'الحساب الحالي مسجل كمسؤول ولكن قواعد حماية Firestore تمنع جلب قائمة الطلبات، أو أن الاتصال مقطوع حالياً.'
-                    : 'The current account is signed in as admin, but Firestore security rules are preventing the order stream from loading, or the service is offline.'}
-                </p>
-                <p className="text-[10px] font-mono text-red-600 bg-red-100/50 p-2 rounded-lg break-all mt-2 select-all">
-                  Error Details: {ordersError}
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => {
-                  setIsSimulated(true);
-                  setIsAdmin(false);
-                  setOrdersError('');
-                }}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-              >
-                <Sliders className="w-3.5 h-3.5" />
-                <span>{language === 'ar' ? 'تحويل لوضع المحاكي المحلي لتجربة الطلبات (مستحسن 🌟)' : 'Switch to Local Simulator for Testing (Recommended 🌟)'}</span>
-              </button>
-            </div>
-          </div>
-        )}
-
         {loadingOrders ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 text-amber-600 animate-spin" />
@@ -1820,15 +2129,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div>
                           <h4 className="font-extrabold text-sm text-slate-800">{ord.customerName}</h4>
                           <span className="font-mono text-[10px] text-slate-400 block mt-0.5">{ord.id}</span>
+                          {ord.status === 'pending' && (
+                            <PendingCountdown createdAt={ord.createdAt} />
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5">
                           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${
-                            ord.status === 'pending' ? 'bg-amber-100 text-amber-800' : 
-                            ord.status === 'preparing' ? 'bg-blue-100 text-blue-800' : 
-                            ord.status === 'delivered' ? 'bg-emerald-100 text-emerald-800' : 
+                            ord.status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                            ord.status === 'received' ? 'bg-slate-100 text-slate-800' :
+                            ord.status === 'searching_driver' ? 'bg-indigo-100 text-indigo-800' :
+                            ord.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                            ord.status === 'ready' ? 'bg-purple-100 text-purple-800' :
+                            ord.status === 'driver_picked_up' ? 'bg-orange-100 text-orange-800' :
+                            ord.status === 'on_the_way' ? 'bg-sky-100 text-sky-800' :
+                            ord.status === 'delivered' ? 'bg-emerald-100 text-emerald-800' :
                             'bg-red-100 text-red-800'
                           }`}>
-                            {t(ord.status)}
+                            {language === 'ar' ? getStatusLabelAr(ord.status) : getStatusLabelEn(ord.status)}
                           </span>
                           <button
                             type="button"
@@ -1840,297 +2157,115 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </button>
                         </div>
                       </div>
-
-                      {/* Contact specifications */}
-                      <p className="text-xs text-slate-600 font-medium font-mono py-1">📞 {ord.customerPhone}</p>
-                      
-                      <div className="bg-slate-200/50 p-2 rounded-xl text-xs space-y-1 my-1.5 border border-slate-100">
-                        <p className="font-semibold text-slate-700">
-                          📍 {ord.tableOrDelivery === 'table' 
-                            ? (language === 'ar' ? `محلي - طاولة ${ord.tableNumber || ''}` : `Dine-In - Table ${ord.tableNumber || ''}`) 
-                            : ord.tableOrDelivery === 'delivery'
-                            ? (language === 'ar' ? 'توصيل للمنزل 🚗' : 'Home Delivery 🚗')
-                            : (language === 'ar' ? 'استلام من الفرع 🛍️' : 'Takeaway 🛍️')}
-                        </p>
-                        <p className="text-[10px] text-slate-500 font-mono uppercase">
-                          💳 {ord.paymentMethod === 'cod' 
-                            ? (language === 'ar' ? 'الدفع عند الاستلام (كاش)' : 'Cash on Delivery') 
-                            : ord.paymentMethod === 'transfer' 
-                            ? (language === 'ar' ? 'تحويل بنكي' : 'Bank Transfer') 
-                            : ord.paymentMethod === 'applepay' 
-                            ? ' Pay (Demo)' 
-                            : 'Mada (Demo)'}
-                        </p>
-                      </div>
-
                       {ord.tableOrDelivery === 'delivery' && (
-                        <div className="bg-amber-500/5 border border-amber-500/10 p-2.5 rounded-xl text-xs my-1.5 text-start space-y-1.5">
-                          <div>
-                            <span className="font-bold block text-slate-800">🏠 {language === 'ar' ? 'عنوان التوصيل بالتفصيل:' : 'Delivery Address:'}</span>
-                            <span className="font-medium text-slate-600">{ord.deliveryAddress || (language === 'ar' ? 'توصيل للموقع المرفق' : 'Deliver to GPS location')}</span>
-                          </div>
-                          {(ord.googleMapsUrl || (ord.latitude && ord.longitude)) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const url = ord.googleMapsUrl || `https://www.google.com/maps?q=${ord.latitude},${ord.longitude}`;
-                                window.open(url, '_blank');
-                              }}
-                              className="w-full bg-slate-800 hover:bg-slate-900 text-yellow text-[10px] font-extrabold py-2 px-2.5 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                            >
-                              <span>📍</span>
-                              <span>{language === 'ar' ? 'عرض موقع العميل على الخريطة' : 'View Customer Location on Map'}</span>
-                            </button>
+                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs text-start space-y-1 my-2">
+                          <span className="font-bold text-slate-500 block mb-1">
+                            {language === 'ar' ? '👤 تعيين مندوب التوصيل:' : '👤 Assign Driver:'}
+                          </span>
+                          <select
+                            value={ord.driverId || ''}
+                            onChange={(e) => {
+                              const dId = e.target.value;
+                              if (!dId) {
+                                handleAssignDriver(ord.id, null);
+                              } else if (dId === 'broadcast') {
+                                handleAssignDriver(ord.id, {
+                                  id: 'broadcast',
+                                  name: language === 'ar' ? 'الجميع 📢' : 'Everyone 📢',
+                                  phone: '',
+                                  status: 'available',
+                                  createdAt: ''
+                                });
+                              } else {
+                                const selectedDrv = drivers.find(d => d.id === dId);
+                                if (selectedDrv) handleAssignDriver(ord.id, selectedDrv);
+                              }
+                            }}
+                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs font-semibold outline-none focus:border-amber-500 text-slate-800"
+                          >
+                            <option value="">{language === 'ar' ? '-- اختر مندوب التوصيل --' : '-- Choose Driver --'}</option>
+                            <option value="broadcast" className="font-extrabold text-blue-600 bg-blue-50">
+                              📢 {language === 'ar' ? 'إرسال لجميع المناديب المتاحة' : 'Broadcast to All Drivers'}
+                            </option>
+                            {drivers.map(drv => (
+                              <option key={drv.id} value={drv.id}>
+                                {drv.name} ({drv.phone}) - {drv.status === 'available' ? (language === 'ar' ? '🟢 متاح' : '🟢 Available') : drv.status === 'suspended' ? (language === 'ar' ? '🚫 موقوف' : '🚫 Suspended') : (language === 'ar' ? '🔴 مشغول' : '🔴 Busy')}
+                              </option>
+                            ))}
+                          </select>
+                          {ord.driverName && (
+                            <div className="space-y-2 pt-1.5 border-t border-slate-100/50 mt-1.5">
+                              <div className="flex justify-between items-center text-[10px] text-slate-600 font-medium">
+                                <span>👨‍✈️ {ord.driverName}</span>
+                                {ord.driverPhone && (
+                                  <a href={`tel:${ord.driverPhone}`} className="text-blue-600 font-mono font-bold hover:underline">📞 {ord.driverPhone}</a>
+                                )}
+                              </div>
+                              {ord.driverId !== 'broadcast' && ord.driverPhone && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendDriverDetails(ord)}
+                                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+                                >
+                                  <span>إرسال تفاصيل التوصيل للمندوب 💬</span>
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
 
-                      {ord.notes && (
-                        <div className="bg-amber-50 text-amber-900 border border-amber-200/50 p-2.5 rounded-xl text-xs my-1 text-start">
-                          <span className="font-bold block text-amber-800">📝 {language === 'ar' ? 'ملاحظات العميل:' : 'Customer Notes:'}</span>
-                          <span className="font-medium">{ord.notes}</span>
-                        </div>
-                      )}
-
-                      {/* Items Ordered List */}
-                      <div className="space-y-1.5 py-1 text-xs border-t border-slate-100/80 mt-2 pt-2">
-                        {ord.items.map((it, idx) => (
-                          <div key={idx} className="flex justify-between select-all">
-                            <span className="font-medium text-slate-700">
-                              {it.quantity}× {language === 'ar' ? it.nameAr : it.name}
-                            </span>
-                            <span className="text-slate-400 font-mono">{(it.price * it.quantity).toFixed(1)} {t('sar')}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Operational controls */}
-                    <div className="border-t border-slate-100/80 pt-3 mt-auto space-y-2.5">
-                      <div className="flex justify-between items-baseline text-xs">
-                        <span className="text-slate-400 font-medium">{t('total')}</span>
-                        <span className="text-base font-extrabold text-amber-600 font-mono">
-                          {ord.total.toFixed(2)} {t('sar')}
-                        </span>
-                      </div>
-
                       {/* Transition triggers buttons row */}
-                      <div className="space-y-3">
+                      <div className="space-y-1.5">
                         {(() => {
-                          const isDelivery = ord.tableOrDelivery === 'delivery';
-                          const stages = isDelivery 
-                            ? ['pending', 'searching_driver', 'preparing', 'ready', 'driver_picked_up', 'delivering', 'delivered']
-                            : ['pending', 'preparing', 'ready', 'delivered'];
-
-                          const currentIdx = stages.indexOf(ord.status);
-                          const nextStage = currentIdx !== -1 && currentIdx < stages.length - 1 ? stages[currentIdx + 1] : null;
-
-                          const getStageLabel = (st: string) => {
-                            switch (st) {
-                              case 'pending': return language === 'ar' ? 'تم الاستلام' : 'Received';
-                              case 'searching_driver': return language === 'ar' ? 'البحث عن مندوب' : 'Searching Driver';
-                              case 'preparing': return language === 'ar' ? 'جاري التحضير' : 'Preparing';
-                              case 'ready': return language === 'ar' ? (isDelivery ? 'جاهز للتوصيل' : 'جاهز للاستلام') : 'Ready';
-                              case 'driver_picked_up': return language === 'ar' ? 'استلم المندوب' : 'Driver Picked Up';
-                              case 'delivering': return language === 'ar' ? 'جاري التوصيل' : 'Delivering';
-                              case 'delivered': return language === 'ar' ? 'تم التسليم' : 'Delivered';
-                              default: return st;
-                            }
-                          };
-
+                          const nextStatus = getNextStatus(ord.status, ord.tableOrDelivery);
+                          if (!nextStatus) return null;
                           return (
-                            <div className="space-y-3">
-                              {/* Mini Stepper visualization inside Admin Card */}
-                              <div className="flex items-center justify-between gap-1 bg-slate-50 p-2 rounded-xl border border-slate-100">
-                                {stages.map((st, sIdx) => {
-                                  const isActive = ord.status === st;
-                                  const isDone = stages.indexOf(ord.status) > sIdx;
-                                  return (
-                                    <div 
-                                      key={st} 
-                                      title={getStageLabel(st)}
-                                      className={`h-1.5 rounded-full flex-1 transition-all ${
-                                        isActive ? 'bg-amber-500 animate-pulse' : isDone ? 'bg-emerald-500' : 'bg-slate-200'
-                                      }`}
-                                    />
-                                  );
-                                })}
-                              </div>
-
-                              {/* Driver Assignment dropdown when status is searching_driver or ready or delivering */}
-                              {isDelivery && ['searching_driver', 'preparing', 'ready', 'driver_picked_up', 'delivering'].includes(ord.status) && (
-                                <div className="bg-amber-500/5 border border-amber-500/10 p-2.5 rounded-xl space-y-1.5">
-                                  <span className="text-[10px] font-bold text-amber-800 block">
-                                    {language === 'ar' ? '👤 تعيين مندوب توصيل:' : '👤 Assign Delivery Driver:'}
-                                  </span>
-                                  {ord.assignedDriverName ? (
-                                    <div className="space-y-1.5">
-                                      <div className="flex justify-between items-center text-xs bg-white p-2 rounded-lg border border-amber-500/10">
-                                        <div className="flex flex-col gap-0.5 text-start">
-                                          <span className="font-bold text-slate-800">🚗 {ord.assignedDriverName}</span>
-                                          <span className="text-[9px] text-slate-500 font-mono flex items-center gap-1">
-                                            <Phone className="w-2.5 h-2.5 shrink-0" />
-                                            {ord.assignedDriverPhone}
-                                          </span>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateStatus(ord.id, ord.status as any, { name: '', phone: '' })}
-                                          className="text-[10px] text-red-500 hover:text-red-700 font-bold hover:underline cursor-pointer px-1.5 py-0.5 bg-red-50 rounded-md shrink-0"
-                                        >
-                                          {language === 'ar' ? 'إزالة' : 'Remove'}
-                                        </button>
-                                      </div>
-                                      
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const cleanPhone = ord.assignedDriverPhone?.trim().replace(/\s+/g, '').replace(/[+\-]/g, '') || '';
-                                          let formattedPhone = cleanPhone;
-                                          if (formattedPhone.startsWith('5')) {
-                                            formattedPhone = '966' + formattedPhone;
-                                          } else if (formattedPhone.startsWith('05')) {
-                                            formattedPhone = '966' + formattedPhone.substring(1);
-                                          }
-                                          
-                                          const orderNum = ord.id.substring(0, 6).toUpperCase();
-                                          const paymentMethodText = ord.paymentMethod === 'cod' 
-                                            ? (language === 'ar' ? 'الدفع عند الاستلام (كاش)' : 'Cash on Delivery') 
-                                            : ord.paymentMethod === 'transfer' 
-                                            ? (language === 'ar' ? 'تحويل بنكي الراجحي' : 'Al Rajhi Bank Transfer') 
-                                            : ord.paymentMethod === 'applepay'
-                                            ? (language === 'ar' ? 'آبل باي' : 'Apple Pay')
-                                            : ord.paymentMethod === 'mada'
-                                            ? (language === 'ar' ? 'مدى' : 'Mada')
-                                            : (language === 'ar' ? 'دفع إلكتروني' : 'Paid Electronically');
-
-                                          const itemsList = ord.items.map(item => `- ${item.quantity}x ${item.nameAr || item.name}`).join('\n');
-                                          
-                                          let mapsUrl = '';
-                                          if (ord.latitude && ord.longitude) {
-                                            mapsUrl = ord.googleMapsUrl || `https://www.google.com/maps?q=${ord.latitude},${ord.longitude}`;
-                                          } else if (ord.googleMapsUrl) {
-                                            mapsUrl = ord.googleMapsUrl;
-                                          }
-
-                                          const messageAr = `🚗 *طلب توصيل جديد* 🚗\n\n` +
-                                            `*رقم الطلب:* #${orderNum}\n` +
-                                            `*العميل:* ${ord.customerName}\n` +
-                                            `*الجوال:* ${ord.customerPhone}\n` +
-                                            `*العنوان:* ${ord.deliveryAddress || 'توصيل للموقع المرفق'}\n\n` +
-                                            `*الطلبات:*\n${itemsList}\n\n` +
-                                            `*طريقة الدفع:* ${paymentMethodText}\n` +
-                                            `*المجموع المطلوب من العميل:* ${ord.total} ريال\n\n` +
-                                            `${mapsUrl ? `📍 *موقع العميل على الخريطة (GPS):* \n${mapsUrl}` : ''}\n\n` +
-                                            `يرجى تأكيد الاستلام وبدء التوصيل فوراً. شكراً لك!`;
-
-                                          const messageEn = `🚗 *New Delivery Assignment* 🚗\n\n` +
-                                            `*Order ID:* #${orderNum}\n` +
-                                            `*Customer:* ${ord.customerName}\n` +
-                                            `*Phone:* ${ord.customerPhone}\n` +
-                                            `*Address:* ${ord.deliveryAddress || 'Delivery to GPS Location'}\n\n` +
-                                            `*Items:*\n${itemsList}\n\n` +
-                                            `*Payment Method:* ${paymentMethodText}\n` +
-                                            `*Total Amount to Collect:* ${ord.total} SAR\n\n` +
-                                            `${mapsUrl ? `📍 *Customer Location Map (GPS):* \n${mapsUrl}` : ''}\n\n` +
-                                            `Please confirm receipt and start delivery. Thank you!`;
-
-                                          const text = encodeURIComponent(language === 'ar' ? messageAr : messageEn);
-                                          window.open(`https://wa.me/${formattedPhone}?text=${text}`, '_blank');
-                                        }}
-                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] py-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                                      >
-                                        <span>💬</span>
-                                        <span>{language === 'ar' ? 'إرسال تفاصيل الطلب للمندوب (واتساب)' : 'Send Details to Driver (WhatsApp)'}</span>
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div className="grid grid-cols-1 gap-1">
-                                      {drivers.length === 0 ? (
-                                        <span className="text-[10px] text-slate-400">
-                                          {language === 'ar' ? 'لا يوجد مناديب متاحين بعد.' : 'No drivers registered.'}
-                                        </span>
-                                      ) : (
-                                        <select
-                                          onChange={(e) => {
-                                            const selected = drivers.find(d => d.id === e.target.value);
-                                            if (selected) {
-                                              handleUpdateStatus(ord.id, ord.status as any, { name: selected.name, phone: selected.phone });
-                                            }
-                                          }}
-                                          className="w-full text-[11px] p-1.5 bg-white border border-slate-200 rounded-lg text-slate-800 font-medium"
-                                          defaultValue=""
-                                        >
-                                          <option value="" disabled>
-                                            {language === 'ar' ? '-- اختر مندوباً للتوصيل --' : '-- Choose Driver --'}
-                                          </option>
-                                          {drivers.map(d => (
-                                            <option key={d.id} value={d.id}>
-                                              {d.name} ({d.phone}) - {language === 'ar' ? (d.isAvailable ? '🟢 متاح' : '🔴 مشغول') : (d.isAvailable ? '🟢 Available' : '🔴 Busy')}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Primary Action Sequence Buttons */}
-                              <div className="flex flex-col gap-1.5">
-                                {nextStage && (
-                                  <button
-                                    type="button"
-                                    id={`btn-next-${ord.id}`}
-                                    onClick={() => {
-                                      const dInfo = ord.assignedDriverName ? { name: ord.assignedDriverName, phone: ord.assignedDriverPhone || '' } : undefined;
-                                      handleUpdateStatus(ord.id, nextStage as any, dInfo);
-                                    }}
-                                    disabled={updatingId === ord.id}
-                                    className="w-full bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[11px] py-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                                  >
-                                    {language === 'ar' ? `الانتقال إلى: ${getStageLabel(nextStage)} ➡️` : `Move to: ${getStageLabel(nextStage)} ➡️`}
-                                  </button>
-                                )}
-
-                                {/* Cancel Action */}
-                                {ord.status !== 'delivered' && ord.status !== 'cancelled' && (
-                                  <button
-                                    id={`btn-cancel-${ord.id}`}
-                                    onClick={() => handleUpdateStatus(ord.id, 'cancelled')}
-                                    disabled={updatingId === ord.id}
-                                    className="w-full bg-red-50 text-red-600 hover:bg-red-100 border border-red-100/60 font-bold text-[10px] py-1.5 rounded-xl text-center transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                                  >
-                                    <XCircle className="w-3.5 h-3.5" />
-                                    <span>{language === 'ar' ? 'إلغاء الطلب' : 'Cancel'}</span>
-                                  </button>
-                                )}
-
-                                {/* Quick jump statuses to override or choose directly */}
-                                <div className="grid grid-cols-4 gap-1 mt-1">
-                                  {stages.map((st) => {
-                                    if (st === ord.status) return null;
-                                    return (
-                                      <button
-                                        key={st}
-                                        type="button"
-                                        onClick={() => {
-                                          const dInfo = ord.assignedDriverName ? { name: ord.assignedDriverName, phone: ord.assignedDriverPhone || '' } : undefined;
-                                          handleUpdateStatus(ord.id, st as any, dInfo);
-                                        }}
-                                        disabled={updatingId === ord.id}
-                                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[8px] font-semibold py-1 rounded-md text-center transition-colors truncate"
-                                        title={getStageLabel(st)}
-                                      >
-                                        {getStageLabel(st)}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </div>
+                            <button
+                              id={`btn-next-${ord.id}`}
+                              onClick={() => handleUpdateStatus(ord.id, nextStatus)}
+                              disabled={updatingId === ord.id}
+                              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[11px] py-2 rounded-xl text-center transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
+                            >
+                              <span>{language === 'ar' ? 'الخطوة التالية ➡️' : 'Next Step ➡️'}</span>
+                              <span className="underline">
+                                {language === 'ar' ? getNextStatusLabelAr(nextStatus) : getNextStatusLabelEn(nextStatus)}
+                              </span>
+                            </button>
                           );
                         })()}
+
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {/* Manual override helper */}
+                          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/60 rounded-lg px-2 py-1 col-span-2">
+                            <span className="text-[9px] text-slate-400 font-bold uppercase shrink-0">
+                              {language === 'ar' ? 'تعديل الحالة:' : 'Override:'}
+                            </span>
+                            <select
+                              value={ord.status}
+                              onChange={(e) => handleUpdateStatus(ord.id, e.target.value)}
+                              className="w-full bg-transparent text-[10px] font-bold text-slate-700 outline-none cursor-pointer"
+                            >
+                              {['pending', 'received', 'searching_driver', 'preparing', 'ready', 'driver_picked_up', 'on_the_way', 'delivered', 'cancelled'].map(st => (
+                                <option key={st} value={st}>
+                                  {language === 'ar' ? getStatusLabelAr(st) : getStatusLabelEn(st)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {ord.status !== 'delivered' && ord.status !== 'cancelled' && (
+                            <button
+                              id={`btn-cancel-${ord.id}`}
+                              onClick={() => handleUpdateStatus(ord.id, 'cancelled')}
+                              disabled={updatingId === ord.id}
+                              className="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-100/70 font-bold text-[10px] py-1.5 rounded-lg text-center transition-all flex items-center justify-center gap-1 cursor-pointer col-span-2"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>{language === 'ar' ? 'إلغاء الطلب نهائياً' : 'Cancel Order'}</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {ord.status !== 'cancelled' && (
@@ -2170,15 +2305,87 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              triggerWhatsAppNotification(ord, ord.status);
+                              const customerPhone = ord.customerPhone;
+                              let cleanPhone = customerPhone.replace(/\D/g, "");
+                              if (cleanPhone.startsWith("05") && cleanPhone.length === 10) {
+                                cleanPhone = "966" + cleanPhone.substring(1);
+                              } else if (cleanPhone.startsWith("5") && cleanPhone.length === 9) {
+                                cleanPhone = "966" + cleanPhone;
+                              }
+                              
+                              const rNameAr = setRestaurantNameAr || 'رحلة شواء';
+                              const rNameEn = setRestaurantNameEn || 'Grilling Journey';
+                              
+                              let statusTextAr = '';
+                              let statusTextEn = '';
+                              
+                              switch (ord.status) {
+                                case 'pending':
+                                  statusTextAr = '⏳ بانتظار موافقة المطبخ وتأكيد الاستلام';
+                                  statusTextEn = '⏳ Pending acceptance and approval';
+                                  break;
+                                case 'received':
+                                  statusTextAr = '✅ تم استلام وتأكيد طلبك بنجاح وجاري تجهيزه الآن!';
+                                  statusTextEn = '✅ Your order has been received and confirmed!';
+                                  break;
+                                case 'searching_driver':
+                                  statusTextAr = '🔍 جاري التنسيق والبحث عن مندوب لتوصيل طلبك بأسرع وقت!';
+                                  statusTextEn = '🔍 Searching for a delivery driver for your order!';
+                                  break;
+                                case 'preparing':
+                                  statusTextAr = '🔥 بدأ الطبخ والتحضير على الجمر الآن في المطبخ!';
+                                  statusTextEn = '🔥 Being freshly cooked and grilled on charcoal now!';
+                                  break;
+                                case 'ready':
+                                  statusTextAr = '📦 طلبك جاهز الآن وساخن ولذيذ! جاهز للتسليم.';
+                                  statusTextEn = '📦 Your order is ready and hot!';
+                                  break;
+                                case 'driver_picked_up':
+                                  statusTextAr = '🚴 تم تسليم الطلب من قِبل مندوب التوصيل بنجاح وجاري التوجه إليك!';
+                                  statusTextEn = '🚴 The driver has picked up your order and is heading your way!';
+                                  break;
+                                case 'on_the_way':
+                                  statusTextAr = `📍 طلبك في الطريق إليك الآن مع المندوب!\n👤 المندوب: ${ord.driverName || 'كابتن التوصيل'}\n📞 جوال المندوب: ${ord.driverPhone || '-'}`;
+                                  statusTextEn = `📍 Your order is on the way!\n👤 Driver: ${ord.driverName || 'Delivery Captain'}\n📞 Driver Phone: ${ord.driverPhone || '-'}`;
+                                  if (ord.latitude && ord.longitude) {
+                                    statusTextAr += `\n📍 موقع التوصيل على الخريطة:\nhttps://www.google.com/maps?q=${ord.latitude},${ord.longitude}`;
+                                    statusTextEn += `\n📍 Delivery Location Link:\nhttps://www.google.com/maps?q=${ord.latitude},${ord.longitude}`;
+                                  } else if (ord.deliveryAddress) {
+                                    statusTextAr += `\n📍 العنوان المحدد: ${ord.deliveryAddress}`;
+                                    statusTextEn += `\n📍 Address: ${ord.deliveryAddress}`;
+                                  }
+                                  break;
+                                case 'delivered':
+                                  statusTextAr = '🎉 تم تسليم طلبك بنجاح! بالهناء والعافية!';
+                                  statusTextEn = '🎉 Your order has been delivered successfully! Bon appétit!';
+                                  break;
+                                default:
+                                  statusTextAr = '❌ تم إلغاء الطلب';
+                                  statusTextEn = '❌ Cancelled';
+                                  break;
+                              }
+
+                              const msg = language === 'ar'
+                                ? `أهلاً بك يا ${ord.customerName} 👋\n\n*تحديث مهم لطلبك من مطعم ${rNameAr}* 🍢🥤\n\n` +
+                                  `*رقم الطلب:* \`${ord.id}\`\n` +
+                                  `*حالة الطلب الحالية:* ${statusTextAr}\n\n` +
+                                  `يمكنك تتبع حالة الطلب الفورية بضغطة واحدة وعرض الفاتورة عبر الرابط التالي:\n${window.location.origin}/?orderId=${ord.id}\n\n` +
+                                  `_نشكرك لاختيارك مطعمنا ونسعد بخدمتك دائماً!_`
+                                : `Hello ${ord.customerName} 👋\n\n*Important order update from ${rNameEn}* 🍢🥤\n\n` +
+                                  `*Order Code:* \`${ord.id}\`\n` +
+                                  `*Current Status:* ${statusTextEn}\n\n` +
+                                  `You can track your live order status anytime here:\n${window.location.origin}/?orderId=${ord.id}\n\n` +
+                                  `_Thank you for choosing us, looking forward to serving you!_`;
+                              
+                              window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`, '_blank');
                             }}
                             className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 font-extrabold text-[10px] py-1.5 rounded-lg text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-1"
                           >
                             <MessageSquare className="w-3.5 h-3.5" />
                             <span>
                               {language === 'ar' 
-                                ? 'إرسال تحديث مخصص عبر الواتساب 💬' 
-                                : 'Send Custom Status Update via WhatsApp 💬'}
+                                ? 'إرسال التحديث والمتابعة إلى جوال العميل (واتساب) 💬' 
+                                : 'Send WhatsApp Status Update to Customer 💬'}
                             </span>
                           </button>
                         </div>
@@ -2190,199 +2397,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </AnimatePresence>
           </div>
         )}
-      </div>
-
-      {/* 👤 DELIVERY DRIVERS MANAGEMENT BENTO PANEL */}
-      <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5 text-start">
-        <div className="border-b border-slate-100 pb-4">
-          <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
-            <Navigation className="w-5 h-5 text-amber-500 font-bold" />
-            {language === 'ar' ? 'إدارة مناديب التوصيل' : 'Delivery Drivers Management'}
-          </h3>
-          <p className="text-xs text-slate-500">
-            {language === 'ar' ? 'قم بإضافة مناديب التوصيل وتحديث حالتهم بين (متاح / مشغول) لتعيينهم للطلبات الحية' : 'Register and manage delivery drivers, toggle their availability between (Available / Busy), and track their assignments.'}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Add Driver form pane */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3.5 h-fit text-start">
-            <h4 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
-              <User className="w-4 h-4 text-amber-600" />
-              {language === 'ar' ? 'إضافة مندوب جديد' : 'Register New Driver'}
-            </h4>
-            <form onSubmit={handleAddDriver} className="space-y-3">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                  {language === 'ar' ? 'اسم المندوب' : 'Driver Name'}
-                </label>
-                <input
-                  type="text"
-                  value={newDriverName}
-                  onChange={(e) => setNewDriverName(e.target.value)}
-                  placeholder={language === 'ar' ? 'مثال: محمد علي' : 'e.g. John Doe'}
-                  className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-1 focus:ring-amber-500 text-slate-800 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                  {language === 'ar' ? 'رقم الجوال' : 'Mobile Phone'}
-                </label>
-                <input
-                  type="tel"
-                  value={newDriverPhone}
-                  onChange={(e) => setNewDriverPhone(e.target.value)}
-                  placeholder={language === 'ar' ? 'مثال: 0551234567' : 'e.g. 0551234567'}
-                  className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono font-medium"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={savingDriver}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4" />
-                <span>{language === 'ar' ? 'حفظ المندوب' : 'Register Driver'}</span>
-              </button>
-            </form>
-          </div>
-
-          {/* Drivers List pane */}
-          <div className="lg:col-span-2 space-y-3 text-start">
-            <h4 className="text-sm font-bold text-slate-700 flex items-center justify-between">
-              <span>{language === 'ar' ? 'المناديب المسجلين' : 'Registered Drivers'} ({drivers.length})</span>
-            </h4>
-
-            {drivers.length === 0 ? (
-              <div className="border border-dashed border-slate-200 rounded-2xl p-8 text-center text-slate-400 text-xs">
-                {language === 'ar' ? 'لا يوجد مناديب مسجلين حالياً. استخدم النموذج للتسجيل.' : 'No registered drivers found. Use the registration form.'}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
-                {drivers.map((drv) => {
-                  const isEditing = editingDriverId === drv.id;
-                  if (isEditing) {
-                    return (
-                      <form 
-                        key={drv.id} 
-                        onSubmit={(e) => handleEditDriver(e, drv.id)}
-                        className="bg-slate-50 p-3.5 border border-amber-300 rounded-2xl flex flex-col justify-between shadow-xs transition-all gap-3 text-start"
-                      >
-                        <div className="space-y-2">
-                          <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">
-                            {language === 'ar' ? 'تعديل بيانات المندوب' : 'Edit Driver Details'}
-                          </span>
-                          
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                              {language === 'ar' ? 'الاسم' : 'Name'}
-                            </label>
-                            <input
-                              type="text"
-                              value={editingDriverName}
-                              onChange={(e) => setEditingDriverName(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-amber-500"
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                              {language === 'ar' ? 'رقم الجوال' : 'Phone'}
-                            </label>
-                            <input
-                              type="text"
-                              value={editingDriverPhone}
-                              onChange={(e) => setEditingDriverPhone(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:border-amber-500"
-                              required
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-1.5">
-                          <button
-                            type="submit"
-                            disabled={savingDriverEdit}
-                            className="flex-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>{language === 'ar' ? 'حفظ' : 'Save'}</span>
-                          </button>
-                          
-                          <button
-                            type="button"
-                            onClick={() => setEditingDriverId(null)}
-                            className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-bold py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            <span>{language === 'ar' ? 'إلغاء' : 'Cancel'}</span>
-                          </button>
-                        </div>
-                      </form>
-                    );
-                  }
-
-                  return (
-                    <div key={drv.id} className="bg-white p-3.5 border border-slate-100 rounded-2xl flex flex-col justify-between shadow-xs hover:border-slate-200 transition-all gap-3.5">
-                      <div className="flex justify-between items-start">
-                        <div className="space-y-0.5">
-                          <span className="font-bold text-sm text-slate-800 block">👤 {drv.name}</span>
-                          <span className="text-xs text-slate-500 font-mono flex items-center gap-1">
-                            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
-                            {drv.phone}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingDriverId(drv.id);
-                              setEditingDriverName(drv.name);
-                              setEditingDriverPhone(drv.phone);
-                            }}
-                            className="text-amber-600 hover:text-amber-700 p-1.5 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                            title={language === 'ar' ? 'تعديل بيانات المندوب' : 'Edit Driver'}
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteDriver(drv.id)}
-                            className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                            title={language === 'ar' ? 'حذف المندوب' : 'Delete Driver'}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl">
-                        <span className="text-[10px] font-bold text-slate-500">
-                          {language === 'ar' ? 'حالة العمل الحالية:' : 'Working Status:'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleDriverStatus(drv.id, drv.isAvailable)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-extrabold cursor-pointer transition-all border ${
-                            drv.isAvailable 
-                              ? 'bg-emerald-55 bg-emerald-50 text-emerald-700 border-emerald-100/70 hover:bg-emerald-100' 
-                              : 'bg-red-50 text-red-700 border-red-100/70 hover:bg-red-100'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${drv.isAvailable ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                          <span>{language === 'ar' ? (drv.isAvailable ? 'متاح للتوصيل' : 'مشغول حالياً') : (drv.isAvailable ? 'Available' : 'Busy')}</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* BUSINESS CONFIGURATION & SAUDI VAT TAX SYSTEM */}
@@ -2654,6 +2668,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
+            {/* Delivery Fee Settings Section */}
+            <div className="md:col-span-2 pt-4 border-t border-slate-100 text-start">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Truck className="w-4 h-4 text-amber-500" />
+                {language === 'ar' ? 'رسوم التوصيل الافتراضية' : 'Default Delivery Fees'}
+              </h4>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/50 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700">
+                    {language === 'ar' ? 'قيمة رسوم التوصيل المضافة تلقائياً:' : 'Standard Delivery Fee Amount:'}
+                  </label>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    {language === 'ar' 
+                      ? 'يتم استخدام هذه القيمة كرسوم توصيل افتراضية وإرسالها للمندوب والعميل مع تفاصيل الطلب.' 
+                      : 'This value will be used as the standard delivery charge for messaging drivers and customers.'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl font-mono text-xs font-bold shadow-xs">
+                  <input
+                    type="number"
+                    min="0"
+                    value={setDeliveryFee}
+                    onChange={(e) => setSetDeliveryFee(Number(e.target.value))}
+                    className="w-16 text-center outline-none bg-transparent"
+                  />
+                  <span>{language === 'ar' ? 'ريال' : 'SAR'}</span>
+                </div>
+              </div>
+            </div>
+
             {/* Bank Transfer Credentials Section */}
             <div className="md:col-span-2 pt-6 border-t border-slate-100 text-start animate-none">
               <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
@@ -2877,125 +2921,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       ? '💡 لمطابقة تامة وتسهيل التحويل السريع بتطبيق الراجحي، اسحب وأفلت صورة باركود متجرك الحقيقي المأخوذة من تطبيق الراجحي مباشرة (تحويل سريع) لتخزينها محلياً في السحابة.' 
                       : '💡 For perfect compatibility with the Al Rajhi app, simply drag & drop your real official store transfer QR code image.'}
                   </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Payment Gateway Configurations Section */}
-            <div className="md:col-span-2 pt-6 border-t border-slate-100 text-start">
-              <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-200">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                      <span>💳</span>
-                      {language === 'ar' ? 'إعدادات بوابة الدفع الإلكتروني' : 'Electronic Payment Gateway Settings'}
-                    </h3>
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      {language === 'ar' 
-                        ? 'تفعيل أو تعطيل خيارات الدفع ببطاقة مدى وApple Pay وضبط المفاتيح السرية الخاصة بـ Tap Payments.' 
-                        : 'Enable or disable Mada & Apple Pay checkout options and configure Tap Payments API keys.'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xs font-bold text-slate-750">
-                      {language === 'ar' ? 'بوابة الدفع:' : 'Gateway Status:'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPaymentGatewayEnabled(!paymentGatewayEnabled)}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        paymentGatewayEnabled ? 'bg-amber-600' : 'bg-slate-300'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                          paymentGatewayEnabled ? (language === 'ar' ? '-translate-x-5' : 'translate-x-5') : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${paymentGatewayEnabled ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'}`}>
-                      {paymentGatewayEnabled 
-                        ? (language === 'ar' ? 'نشطة (مفعلة)' : 'Active (Enabled)') 
-                        : (language === 'ar' ? 'معطلة (محاكاة)' : 'Disabled (Simulation)')}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-slate-600 mb-1.5">
-                      {language === 'ar' ? 'وضع تشغيل الدفع' : 'Payment Operation Mode'}
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setPaymentGatewayMode('simulated')}
-                        className={`p-3.5 rounded-2xl border text-right sm:text-center flex flex-col gap-1 transition-all cursor-pointer ${
-                          paymentGatewayMode === 'simulated'
-                            ? 'border-amber-500 bg-amber-50 text-amber-950 font-black shadow-xs'
-                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="text-xs font-black">{language === 'ar' ? '🛠️ وضع المحاكاة والتجريب' : 'Simulated / Test Mode'}</span>
-                        <span className="text-[9px] text-slate-500 leading-normal">{language === 'ar' ? 'يقوم بتخطي وإكمال عملية الدفع كـ ناجحة للعميل تلقائياً بدون خصم مبالغ لتسهيل فترات التجربة.' : 'Automatically completes e-payments successfully for frictionless demo testing.'}</span>
-                      </button>
-                      
-                      <button
-                        type="button"
-                        onClick={() => setPaymentGatewayMode('live')}
-                        className={`p-3.5 rounded-2xl border text-right sm:text-center flex flex-col gap-1 transition-all cursor-pointer ${
-                          paymentGatewayMode === 'live'
-                            ? 'border-amber-500 bg-amber-50 text-amber-950 font-black shadow-xs'
-                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="text-xs font-black">{language === 'ar' ? '🟢 وضع الإنتاج الحقيقي (خصم مالي)' : 'Production Live Mode'}</span>
-                        <span className="text-[9px] text-slate-500 leading-normal">{language === 'ar' ? 'يتطلب إدخال مفاتيح الربط الخاصة بـ Tap Payments أدناه لتحويل العملاء لبوابة الدفع الحقيقية.' : 'Requires valid Tap Payments API integration keys below to accept actual card payments.'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                      {language === 'ar' ? 'مفتاح Tap العام (Publishable Key)' : 'Tap Publishable Key (pk_test_...)'}
-                    </label>
-                    <input
-                      type="text"
-                      disabled={!paymentGatewayEnabled && paymentGatewayMode === 'simulated'}
-                      value={tapPublishableKey}
-                      onChange={(e) => setTapPublishableKey(e.target.value)}
-                      placeholder="pk_test_xxxxxxxx or pk_live_xxxxxxxx"
-                      className="w-full text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                      {language === 'ar' ? 'مفتاح Tap السري (Secret Key)' : 'Tap Secret Key (sk_test_...)'}
-                    </label>
-                    <input
-                      type="password"
-                      disabled={!paymentGatewayEnabled && paymentGatewayMode === 'simulated'}
-                      value={tapSecretKey}
-                      onChange={(e) => setTapSecretKey(e.target.value)}
-                      placeholder="sk_test_xxxxxxxx or sk_live_xxxxxxxx"
-                      className="w-full text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-amber-50/60 border border-amber-100 rounded-2xl p-4 mt-5 text-[10px] leading-relaxed space-y-2 text-amber-900">
-                  <p className="font-bold">💡 {language === 'ar' ? 'معلومات حول بوابة الدفع والعملية التجريبية:' : 'Info regarding payment gateway and simulator:'}</p>
-                  <p>
-                    {language === 'ar' 
-                      ? 'لأنك في مرحلة تجريبية، يمكنك ترك البوابة غير مفعلة أو تفعيلها مع اختيار "وضع المحاكاة والتجريب". هذا الوضع يتيح للعملاء اختبار دفع مبيعات مدى وآبل باي بالكامل بنجاح تام وبشكل حقيقي المظهر، وسيقوم المطبخ بطباعة الفواتير مع تحديد طريقة الدفع فوراً دون الحاجة لخصم قرش واحد أو مواجهة تعقيدات الربط البنكي.'
-                      : 'Since you are in a testing phase, you can disable the e-gateway or choose "Simulated/Test Mode". This lets users test the full checkout loop for Apple Pay and Mada with simulated approvals, triggering kitchen slips instantly without real financial transactions.'}
-                  </p>
-                  <p>
-                    {language === 'ar'
-                      ? 'بوابة الدفع الافتراضية المدعومة هي Tap Payments (وهي شركة رائدة تدعم المتاجر والشركات السعودية بشكل كامل لدعم بطاقات مدى وحسابات Apple Pay، ولا يفرق معها البنك المستلم طالما قمت بالتسجيل لديهم ووضع مفاتيحك هنا لاحقاً).'
-                      : 'The supported payment provider is Tap Payments (a leading company that fully supports Saudi merchants for Mada and Apple Pay. It works with any Saudi bank once you register and place your keys here later).'}
-                  </p>
                 </div>
               </div>
             </div>
@@ -3670,6 +3595,235 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </form>
       </div>
 
+      {/* DRIVERS MANAGEMENT SECTION */}
+      <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
+        <div className="text-start border-b border-slate-100 pb-4">
+          <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
+            <Truck className="w-5 h-5 text-amber-500 font-bold" />
+            {language === 'ar' ? 'إدارة مناديب التوصيل' : 'Drivers Management'}
+          </h3>
+          <p className="text-xs text-slate-500">
+            {language === 'ar' ? 'أضف مناديب التوصيل الخاصين بك وتتبع حالتهم لتسهيل تعيينهم وإسناد الطلبات إليهم في ثوانٍ معدودة' : 'Add your delivery drivers and track their availability to assign them orders in seconds'}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-start">
+          {/* Add/Edit Driver Form */}
+          <div className="bg-slate-50/50 border border-slate-200/50 p-4 rounded-2xl">
+            <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <Plus className="w-4 h-4 text-amber-500" />
+              {language === 'ar' ? 'إضافة مندوب جديد' : 'Add New Driver'}
+            </h4>
+            <form onSubmit={handleSaveDriver} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'اسم المندوب' : 'Driver Name'}</label>
+                <input
+                  required
+                  type="text"
+                  value={driverName}
+                  onChange={(e) => setDriverName(e.target.value)}
+                  placeholder={language === 'ar' ? 'مثال: محمد الربيعان' : 'e.g. Mohammed Al-Rubaian'}
+                  className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none focus:border-amber-500 font-semibold"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'رقم الجوال (واتساب)' : 'Phone Number (WhatsApp)'}</label>
+                <input
+                  required
+                  type="text"
+                  value={driverPhone}
+                  onChange={(e) => setDriverPhone(e.target.value)}
+                  placeholder={language === 'ar' ? 'مثال: 9665XXXXXXXX' : 'e.g. 9665XXXXXXXX'}
+                  className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none focus:border-amber-500 font-mono"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-black py-2.5 rounded-xl cursor-pointer shadow-xs transition-all active:scale-[0.98]"
+              >
+                {language === 'ar' ? 'إضافة المندوب ➕' : 'Add Driver ➕'}
+              </button>
+            </form>
+
+            {/* Standalone Driver Portal Link Box */}
+            <div className="mt-4 bg-yellow-50/50 border border-yellow-200 p-4 rounded-2xl space-y-2">
+              <h5 className="text-xs font-black text-yellow-800 flex items-center gap-1.5">
+                🔗 {language === 'ar' ? 'بوابة المناديب المستقلة' : 'Standalone Driver Portal'}
+              </h5>
+              <p className="text-[10px] text-yellow-700 leading-normal">
+                {language === 'ar' 
+                  ? 'رابط البوابة المستقلة للمناديب لتسجيل الدخول وتسليم الطلبات بشكل منفصل تماماً عن منيو الزبائن.' 
+                  : 'Link to the standalone driver portal for sign-in and delivery updates separate from customer menu.'}
+              </p>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  readOnly
+                  value={window.location.origin + '/driver'}
+                  className="flex-1 text-[10px] bg-white border border-yellow-200 rounded-lg p-2 font-mono outline-none text-slate-700 select-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.origin + '/driver');
+                    alert(language === 'ar' ? 'تم نسخ الرابط بنجاح! 📋' : 'Link copied successfully! 📋');
+                  }}
+                  className="bg-yellow hover:bg-yellow-500 text-black text-[10px] font-black px-3 py-2 rounded-lg cursor-pointer transition-all shrink-0"
+                >
+                  {language === 'ar' ? 'نسخ' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Drivers List */}
+          <div className="lg:col-span-2 space-y-6">
+            
+            {/* Registered Drivers Subsection */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Truck className="w-4 h-4 text-amber-500" />
+                {language === 'ar' ? `قائمة المناديب المسجلين المعتمدين (${drivers.length})` : `Approved Drivers List (${drivers.length})`}
+              </h4>
+
+              {drivers.length === 0 ? (
+                <div className="bg-slate-50 border border-dashed border-slate-200 p-8 rounded-2xl text-center">
+                  <p className="text-xs text-slate-400">
+                    {language === 'ar' 
+                      ? 'لم يتم تسجيل أي مناديب بعد. استخدم النموذج الجانبي لإضافة مندوبك الأول!' 
+                      : 'No drivers registered yet. Use the sidebar form to add your first driver!'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
+                  {drivers.map((drv) => (
+                    <div key={drv.id} className="bg-white border border-slate-150 p-3 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
+                      <div className="text-start">
+                        <p className="text-xs font-bold text-slate-800">{drv.name}</p>
+                        <a href={`tel:${drv.phone}`} className="text-[11px] font-mono font-semibold text-blue-600 hover:underline">
+                          📞 {drv.phone}
+                        </a>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Availability status badge & toggle */}
+                        <button
+                          onClick={() => handleToggleDriverStatus(drv.id, drv.status)}
+                          disabled={updatingDriverId === drv.id}
+                          className={`text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg border transition-colors cursor-pointer active:scale-95 flex items-center gap-1 ${
+                            drv.status === 'available'
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                              : 'bg-rose-50 border-rose-200 text-rose-700'
+                          }`}
+                        >
+                          {updatingDriverId === drv.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <span>
+                              {drv.status === 'available' 
+                                ? (language === 'ar' ? '● متاح' : '● Available') 
+                                : (language === 'ar' ? '● مشغول' : '● Busy')}
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => {
+                            if (confirm(language === 'ar' ? `هل أنت متأكد من حذف المندوب ${drv.name}؟` : `Are you sure you want to delete driver ${drv.name}?`)) {
+                              handleDeleteDriver(drv.id);
+                            }
+                          }}
+                          disabled={updatingDriverId === drv.id}
+                          className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                          title={language === 'ar' ? 'حذف المندوب' : 'Delete Driver'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Pending Registrations Subsection */}
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <h4 className="text-xs font-black text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-amber-500 animate-pulse" />
+                {language === 'ar' 
+                  ? `طلبات تسجيل المناديب المعلقة (${pendingDrivers.length})` 
+                  : `Pending Driver Registrations (${pendingDrivers.length})`}
+              </h4>
+
+              {pendingDrivers.length === 0 ? (
+                <div className="bg-slate-50 border border-dashed border-slate-150 p-6 rounded-2xl text-center">
+                  <p className="text-xs text-slate-400 font-semibold">
+                    {language === 'ar' 
+                      ? 'لا توجد طلبات تسجيل معلقة حالياً.' 
+                      : 'No pending registration requests at this time.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
+                  {pendingDrivers.map((pending) => (
+                    <div key={pending.id} className="bg-amber-50/20 border border-amber-100 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-3">
+                        {pending.carRegistrationImg ? (
+                          <img
+                            src={pending.carRegistrationImg}
+                            alt="Car registration"
+                            className="w-12 h-12 rounded-xl object-cover border border-amber-200 cursor-zoom-in hover:scale-105 transition-transform shrink-0"
+                            onClick={() => setSelectedDocPreview(pending.carRegistrationImg)}
+                            title={language === 'ar' ? 'اضغط لتكبير الصورة' : 'Click to enlarge'}
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                            📄
+                          </div>
+                        )}
+                        <div className="text-start">
+                          <p className="text-xs font-bold text-slate-800">{pending.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <a href={`tel:${pending.phone}`} className="text-[11px] font-mono font-bold text-blue-600 hover:underline">
+                              📞 {pending.phone}
+                            </a>
+                            <span className="text-[10px] text-slate-400">
+                              • {new Date(pending.createdAt).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-US')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <button
+                          onClick={() => handleApprovePendingDriver(pending)}
+                          disabled={updatingDriverId === pending.id}
+                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-xs active:scale-95"
+                        >
+                          {updatingDriverId === pending.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <span>{language === 'ar' ? 'قبول واعتماد ✅' : 'Approve ✅'}</span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleRejectPendingDriver(pending.id)}
+                          disabled={updatingDriverId === pending.id}
+                          className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-[10px] font-black rounded-lg transition-colors flex items-center gap-1 cursor-pointer active:scale-95"
+                        >
+                          <span>{language === 'ar' ? 'رفض ❌' : 'Reject ❌'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      </div>
+
       {/* CORE MENU ITEMS CONTROLS */}
       <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
         
@@ -3836,7 +3990,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     className="w-4 h-4 accent-amber-600"
                   />
                   <label htmlFor="dineinonly-chkbx" className="text-xs font-bold text-slate-600">
-                    {language === 'ar' ? 'للطلب محلي فقط (داخل الصالة، لا يمكن استلامه سفري أو توصيله) 🍽️' : 'Dine-In Only (Restricted from Takeaway & Delivery) 🍽️'}
+                    {language === 'ar' ? 'للطلب محلي فقط (داخل الصالة يمنع سفري) 🍽️' : 'Dine-In Only (Restricted from Takeaway) 🍽️'}
                   </label>
                 </div>
 
@@ -4032,11 +4186,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           DYNAMIC PRINT STYLES & ZERO-MARGIN MEDIA OVERRIDES
           ───────────────────────────────────────────────────────────────── */}
       <style>{`
-        @media screen {
-          #recept-print-area {
-            display: none !important;
-          }
-        }
         @media print {
           @page {
             size: auto !important;
@@ -4142,7 +4291,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }
 
         return createPortal(
-          <div id="recept-print-area" className="text-black bg-white select-none">
+          <div id="recept-print-area" className="hidden print:block text-black bg-white select-none">
             
             {/* Section 1: Customer Invoice */}
             {setShowCustomerReceiptOnPrint && (currentPrintSubMode === 'all' || currentPrintSubMode === 'customer') && (
@@ -4190,9 +4339,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <span className="font-bold">
                       {printingOrder.tableOrDelivery === 'table' 
                         ? (language === 'ar' ? 'محلي' : 'Dine-In')
-                        : printingOrder.tableOrDelivery === 'takeaway'
-                        ? (language === 'ar' ? 'استلام من الفرع' : 'Takeaway')
-                        : (language === 'ar' ? 'توصيل' : 'Delivery')}
+                        : (language === 'ar' ? 'سفري' : 'Takeaway')}
                     </span>
                   </div>
                   <div className="mt-1 text-end">
@@ -4343,16 +4490,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <div className="font-extrabold text-[12px] mt-0.5">
                     {printingOrder.tableOrDelivery === 'table' 
                       ? (language === 'ar' ? 'طلب محلي' : 'Dine-In Order')
-                      : printingOrder.tableOrDelivery === 'takeaway'
-                      ? (language === 'ar' ? 'طلب استلام من الفرع' : 'Takeaway Order')
-                      : (language === 'ar' ? 'طلب توصيل منزلي' : 'Delivery Order')}
+                      : (language === 'ar' ? 'طلب سفري' : 'Takeaway Order')}
                   </div>
                 </div>
 
-                <div className="text-[10px] font-mono border-b border-black/20 pb-1.5 mb-1.5">
-                  <div className="text-[14px] font-black border border-black p-1 text-center bg-black/5 rounded-sm my-1 select-all">
-                    👤 {language === 'ar' ? 'العميل:' : 'Customer:'} {printingOrder.customerName}
+                <div className="text-[12px] font-mono border-b border-black/20 pb-1.5 mb-1.5">
+                  <div className="bg-black text-white p-2 rounded-md text-center font-black text-[16px] tracking-wide mb-2">
+                    👤 {printingOrder.customerName}
                   </div>
+                  <div>{language === 'ar' ? 'العميل:' : 'Customer:'} <strong className="text-[14px]">{printingOrder.customerName}</strong></div>
                   <div>{language === 'ar' ? 'الوقت:' : 'Time:'} {new Date(printingOrder.createdAt).toISOString().replace('T', ' ').substring(11, 16)}</div>
                   {printingOrder.notes && (
                     <div className="mt-1 pb-1 pt-1 border-t border-black/10 border-dotted text-[11px] font-extrabold text-start">
@@ -4384,6 +4530,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           document.body
         );
       })()}
+
+      {/* Document/Image Preview Modal */}
+      {selectedDocPreview && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] animate-fade-in">
+          <div className="bg-white rounded-3xl p-4 max-w-2xl w-full relative shadow-2xl border border-slate-100 flex flex-col items-center">
+            <button
+              onClick={() => setSelectedDocPreview(null)}
+              className="absolute top-4 right-4 w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-full flex items-center justify-center font-bold text-lg cursor-pointer transition-colors z-10"
+              title={language === 'ar' ? 'إغلاق' : 'Close'}
+            >
+              ✕
+            </button>
+            <div className="w-full text-center mb-2 pb-2 border-b border-slate-100">
+              <h4 className="font-extrabold text-sm text-slate-800">
+                {language === 'ar' ? 'معاينة صورة الاستمارة 📄' : 'Car Registration Document Preview 📄'}
+              </h4>
+            </div>
+            <div className="overflow-auto max-h-[80vh] w-full flex items-center justify-center p-2">
+              <img
+                src={selectedDocPreview}
+                alt="Document preview"
+                className="max-w-full max-h-[70vh] object-contain rounded-2xl border border-slate-150"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

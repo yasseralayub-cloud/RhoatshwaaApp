@@ -1,6 +1,8 @@
 {
   "name": "مطعم رحلة شواء",
   "description": "منصة تفاعلية متكاملة لمنيو ومبيعات مطعم رحلة شواء مع تتبع فوري للطلبات وفواتير إلكترونية متوافقة مع متطلبات هيئة الزكاة والضريبة والجمارك.",
-  "requestFramePermissions": ["geolocation"],
+  "requestFramePermissions": [
+    "geolocation"
+  ],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

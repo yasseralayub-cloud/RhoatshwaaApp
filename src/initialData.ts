@@ -625,5 +625,6 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   bankAccountNumber: "432608010007890",
   bankIban: "SA8380000432608010007890",
   bankQrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=432608010007890",
-  bankEnabled: true
+  bankEnabled: true,
+  deliveryFee: 15
 };

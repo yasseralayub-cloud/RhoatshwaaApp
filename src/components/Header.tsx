@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLanguage } from './LanguageContext';
-import { ShoppingBag, Search, Globe, Shield, ClipboardList, MapPin, Clock, Smartphone } from 'lucide-react';
+import { ShoppingBag, Search, Globe, Shield, ClipboardList, MapPin, Clock, Smartphone, Truck } from 'lucide-react';
 import { isRestaurantOpen, formatTime12h } from '../utils/time';
 
 interface HeaderProps {
@@ -8,11 +8,12 @@ interface HeaderProps {
   onCartClick: () => void;
   searchTerm: string;
   onSearchChange: (val: string) => void;
-  onTabChange: (tab: 'menu' | 'tracker' | 'admin') => void;
-  activeTab: 'menu' | 'tracker' | 'admin';
+  onTabChange: (tab: 'menu' | 'tracker' | 'admin' | 'driver') => void;
+  activeTab: 'menu' | 'tracker' | 'admin' | 'driver';
   isAdminAuthenticated: boolean;
   businessSettings?: import('../types').BusinessSettings;
   showAdminTab?: boolean;
+  showDriverTab?: boolean;
   onWelcomeClick?: () => void;
 }
 
@@ -26,30 +27,10 @@ export const Header: React.FC<HeaderProps> = ({
   isAdminAuthenticated,
   businessSettings,
   showAdminTab = false,
+  showDriverTab = false,
   onWelcomeClick
 }) => {
   const { language, setLanguage, t } = useLanguage();
-  const [logoClicks, setLogoClicks] = React.useState<{ count: number; lastTime: number }>({ count: 0, lastTime: 0 });
-
-  const handleLogoClick = () => {
-    const now = Date.now();
-    if (now - logoClicks.lastTime < 1000) {
-      const nextCount = logoClicks.count + 1;
-      if (nextCount >= 5) {
-        onTabChange('admin');
-        setLogoClicks({ count: 0, lastTime: 0 });
-      } else {
-        setLogoClicks({ count: nextCount, lastTime: now });
-      }
-    } else {
-      setLogoClicks({ count: 1, lastTime: now });
-    }
-    
-    // Maintain default navigation when clicking logo normally
-    if (activeTab !== 'menu') {
-      onTabChange('menu');
-    }
-  };
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md text-dark shadow-sm border-b border-black/5">
@@ -62,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Brand/Logo Section - occupies full-width on mobile to layout actions beside it */}
           <div className="flex justify-between items-center gap-3 w-full md:w-auto">
-            <div className="flex items-center gap-2.5 md:gap-3.5 cursor-pointer" onClick={handleLogoClick}>
+            <div className="flex items-center gap-2.5 md:gap-3.5 cursor-pointer" onClick={() => onTabChange('menu')}>
               <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-yellow flex items-center justify-center font-bold text-black text-sm md:text-lg shadow-sm font-sans overflow-hidden shrink-0 border border-black/5">
                 {businessSettings?.logoUrl ? (
                   <img src={businessSettings.logoUrl} alt="Logo" referrerPolicy="no-referrer" className="w-[100%] h-[100%] rounded-full object-cover" />
@@ -177,20 +158,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>{t('tracker')}</span>
               </button>
 
-              {showAdminTab && (
-                <button
-                  id="admin-tab-nav"
-                  onClick={() => onTabChange('admin')}
-                  className={`flex-1 md:flex-none text-center px-4 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer ${
-                    activeTab === 'admin'
-                      ? 'bg-yellow text-black font-bold shadow-xs'
-                      : 'text-dark/60 hover:text-dark'
-                  }`}
-                >
-                  <Shield className={`w-3.5 h-3.5 ${isAdminAuthenticated ? 'text-black' : ''}`} />
-                  <span>{t('admin')}</span>
-                </button>
-              )}
             </div>
 
             {/* Desktop-only utility elements */}

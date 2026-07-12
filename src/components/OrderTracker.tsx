@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Order } from '../types';
 import { useLanguage } from './LanguageContext';
-import { Search, Loader2, UtensilsCrossed, CheckCircle2, Clock, Ban, User, Phone, MapPin, Clipboard, FileText, Printer, QrCode, Sparkles, Bell, X, Download, Navigation, ShoppingBag, Copy, Check, Share2 } from 'lucide-react';
+import { Search, Loader2, UtensilsCrossed, CheckCircle2, Clock, Ban, User, Phone, MapPin, Clipboard, FileText, Printer, QrCode, Sparkles, Bell, X, Truck } from 'lucide-react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,6 +13,7 @@ interface OrderTrackerProps {
 }
 
 import { generateZatcaQr } from '../utils/time';
+import { ZatcaFatooraCard } from './ZatcaFatooraCard';
 
 export const OrderTracker: React.FC<OrderTrackerProps> = ({ 
   initialOrderId = '', 
@@ -27,71 +28,6 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
-  const [generatingPdf, setGeneratingPdf] = useState(false);
-  const [copiedInvoice, setCopiedInvoice] = useState(false);
-
-  const getInvoiceText = () => {
-    if (!order) return '';
-    const dateFormatted = new Date(order.createdAt).toISOString().replace('T', ' ').substring(0, 19);
-    const orderType = order.tableOrDelivery === 'table' 
-      ? (language === 'ar' ? `محلي - طاولة ${order.tableNumber || 'لم تحدد'}` : `Dine-In - Table ${order.tableNumber || 'Unspecified'}`)
-      : order.tableOrDelivery === 'takeaway'
-      ? (language === 'ar' ? 'استلام من الفرع' : 'Takeaway (Pickup)')
-      : (language === 'ar' ? `توصيل - العنوان: ${order.deliveryAddress}` : `Delivery - Address: ${order.deliveryAddress}`);
-
-    const itemsText = order.items.map(item => `• ${language === 'ar' ? item.nameAr : item.name} (${item.quantity}x) - ${(item.price * item.quantity).toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}`).join('\n');
-    
-    return language === 'ar' 
-      ? `🍢 *فاتورة طلب - مطعم رحلة شواء* 🍢\n\n` +
-        `*رقم الفاتورة:* ${order.id}\n` +
-        `*التاريخ:* ${dateFormatted}\n` +
-        `*نوع الطلب:* ${orderType}\n` +
-        `*العميل:* ${order.customerName}\n` +
-        `----------------------------------------\n` +
-        `*الأصناف المطلوبة:*\n${itemsText}\n` +
-        `----------------------------------------\n` +
-        `*المجموع الفرعي:* ${(order.subtotal).toFixed(2)} ريال\n` +
-        `*ضريبة القيمة المضافة:* ${(order.tax).toFixed(2)} ريال\n` +
-        `*الإجمالي النهائي:* *${(order.total).toFixed(2)} ريال*\n\n` +
-        `شكراً لزيارتكم وصحة وعافية! ❤️`
-      : `🍢 *Invoice - Grilling Journey Restaurant* 🍢\n\n` +
-        `*Order ID:* ${order.id}\n` +
-        `*Date:* ${dateFormatted}\n` +
-        `*Order Type:* ${orderType}\n` +
-        `*Customer:* ${order.customerName}\n` +
-        `----------------------------------------\n` +
-        `*Items Ordered:*\n${itemsText}\n` +
-        `----------------------------------------\n` +
-        `*Subtotal:* ${(order.subtotal).toFixed(2)} SAR\n` +
-        `*VAT:* ${(order.tax).toFixed(2)} SAR\n` +
-        `*Total Amount:* *${(order.total).toFixed(2)} SAR*\n\n` +
-        `Thank you for your visit, enjoy your meal! ❤️`;
-  };
-
-  const handleCopyInvoiceText = () => {
-    const text = getInvoiceText();
-    navigator.clipboard.writeText(text);
-    setCopiedInvoice(true);
-    setTimeout(() => setCopiedInvoice(false), 2000);
-  };
-
-  const handleShareInvoice = () => {
-    const text = getInvoiceText();
-    if (navigator.share) {
-      navigator.share({
-        title: language === 'ar' ? 'فاتورة طلب رحلة شواء' : 'Rehla BBQ Invoice',
-        text: text,
-      }).catch(err => {
-        console.log('Share failed:', err);
-        // Fallback to WhatsApp
-        const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-        window.open(waUrl, '_blank');
-      });
-    } else {
-      const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-      window.open(waUrl, '_blank');
-    }
-  };
 
   // Directly trigger print system for thermal receipt printer layout
   const handleDirectPrint = () => {
@@ -99,90 +35,6 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
     setTimeout(() => {
       window.print();
     }, 250);
-  };
-
-  const handleDownloadPDF = async () => {
-    if (!order) return;
-    setGeneratingPdf(true);
-    const element = document.getElementById('recept-print-area');
-    if (!element) {
-      setGeneratingPdf(false);
-      return;
-    }
-
-    const loadHtml2Pdf = () => {
-      return new Promise<any>((resolve, reject) => {
-        if ((window as any).html2pdf) {
-          resolve((window as any).html2pdf);
-          return;
-        }
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-        script.onload = () => resolve((window as any).html2pdf);
-        script.onerror = () => reject(new Error('Failed to load PDF library'));
-        document.body.appendChild(script);
-      });
-    };
-
-    // Helper to convert oklch or oklab colors to grayscale fallback for html2canvas
-    const oklchToRgb = (match: string) => {
-      try {
-        const clean = match.replace(/okl[ch|ab]\(/i, '').replace(/\)/, '');
-        const parts = clean.split('/');
-        const colorParts = parts[0].trim().split(/\s+/);
-        const L = parseFloat(colorParts[0]);
-        
-        let alpha = '1';
-        if (parts[1]) {
-          const aVal = parts[1].trim();
-          if (aVal.endsWith('%')) {
-            alpha = (parseFloat(aVal) / 100).toString();
-          } else {
-            alpha = aVal;
-          }
-        }
-        
-        if (isNaN(L)) return 'rgb(120, 120, 120)';
-        const val = Math.round(L * 255);
-        return `rgba(${val}, ${val}, ${val}, ${alpha})`;
-      } catch (e) {
-        return 'rgb(120, 120, 120)';
-      }
-    };
-
-    const styleElements = Array.from(document.querySelectorAll('style'));
-    const restoredStyles: { element: HTMLStyleElement; originalText: string }[] = [];
-
-    try {
-      // Temporarily replace oklch/oklab values to prevent html2canvas parsing errors
-      styleElements.forEach((styleEl) => {
-        const text = styleEl.textContent || '';
-        if (text.includes('oklch') || text.includes('oklab')) {
-          restoredStyles.push({ element: styleEl, originalText: text });
-          const cleanedText = text.replace(/okl[ch|ab]\([^)]+\)/gi, oklchToRgb);
-          styleEl.textContent = cleanedText;
-        }
-      });
-
-      const html2pdf = await loadHtml2Pdf();
-      const opt = {
-        margin: [10, 10, 10, 10],
-        filename: `Invoice_${order.id}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2.5, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-      await html2pdf().from(element).set(opt).save();
-    } catch (err) {
-      console.error('PDF generation failed, falling back to print:', err);
-      window.print();
-    } finally {
-      // Restore original oklch/oklab styles so the UI remains pristine
-      restoredStyles.forEach(({ element, originalText }) => {
-        element.textContent = originalText;
-      });
-      setGeneratingPdf(false);
-    }
   };
 
   // States & Refs for Visual Toast Notifications
@@ -208,7 +60,6 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
 
   const prevStatusRef = useRef<string | undefined>(undefined);
   const trackedOrderIdRef = useRef<string | undefined>(undefined);
-  const lastNotifiedStatusRef = useRef<string | undefined>(undefined);
   const activeCleanupRef = useRef<(() => void) | null>(null);
 
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
@@ -228,26 +79,8 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
       return remainingSeconds;
     };
 
-    const autoConfirmOrder = async () => {
-      try {
-        const { updateDoc, doc } = await import('firebase/firestore');
-        await updateDoc(doc(db, 'orders', order.id), { status: 'preparing' });
-      } catch (e) {
-        console.warn('Could not auto-confirm in Firestore:', e);
-      }
-
-      try {
-        const stored = localStorage.getItem('simulated_orders');
-        if (stored) {
-          const parsedList: Order[] = JSON.parse(stored);
-          const updatedList = parsedList.map(o => 
-            o.id === order.id ? { ...o, status: 'preparing' as const } : o
-          );
-          localStorage.setItem('simulated_orders', JSON.stringify(updatedList));
-        }
-      } catch (e) {
-        console.warn(e);
-      }
+    const autoConfirmOrder = () => {
+      console.log('Grace period ended. Order is now locked and awaiting supervisor approval.');
     };
 
     const initialRemaining = calculateTimeLeft();
@@ -322,16 +155,8 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const getWhatsAppMessageLink = () => {
     if (!order) return '';
     try {
-      const orderTypeArabic = order.tableOrDelivery === 'table' 
-        ? 'محلي (داخل المطعم)' 
-        : order.tableOrDelivery === 'takeaway' 
-        ? 'استلام من الفرع' 
-        : 'توصيل (خارج المطعم)';
-      const orderTypeEnglish = order.tableOrDelivery === 'table' 
-        ? 'Dine-In' 
-        : order.tableOrDelivery === 'takeaway' 
-        ? 'Takeaway' 
-        : 'Delivery';
+      const orderTypeArabic = order.tableOrDelivery === 'table' ? 'محلي (داخل المطعم)' : 'سفري (خارج المطعم)';
+      const orderTypeEnglish = order.tableOrDelivery === 'table' ? 'Dine-In' : 'Takeaway';
       
       const payArabic = order.paymentMethod === 'cod' ? 'الدفع عند الاستلام' : order.paymentMethod === 'applepay' ? 'آبل باي' : 'مدى';
       const payEnglish = order.paymentMethod === 'cod' ? 'Cash on Delivery' : order.paymentMethod === 'applepay' ? 'Apple Pay' : 'Mada';
@@ -446,73 +271,24 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   // Observe active order statuses to fire premium Toast notification when status transitions
   useEffect(() => {
     if (order) {
-      // Helper check using sessionStorage to guarantee absolute zero duplicate notifications for a given orderId + status
-      const getHasNotifiedDurable = (orderId: string, status: string): boolean => {
-        try {
-          return sessionStorage.getItem(`notified_dur_${orderId}_${status}`) === 'true';
-        } catch (e) {
-          return false;
-        }
-      };
-
-      const setHasNotifiedDurable = (orderId: string, status: string) => {
-        try {
-          sessionStorage.setItem(`notified_dur_${orderId}_${status}`, 'true');
-        } catch (e) {}
-      };
-
-      // If we are tracking a different order ID, initialize tracking references to prevent noisy alerts on initial load
-      if (trackedOrderIdRef.current !== order.id) {
-        setHasNotifiedDurable(order.id, order.status);
-        lastNotifiedStatusRef.current = order.status;
-        trackedOrderIdRef.current = order.id;
-        prevStatusRef.current = order.status;
-        return;
-      }
-
-      // Trigger notification ONLY when the status has actually changed and we haven't notified for this status yet
-      if (lastNotifiedStatusRef.current !== order.status && !getHasNotifiedDurable(order.id, order.status)) {
+      if (trackedOrderIdRef.current === order.id && prevStatusRef.current && prevStatusRef.current !== order.status) {
         let titleAr = '';
         let titleEn = '';
         let messageAr = '';
         let messageEn = '';
         let type: 'success' | 'info' | 'alert' = 'info';
 
-        if (order.status === 'searching_driver') {
-          titleAr = 'جاري البحث عن مندوب توصيل 🚗';
-          titleEn = 'Searching for Delivery Driver 🚗';
-          messageAr = `تم استلام طلبك رقم ${order.id} بنجاح، وجاري حالياً البحث عن مندوب لتوصيله إليك.`;
-          messageEn = `Your order ${order.id} has been received. We are now searching for a delivery driver.`;
-          type = 'info';
-        } else if (order.status === 'preparing') {
+        if (prevStatusRef.current === 'pending' && order.status === 'preparing') {
           titleAr = 'بدأ تحضير طلبك! 👨‍🍳🔥';
           titleEn = 'Kitchen Preparing Cooking! 👨‍🍳🔥';
           messageAr = `طلبك رقم ${order.id} قيد التحضير والطهي على الجمر والطلب المباشر بالمطبخ الآن!`;
           messageEn = `Order ${order.id} is now being cooked and grilled on the coals!`;
           type = 'info';
-        } else if (order.status === 'ready') {
-          titleAr = 'الطلب جاهز ولذيذ! 🎉🍢';
+        } else if (prevStatusRef.current === 'preparing' && order.status === 'delivered') {
+          titleAr = 'طلبك جاهز ولذيذ! 🎉🍢';
           titleEn = 'Your Order is Ready! 🎉🍢';
-          messageAr = `عزيزنا ${order.customerName || 'العميل'}، اكتمل تحضير وتجهيز وجبتك الطازجة وهي جاهزة للاستلام الآن بالعافية!`;
+          messageAr = `عزيزنا ${order.customerName || 'العميل'}، اكتمل طهي وتجهيز وجبتك الطازجة وهي جاهزة للاستلام الآن بالعافية!`;
           messageEn = `Dear ${order.customerName || 'Customer'}, your charcoal-grilled meal is complete and freshly prepared!`;
-          type = 'success';
-        } else if (order.status === 'driver_picked_up') {
-          titleAr = 'المندوب استلم الطلب 📦🚗';
-          titleEn = 'Driver Picked Up Order 📦🚗';
-          messageAr = `قائد التوصيل استلم طلبك وهو يستعد للانطلاق للتسليم.`;
-          messageEn = `The delivery agent has picked up your order and is preparing to depart.`;
-          type = 'info';
-        } else if (order.status === 'delivering') {
-          titleAr = 'الطلب في الطريق إليك! 🚀🏠';
-          titleEn = 'Order is On the Way! 🚀🏠';
-          messageAr = `طلبك الشهي في الطريق إليك مع المندوب الآن! ترقب وصوله قريباً.`;
-          messageEn = `Your fresh order is on its way to your address now with our driver!`;
-          type = 'info';
-        } else if (order.status === 'delivered') {
-          titleAr = 'تم تسليم الطلب بنجاح! 🎉🍢';
-          titleEn = 'Order Delivered Successfully! 🎉🍢';
-          messageAr = `تم تسليم طلبك بنجاح. بالعافية والشهية الطيبة يا غالي! 🌸`;
-          messageEn = `Your order has been delivered. Enjoy your delicious grilled meal! 🌸`;
           type = 'success';
         } else if (order.status === 'cancelled') {
           titleAr = 'تم إلغاء الطلب ❌';
@@ -549,18 +325,12 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
             }
           }
         }
-
-        // Lock in the notified status durably and in ref to prevent any infinite loops or multiple notifications
-        setHasNotifiedDurable(order.id, order.status);
-        lastNotifiedStatusRef.current = order.status;
       }
-
       prevStatusRef.current = order.status;
       trackedOrderIdRef.current = order.id;
     } else {
       prevStatusRef.current = undefined;
       trackedOrderIdRef.current = undefined;
-      lastNotifiedStatusRef.current = undefined;
     }
   }, [order]);
   
@@ -730,26 +500,84 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
     };
   };
 
-  const getStatusFlow = () => {
-    if (!order) return ['pending', 'preparing', 'delivered'];
-    if (order.tableOrDelivery === 'delivery') {
-      return ['pending', 'searching_driver', 'preparing', 'ready', 'driver_picked_up', 'delivering', 'delivered'];
-    }
-    return ['pending', 'preparing', 'ready', 'delivered'];
-  };
-
-  const getStepStatus = (step: string) => {
+  const getStepStatus = (step: 'received' | 'preparing' | 'ready' | 'transit' | 'delivered') => {
     if (!order) return 'inactive';
     if (order.status === 'cancelled') return 'inactive';
 
-    const statusFlow = getStatusFlow();
-    const currentIdx = statusFlow.indexOf(order.status);
-    const stepIdx = statusFlow.indexOf(step);
+    const statusMap: Record<string, number> = {
+      'pending': 0,
+      'received': 1,
+      'preparing': 2,
+      'searching_driver': 2,
+      'ready': order.tableOrDelivery === 'delivery' ? 2 : 3,
+      'driver_assigned': 2,
+      'driver_picked_up': 3,
+      'on_the_way': 3,
+      'delivered': 4,
+    };
 
-    if (currentIdx >= stepIdx) {
-      return currentIdx === stepIdx ? 'active' : 'completed';
+    const stepMap: Record<'received' | 'preparing' | 'ready' | 'transit' | 'delivered', number> = {
+      'received': 1,
+      'preparing': 2,
+      'ready': 3,
+      'transit': 3,
+      'delivered': 4,
+    };
+
+    const currentLevel = statusMap[order.status] ?? 0;
+    const stepLevel = stepMap[step];
+
+    // For non-delivery, skip transit stage (it counts as completed if current level >= 4)
+    if (order.tableOrDelivery !== 'delivery' && step === 'transit') {
+      return currentLevel >= 4 ? 'completed' : 'inactive';
+    }
+
+    if (currentLevel > stepLevel) {
+      return 'completed';
+    } else if (currentLevel === stepLevel) {
+      return 'active';
     }
     return 'inactive';
+  };
+
+  const getProgressPercentage = () => {
+    if (!order) return '0%';
+    if (order.status === 'cancelled') return '0%';
+    const isDelivery = order.tableOrDelivery === 'delivery';
+    
+    switch (order.status) {
+      case 'pending': return '0%';
+      case 'received': return '25%';
+      case 'preparing':
+      case 'searching_driver':
+        return '50%';
+      case 'ready':
+        return isDelivery ? '50%' : '75%';
+      case 'driver_assigned':
+        return '60%';
+      case 'driver_picked_up':
+        return '75%';
+      case 'on_the_way':
+        return '90%';
+      case 'delivered':
+        return '100%';
+      default: return '0%';
+    }
+  };
+
+  const getDriverStatusLabel = (status: string) => {
+    switch (status) {
+      case 'driver_assigned':
+        return language === 'ar' ? 'تم قبول الطلب وجاري التجهيز 🍳' : 'Accepted & Preparing 🍳';
+      case 'driver_picked_up':
+        return language === 'ar' ? 'تم استلام الطلب وبدأت الرحلة 🚴' : 'Order Picked Up 🚴';
+      case 'on_the_way':
+        return language === 'ar' ? 'وصلت للموقع الآن 📍' : 'Arrived at Location 📍';
+      case 'delivered':
+        return language === 'ar' ? 'تم التوصيل بنجاح ✅' : 'Delivered successfully ✅';
+      default:
+        return language === 'ar' ? 'جاري التوصيل 🚚' : 'In transit 🚚';
+    }
   };
 
   return (
@@ -846,84 +674,36 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
             </div>
 
             {/* Step Line Indicator */}
-            <div className="relative py-6">
+            <div className="relative py-6 px-1">
               {/* Global Progress Line Bar */}
-              <div className="absolute top-1/2 left-4 right-4 h-1 bg-neutral-100 -translate-y-1/2 z-0" />
+              <div className="absolute top-[28px] left-6 right-6 h-1 bg-neutral-100 z-0" />
               <div
-                className="absolute top-1/2 left-4 h-1 bg-yellow -translate-y-1/2 z-0 transition-all duration-500"
+                className="absolute top-[28px] h-1 bg-yellow z-0 transition-all duration-500"
                 style={{
-                  width: (() => {
-                    const flow = getStatusFlow();
-                    const currentIdx = flow.indexOf(order.status);
-                    if (currentIdx === -1) return '0%';
-                    const pct = (currentIdx / (flow.length - 1)) * 100;
-                    return `${pct}%`;
-                  })(),
-                  right: language === 'ar' ? '16px' : 'auto',
-                  left: language === 'ar' ? 'auto' : '16px'
+                  width: getProgressPercentage(),
+                  right: language === 'ar' ? '24px' : 'auto',
+                  left: language === 'ar' ? 'auto' : '24px'
                 }}
               />
 
               <div className="relative z-10 flex justify-between items-center text-center">
-                {getStatusFlow().map((step) => {
-                  const stepStatus = getStepStatus(step);
-                  const config = (() => {
-                    switch (step) {
-                      case 'pending':
-                        return {
-                          labelAr: 'تم الاستلام',
-                          labelEn: 'Received',
-                          icon: Clock
-                        };
-                      case 'searching_driver':
-                        return {
-                          labelAr: 'البحث عن مندوب',
-                          labelEn: 'Searching',
-                          icon: MapPin
-                        };
-                      case 'preparing':
-                        return {
-                          labelAr: 'جاري التحضير',
-                          labelEn: 'Preparing',
-                          icon: UtensilsCrossed
-                        };
-                      case 'ready':
-                        return {
-                          labelAr: 'الطلب جاهز',
-                          labelEn: 'Ready',
-                          icon: ShoppingBag
-                        };
-                      case 'driver_picked_up':
-                        return {
-                          labelAr: 'استلم المندوب',
-                          labelEn: 'Picked Up',
-                          icon: User
-                        };
-                      case 'delivering':
-                        return {
-                          labelAr: 'في الطريق',
-                          labelEn: 'Delivering',
-                          icon: Navigation
-                        };
-                      case 'delivered':
-                        return {
-                          labelAr: 'تم التسليم',
-                          labelEn: 'Delivered',
-                          icon: CheckCircle2
-                        };
-                      default:
-                        return {
-                          labelAr: step,
-                          labelEn: step,
-                          icon: Clock
-                        };
-                    }
-                  })();
-                  const StepIcon = config.icon;
+                {(order.tableOrDelivery === 'delivery' ? [
+                  { key: 'received', labelAr: 'تم استلام الطلب', labelEn: 'Received', icon: Clock },
+                  { key: 'preparing', labelAr: 'جاري التحضير', labelEn: 'Preparing', icon: UtensilsCrossed },
+                  { key: 'transit', labelAr: 'مع المندوب', labelEn: 'With Driver', icon: Truck },
+                  { key: 'delivered', labelAr: 'تم التوصيل 🎉', labelEn: 'Delivered 🎉', icon: CheckCircle2 }
+                ] : [
+                  { key: 'received', labelAr: 'تم استلام الطلب', labelEn: 'Received', icon: Clock },
+                  { key: 'preparing', labelAr: 'جاري التحضير', labelEn: 'Preparing', icon: UtensilsCrossed },
+                  { key: 'ready', labelAr: 'جاهز للاستلام', labelEn: 'Ready for Pickup', icon: Sparkles },
+                  { key: 'delivered', labelAr: 'تم التسليم 🎉', labelEn: 'Delivered 🎉', icon: CheckCircle2 }
+                ]).map((st, idx) => {
+                  const IconComp = st.icon;
+                  const stepStatus = getStepStatus(st.key as any);
                   return (
-                    <div key={step} className="flex flex-col items-center flex-1 min-w-0 px-0.5">
+                    <div key={idx} className="flex flex-col items-center flex-1">
                       <div
-                        className={`w-7 h-7 md:w-10 md:h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+                        className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
                           stepStatus === 'completed'
                             ? 'bg-yellow border-yellow text-black font-semibold shadow-xs'
                             : stepStatus === 'active'
@@ -931,10 +711,12 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                             : 'bg-neutral-50 border-black/5 text-dark/30'
                         }`}
                       >
-                        <StepIcon className={`w-3.5 h-3.5 md:w-5 md:h-5 ${stepStatus === 'active' && step === 'preparing' ? 'animate-pulse' : ''}`} />
+                        <IconComp className={`w-4 h-4 md:w-5 md:h-5 ${stepStatus === 'active' ? 'animate-pulse' : ''}`} />
                       </div>
-                      <span className={`text-[8px] md:text-[10px] font-bold mt-2 leading-tight block text-center w-full truncate ${stepStatus === 'inactive' ? 'text-dark/40 font-normal' : 'text-dark font-black'}`}>
-                        {language === 'ar' ? config.labelAr : config.labelEn}
+                      <span className={`text-[9px] md:text-xs font-black mt-2.5 whitespace-nowrap ${
+                        stepStatus === 'inactive' ? 'text-dark/30 font-normal' : 'text-dark'
+                      }`}>
+                        {language === 'ar' ? st.labelAr : st.labelEn}
                       </span>
                     </div>
                   );
@@ -954,8 +736,8 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                       </h4>
                       <p className="text-[11px] text-amber-700/85 leading-relaxed md:leading-normal font-medium">
                         {language === 'ar' 
-                          ? 'طلبك قيد الانتظار حالياً. سيتم تأكيد طلبك والبدء في تحضيره تلقائياً بمجرد انتهاء العداد.' 
-                          : 'Your order is pending. It will be automatically confirmed and prepared as soon as the countdown ends.'}
+                          ? 'طلبك قيد الانتظار حالياً. سيتم إرساله للمطبخ فور انتهاء العداد وتنبيه الإدارة للمباشرة في التحضير، ولا يمكنك التعديل أو الإلغاء بعدها.' 
+                          : 'Your order is pending. It will be locked for kitchen preparation and management approval once the countdown ends.'}
                       </p>
                     </div>
                   </div>
@@ -986,6 +768,35 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
               </div>
             )}
 
+            {/* Awaiting Management Response Card once the 60-second Customer Grace Period ends */}
+            {order.status === 'pending' && secondsLeft !== null && secondsLeft <= 0 && (
+              <div className="bg-zinc-50 border border-black/5 rounded-3xl p-5 space-y-3.5 text-start shadow-2xs">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 flex items-center justify-center shrink-0 text-amber-600 font-extrabold text-lg">
+                    ⏳
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-sm text-dark">
+                      {language === 'ar' ? 'انتهت مهلة التعديل والطلب قيد التأكيد ⏱️' : 'Grace period ended, awaiting confirmation ⏱️'}
+                    </h4>
+                    <p className="text-xs text-dark/70 leading-relaxed mt-1">
+                      {language === 'ar' 
+                        ? 'انتهت مهلة الـ 60 ثانية المسموحة لتعديل أو إلغاء طلبك. تم قفل الطلب وأرسلنا تنبيهاً مباشراً مستمراً لشاشة الكاشير والمشرف للمباشرة فوراً بالتجهيز والطهي!' 
+                        : 'The 60-second grace period for editing or cancellation has completed. The order is locked and we have dispatched an urgent active alert to the cashier dashboard to start cooking!'}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-amber-500/10 border border-amber-500/15 rounded-xl p-3 flex items-center gap-2.5 text-amber-800 text-[11px] font-bold animate-pulse">
+                  <span>🔔</span>
+                  <span>
+                    {language === 'ar' 
+                      ? 'تنبيه الجرس مستمر الآن في لوحة الإدارة حتى يرى الموظف طلبك ويبدأ بتجهيزه...' 
+                      : 'Loud alert chime is ringing continuously on management dashboard until the crew starts preparing your meal...'}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Cancel Status Indicator */}
             {order.status === 'cancelled' && (
               <div className="bg-red-500/10 border border-red-500/15 rounded-2xl p-4 flex items-center gap-3 text-red-400">
@@ -997,37 +808,68 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
               </div>
             )}
 
-            {/* Google Reviews rating request section */}
-            <div className="bg-amber-500/5 border border-amber-500/15 rounded-3xl p-6 text-center space-y-4 shadow-inner relative overflow-hidden my-4">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl -mr-8 -mt-8 pointer-events-none"></div>
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-yellow/15 rounded-full blur-2xl -ml-8 -mb-8 pointer-events-none"></div>
-              
-              <div className="relative space-y-2">
-                <div className="flex justify-center text-yellow gap-1 text-base">
-                  <span>⭐</span><span>⭐</span><span>⭐</span><span>⭐</span><span>⭐</span>
+            {/* Searching for Driver Card */}
+            {order.tableOrDelivery === 'delivery' && (!order.driverName || order.driverId === 'broadcast') && order.status !== 'cancelled' && (
+              <div className="bg-amber-500/5 border border-amber-500/10 rounded-3xl p-5 space-y-3.5 text-start shadow-2xs">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 flex items-center justify-center shrink-0 text-amber-600 font-extrabold text-lg">
+                    🔍
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-sm text-amber-800">
+                      {language === 'ar' ? 'جاري البحث عن مندوبك الخاص... 🚚' : 'Searching for your private driver... 🚚'}
+                    </h4>
+                    <p className="text-xs text-dark/70 leading-relaxed mt-1">
+                      {language === 'ar' 
+                        ? 'تم إرسال الطلب بنجاح وهو الآن في حوض التوزيع. كابتن التوصيل الأقرب إليك سيباشر قبول الطلب فوراً وتأكيد تسليم الوجبة طازجة وساخنة!' 
+                        : 'Your order has been dispatched. The nearest active delivery captain will accept and secure the trip shortly!'}
+                    </p>
+                  </div>
                 </div>
-                <h3 className="font-serif font-black text-dark text-base">
-                  {language === 'ar' ? 'رأيك يهمنا ويسعدنا جداً! 🌸' : 'Your Opinion Matters and Delights Us! 🌸'}
-                </h3>
-                <p className="text-xs text-dark/70 max-w-md mx-auto leading-relaxed">
-                  {language === 'ar' 
-                    ? 'إذا أعجبتك تجربة الطلب ونكهة المشويات الفاخرة، نسعد بمشاركتك لتقييم مميز بـ 5 نجوم على جوجل ماب لدعم فريق العمل.' 
-                    : 'If you enjoyed your order and the premium flavor of our grills, we would be honored if you rate us 5 stars on Google Maps!'}
-                </p>
               </div>
+            )}
 
-              <div className="relative">
-                <a
-                  href="https://g.page/r/CVEDtSx0RBScEAE/review"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 py-2.5 px-5 bg-yellow hover:bg-yellow/90 text-black font-black text-xs rounded-xl transition-all hover:scale-[1.02] shadow-xs cursor-pointer"
-                >
-                  <span>📝</span>
-                  {language === 'ar' ? 'قيمنا الآن على خرائط جوجل' : 'Rate us now on Google'}
-                </a>
+            {/* Driver Assigned Card Info */}
+            {order.tableOrDelivery === 'delivery' && order.driverName && order.driverId !== 'broadcast' && (
+              <div className="bg-neutral-50 border border-black/5 rounded-3xl p-4.5 space-y-3.5 text-start shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">
+                    {language === 'ar' ? '🚴 مندوب التوصيل المكلف بالطلب:' : '🚴 Assigned Delivery Driver:'}
+                  </span>
+                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                    order.status === 'delivered' 
+                      ? 'bg-green-500/10 text-green-700' 
+                      : order.status === 'on_the_way'
+                      ? 'bg-blue-500/10 text-blue-700 animate-pulse'
+                      : order.status === 'driver_picked_up'
+                      ? 'bg-amber-500/10 text-amber-700 animate-pulse'
+                      : 'bg-yellow/15 text-yellow-800 animate-pulse'
+                  }`}>
+                    {getDriverStatusLabel(order.status)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-full bg-yellow/15 flex items-center justify-center shrink-0">
+                      <User className="w-5 h-5 text-yellow-750" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-dark">{order.driverName}</h4>
+                      <p className="font-mono text-xs text-dark/60 font-semibold mt-0.5">{order.driverPhone}</p>
+                    </div>
+                  </div>
+                  {order.driverPhone && (
+                    <a
+                      href={`tel:${order.driverPhone}`}
+                      className="bg-yellow hover:bg-yellow/90 text-black font-extrabold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>{language === 'ar' ? 'اتصال بالمندوب' : 'Call'}</span>
+                    </a>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Receipt Summary */}
             <div className="space-y-3.5 border-t border-black/5 pt-5 text-start">
@@ -1077,6 +919,13 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                     <span className="font-extrabold text-dark font-mono">{(item.price * item.quantity).toFixed(1)} {t('sar')}</span>
                   </div>
                 ))}
+
+                {order.deliveryFee && order.deliveryFee > 0 && (
+                  <div className="flex justify-between items-center text-xs md:text-sm text-amber-700 bg-amber-50/50 rounded-lg p-2 border border-amber-500/10">
+                    <span className="font-bold">{language === 'ar' ? '🚚 رسوم التوصيل' : '🚚 Delivery Fee'}</span>
+                    <span className="font-extrabold font-mono">{order.deliveryFee.toFixed(1)} {t('sar')}</span>
+                  </div>
+                )}
                 
                 <div className="h-px bg-black/5 my-2" />
                 <div className="flex justify-between items-center text-sm font-bold text-dark pt-2">
@@ -1090,30 +939,52 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
               </div>
             </div>
 
-            {/* Elegant Callout encouraging screenshot and order number saving */}
-            <div className="bg-amber-500/10 border border-amber-500/15 text-amber-900 p-4 rounded-2xl text-xs md:text-sm text-start font-sans font-medium space-y-1 my-3">
-              <div className="flex items-center gap-2 font-black text-amber-950">
-                <span className="text-sm">💡</span>
-                <span>{language === 'ar' ? 'تنبيه هام لتسهيل استلام طلبك:' : 'Important pick-up instruction:'}</span>
-              </div>
-              <p className="leading-relaxed text-dark/85">
-                {language === 'ar' 
-                  ? 'لتسريع وتسهيل استلام طلبك من الفرع، يرجى تصوير شاشة الفاتورة الحالية أو الاحتفاظ برقم الطلب وإبرازه للموظف عند الاستلام. بالهناء والشفاء! 🌸'
-                  : 'To facilitate and speed up your pick-up, please take a screenshot of this invoice or save the order number to present it to the staff. Enjoy your meal! 🌸'}
-              </p>
-            </div>
+            {businessSettings && businessSettings.taxEnabled && businessSettings.vatNumber && (
+              <ZatcaFatooraCard 
+                order={order}
+                businessSettings={businessSettings}
+                onViewFullInvoice={() => setIsInvoiceOpen(true)}
+                onPrintInvoice={handleDirectPrint}
+              />
+            )}
 
-            {/* Premium action button to trigger the customer invoice view */}
-            <div className="pt-2">
+            {/* Premium action buttons to trigger the ZATCA simplified tax compliance e-invoice & Local Printing */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
               <button
                 id="view-zatca-invoice-btn"
                 onClick={() => setIsInvoiceOpen(true)}
-                className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-yellow hover:bg-yellow/90 text-black rounded-2xl font-black text-xs md:text-sm cursor-pointer transition-all hover:scale-[1.01] shadow-xs"
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-yellow/15 hover:bg-yellow/25 text-yellow-700 border border-yellow/20 hover:border-yellow/35 rounded-2xl font-bold text-xs md:text-sm cursor-pointer transition-all uppercase tracking-wide font-sans md:py-3.5"
               >
-                <FileText className="w-4.5 h-4.5 shrink-0" />
-                <span>{language === 'ar' ? 'عرض فاتورة استلام الطلب' : 'View Customer Invoice'}</span>
+                <FileText className="w-4 h-4 shrink-0 text-yellow-600" />
+                <span>{language === 'ar' ? 'عرض الفاتورة الرقمية' : 'View Digital Invoice'}</span>
+              </button>
+
+              <button
+                id="direct-print-invoice-btn"
+                onClick={handleDirectPrint}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-500 rounded-2xl font-bold text-xs md:text-sm cursor-pointer transition-all uppercase tracking-wide font-sans md:py-3.5 shadow-xs"
+              >
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>{language === 'ar' ? 'طباعة الفاتورة الفورية' : 'Print Thermal Invoice'}</span>
               </button>
             </div>
+
+            {/* Optional WhatsApp Manual Notification Button */}
+            {order.status !== 'cancelled' && (
+              <div className="pt-2 border-t border-black/5">
+                <a
+                  href={getWhatsAppMessageLink()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-emerald-600/10 hover:bg-emerald-600/15 text-emerald-650 border border-emerald-500/15 hover:border-emerald-500/30 rounded-2xl font-bold text-xs md:text-sm cursor-pointer transition-all select-none"
+                >
+                  <svg className="w-4.5 h-4.5 fill-current shrink-0 text-emerald-600" viewBox="0 0 24 24">
+                    <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.332 4.982L2 22l5.164-1.354a9.938 9.938 0 004.846 1.254h.004c5.507 0 9.991-4.479 9.992-9.986.002-2.67-1.037-5.18-2.932-7.072A9.933 9.933 0 0012.012 2zm5.725 14.115c-.252.712-1.461 1.303-2.014 1.382-.503.072-1.157.087-1.854-.138a10.873 10.873 0 01-4.49-2.795 11.236 11.236 0 01-2.457-3.693c-.419-.724-.672-1.524-.672-2.336 0-1.748.916-2.6 1.251-2.954.252-.267.671-.345.986-.345.105 0 .204.004.292.008.261.012.449.023.644.423.279.57.946 2.307 1.028 2.477.083.17.138.369.028.59-.11.22-.249.44-.393.606-.143.167-.294.349-.125.641.333.575.742 1.087 1.255 1.547.658.588 1.393.993 2.193 1.21.312.083.504.032.68-.171.213-.244.916-1.066 1.161-1.432.18-.27.42-.236.685-.138.271.098 1.716.81 2.01.949.294.14.492.21.564.332.072.122.072.712-.18 1.424z" />
+                  </svg>
+                  <span>{language === 'ar' ? 'إرسال تفاصيل الطلب عبر الواتساب (اختياري)' : 'Send details via WhatsApp (Optional)'}</span>
+                </a>
+              </div>
+            )}
 
           </div>
         </motion.div>
@@ -1126,21 +997,15 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
 
       {/* Premium ZATCA Simplified Tax Invoice Modal */}
       {isInvoiceOpen && order && (
-        <div 
-          onClick={() => setIsInvoiceOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs animate-fade-in print:p-0 print:bg-white print:relative print:z-0 cursor-pointer"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white border border-black/5 rounded-3xl overflow-hidden shadow-2xl relative text-dark flex flex-col max-h-[90vh] print:border-none print:shadow-none print:bg-white print:text-black print:max-h-full print:overflow-visible cursor-default"
-          >
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs animate-fade-in print:p-0 print:bg-white print:relative print:z-0">
+          <div className="w-full max-w-lg bg-white border border-black/5 rounded-3xl overflow-hidden shadow-2xl relative text-dark flex flex-col max-h-[90vh] print:border-none print:shadow-none print:bg-white print:text-black print:max-h-full print:overflow-visible">
             
             {/* Modal Header Controls (Hidden in Print) */}
             <div className="flex justify-between items-center bg-neutral-50 p-4 border-b border-black/5 print:hidden text-start">
               <div className="flex items-center gap-2">
                 <QrCode className="w-4 h-4 text-yellow-650" />
                 <span className="font-bold text-xs uppercase tracking-wider text-dark/70">
-                  {language === 'ar' ? 'فاتورة استلام الطلب الإلكترونية' : 'Customer Digital Receipt'}
+                  {language === 'ar' ? 'نموذج الفاتورة الإلكترونية المعتمدة' : 'ZATCA Simplified Tax Invoice'}
                 </span>
               </div>
               <button 
@@ -1150,7 +1015,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                 {language === 'ar' ? 'إغلاق' : 'Close'}
               </button>
             </div>
- 
+
             {/* Print Body Container */}
             <div id="recept-print-area" className="p-6 md:p-8 overflow-y-auto space-y-6 flex-1 text-dark/80 print:text-black print:bg-white font-sans text-start print:overflow-visible print:p-0">
               
@@ -1170,12 +1035,18 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                 <p className="text-[10px] text-dark/40 uppercase tracking-widest print:text-zinc-700">
                   {language === 'ar' ? businessSettings.taglineAr : businessSettings.taglineEn}
                 </p>
- 
+
                 <div className="bg-yellow/15 border border-yellow/25 text-yellow-700 font-bold px-3 py-1 rounded-full text-[10px] inline-block uppercase tracking-wider print:bg-gray-150 print:border-gray-300 print:text-black mt-1">
                   {language === 'ar' ? 'فاتورة ضريبة مبسطة' : 'Simplified Tax Invoice'}
                 </div>
- 
+
                 <p className="text-xs text-dark/60 print:text-zinc-700 font-mono mt-3">
+                  {language === 'ar' ? 'المنشأة (البائع): ' : 'Seller / Business: '}
+                  <span className="font-bold text-dark print:text-black">
+                    {language === 'ar' ? businessSettings.restaurantNameAr : businessSettings.restaurantNameEn}
+                  </span>
+                </p>
+                <p className="text-xs text-dark/60 print:text-zinc-700 font-mono">
                   {language === 'ar' ? 'الرقم الضريبي للبائع: ' : 'Seller VAT Registration No: '}
                   <span className="font-bold text-dark print:text-black font-mono">{businessSettings.vatNumber || '310123456700003'}</span>
                 </p>
@@ -1191,7 +1062,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                   )}
                 </div>
               </div>
- 
+
               {/* Bill Details Grid */}
               <div className="grid grid-cols-2 gap-4 text-xs font-mono py-1 border-b border-dashed border-black/10 pb-5 print:border-black/30 print:text-black">
                 <div className="space-y-1.5">
@@ -1204,15 +1075,13 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                     {new Date(order.createdAt).toISOString().replace('T', ' ').substring(0, 19)}
                   </span>
                 </div>
- 
+
                 <div className="space-y-1.5 mt-2">
                   <span className="text-[9px] text-dark/40 block uppercase print:text-black/60">{language === 'ar' ? 'نوع الطلب' : 'Billing Type'}</span>
                   <span className="font-bold text-dark print:text-black">
                     {order.tableOrDelivery === 'table' 
-                      ? (language === 'ar' ? `محلي - ${order.tableNumber ? `طاولة ${order.tableNumber}` : 'بدون طاولة'}` : `Dine-In - ${order.tableNumber ? `Table #${order.tableNumber}` : 'No Table'}`)
-                      : order.tableOrDelivery === 'takeaway'
-                      ? (language === 'ar' ? 'استلام من الفرع' : 'Takeaway (Pickup)')
-                      : (language === 'ar' ? 'توصيل منزلي' : 'Home Delivery')}
+                      ? (language === 'ar' ? `طاولة رقم ${order.tableNumber}` : `Table #${order.tableNumber}`)
+                      : (language === 'ar' ? 'توصيل منزلي' : 'Delivery Order')}
                   </span>
                 </div>
                 <div className="space-y-1.5 text-end mt-2">
@@ -1220,7 +1089,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                   <span className="font-bold text-dark print:text-black">{order.customerName}</span>
                 </div>
               </div>
- 
+
               {/* Items Summary Table */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-[10px] text-dark/40 font-mono tracking-wider border-b border-black/5 pb-2 print:border-black/30">
@@ -1228,7 +1097,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                   <span className="w-1/6 text-center print:text-black print:font-bold">{language === 'ar' ? 'الكمية' : 'Qty'}</span>
                   <span className="w-1/3 text-end print:text-black print:font-bold">{language === 'ar' ? 'السعر' : 'Amount'}</span>
                 </div>
- 
+
                 <div className="space-y-2.5 pt-1.5">
                   {order.items.map((item) => (
                     <div key={item.id} className="flex justify-between items-center text-xs text-dark/80 print:text-black font-semibold">
@@ -1239,7 +1108,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                   ))}
                 </div>
               </div>
- 
+
               {/* Math Computations Receipt Footer */}
               <div className="border-t border-dashed border-black/10 pt-4 space-y-2 font-mono text-xs print:border-black/30">
                 <div className="flex justify-between text-dark/60 print:text-black">
@@ -1250,14 +1119,14 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                   </span>
                   <span className="font-mono">{(order.subtotal - (order.promoDiscount || 0)).toFixed(2)} {t('sar')}</span>
                 </div>
- 
+
                 {order.promoDiscount > 0 && (
                   <div className="flex justify-between text-red-650 font-bold print:text-black print:font-bold">
                     <span>{language === 'ar' ? 'التخفيض المطبق' : 'Applied Discount'}</span>
                     <span className="font-mono">-{order.promoDiscount.toFixed(2)} {t('sar')}</span>
                   </div>
                 )}
- 
+
                 {businessSettings.taxEnabled && (
                   <div className="flex justify-between text-dark/60 print:text-black">
                     <span>
@@ -1268,7 +1137,14 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                     <span className="font-mono">{order.tax.toFixed(2)} {t('sar')}</span>
                   </div>
                 )}
- 
+
+                {order.deliveryFee && order.deliveryFee > 0 && (
+                  <div className="flex justify-between text-dark/60 print:text-black font-semibold">
+                    <span>{language === 'ar' ? 'رسوم التوصيل' : 'Delivery Fee'}</span>
+                    <span className="font-mono">+{order.deliveryFee.toFixed(2)} {t('sar')}</span>
+                  </div>
+                )}
+
                 <div className="h-px bg-black/5 print:bg-black/30 my-2" />
                 <div className="flex justify-between text-dark font-black text-sm print:text-black print:font-extrabold">
                   <span>
@@ -1279,51 +1155,55 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                   <span className="text-dark print:text-black font-black font-mono print:text-base">{(order.total).toFixed(2)} {t('sar')}</span>
                 </div>
               </div>
- 
-              {/* Compliance ZATCA QR Code at the very bottom (Exact match with AdminPanel receipt model) */}
+
+              {/* QR and Compliance Block */}
               {businessSettings.taxEnabled && (
-                <div className="flex flex-col items-center justify-center pt-3 text-center space-y-2 border-t border-dashed border-black/10 mt-2 print:break-inside-avoid">
-                  <div className="bg-white p-1 rounded-lg border border-black/20">
+                <div className="flex flex-col items-center justify-center pt-4 text-center space-y-3.5 print:break-inside-avoid">
+                  <div className="bg-white p-2.5 rounded-2xl inline-block shadow-xs border border-black/5">
+                    {/* Real Cryptographic TLV QR code generated dynamically via free reliable QR server API */}
                     <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
                         generateZatcaQr(
-                          language === 'ar' ? businessSettings.restaurantNameAr : businessSettings.restaurantNameEn,
+                          businessSettings.restaurantNameAr || 'رحلة شواء',
                           businessSettings.vatNumber || '310123456700003',
                           new Date(order.createdAt).toISOString(),
                           order.total.toFixed(2),
                           order.tax.toFixed(2)
                         )
                       )}`}
-                      alt="ZATCA QR Compliance"
+                      alt="ZATCA VAT QR Code"
                       referrerPolicy="no-referrer"
-                      className="w-28 h-28 mx-auto"
+                      className="w-36 h-36 mx-auto"
                     />
                   </div>
-                  <div className="space-y-0.5">
-                    <div className="text-[9px] font-black uppercase text-center tracking-wider text-dark/60">
-                      {language === 'ar' ? 'الهيئة العامة للزكاة والضريبة والجمارك' : 'ZATCA E-INVOICE STANDARD'}
+                  
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center gap-1.5 text-emerald-600 font-bold text-[10px] tracking-wide uppercase">
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                      <span>{language === 'ar' ? 'ربط مباشر مع الفاتورة الضريبية الفورية' : 'ZATCA Compliance Stage 1 Secured'}</span>
                     </div>
-                    <p className="text-[8px] text-neutral-500 max-w-xs leading-relaxed text-center mx-auto leading-normal">
+                    <p className="text-[9px] text-dark/40 max-w-xs leading-relaxed print:text-zinc-700 mx-auto">
                       {language === 'ar' 
-                        ? (businessSettings.invoiceFooterAr || 'شكراً لزيارتكم! بالهناء والشفاء')
-                        : (businessSettings.invoiceFooterEn || 'Thank you so much! Enjoy your meal')}
+                        ? 'فاتورة إلكترونية مبسطة مكودة ومهيأة للربط المباشر مع الهيئة العامة للزكاة والضريبة والجمارك بالمملكة العربية السعودية.'
+                        : 'Cryptographic invoice complies with Saudi ZATCA Simplified Tax Invoice specifications under Stage 1 integration rules.'}
                     </p>
                   </div>
                 </div>
               )}
- 
+
             </div>
- 
-            {/* Modal Bottom Actions Row (Close Button only as requested - No save/share/print buttons) */}
-            <div className="p-4 bg-neutral-50 border-t border-black/5 flex flex-col gap-2 print:hidden">
+
+            {/* Modal Bottom Actions Row (Hidden in Print) */}
+            <div className="p-4 bg-neutral-50 border-t border-black/5 flex gap-3 print:hidden">
               <button
-                onClick={() => setIsInvoiceOpen(false)}
-                className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-yellow text-black hover:bg-yellow/95 rounded-2xl font-black text-xs md:text-sm cursor-pointer transition-all hover:scale-[1.01] shadow-xs"
+                onClick={() => window.print()}
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-yellow hover:bg-yellow/90 text-black rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all border border-black/5"
               >
-                <span>{language === 'ar' ? 'إغلاق الفاتورة' : 'Close Invoice'}</span>
+                <Printer className="w-4 h-4" />
+                <span>{language === 'ar' ? 'طباعة / حفظ PDF' : 'Print / Save PDF'}</span>
               </button>
             </div>
- 
+
           </div>
         </div>
       )}

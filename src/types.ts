@@ -46,27 +46,28 @@ export interface Order {
   tax: number;
   total: number;
   paymentMethod: 'cod' | 'applepay' | 'mada' | 'transfer';
-  status: 'pending' | 'searching_driver' | 'preparing' | 'ready' | 'driver_picked_up' | 'delivering' | 'delivered' | 'cancelled';
+  status: 'pending' | 'received' | 'searching_driver' | 'preparing' | 'ready' | 'driver_assigned' | 'driver_picked_up' | 'on_the_way' | 'delivered' | 'cancelled';
   whatsappSent: boolean;
   createdAt: string; 
   appliedPromoId?: string;
   promoDiscount?: number;
   latitude?: number;
   longitude?: number;
-  googleMapsUrl?: string;
   driverId?: string;
   driverName?: string;
   driverPhone?: string;
-  assignedDriverName?: string;
-  assignedDriverPhone?: string;
+  deliveryFee?: number;
 }
 
 export interface Driver {
   id: string;
   name: string;
   phone: string;
-  isAvailable: boolean;
-  createdAt: string;
+  status: 'available' | 'busy' | 'suspended';
+  createdAt?: string;
+  suspendedUntil?: string;
+  completedCount?: number;
+  totalEarnings?: number;
 }
 
 export interface Promotion {
@@ -120,10 +121,7 @@ export interface BusinessSettings {
   bankIban?: string;
   bankQrUrl?: string;
   bankEnabled?: boolean;
-  paymentGatewayEnabled?: boolean;
-  paymentGatewayMode?: 'live' | 'simulated';
-  tapSecretKey?: string;
-  tapPublishableKey?: string;
+  deliveryFee?: number;
 }
 
 export interface Category {
@@ -131,4 +129,13 @@ export interface Category {
   name: string;
   nameAr: string;
   icon: string;
+}
+
+export interface PendingDriver {
+  id: string;
+  name: string;
+  phone: string;
+  carRegistrationImg: string; // base64 representation of registration
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
 }

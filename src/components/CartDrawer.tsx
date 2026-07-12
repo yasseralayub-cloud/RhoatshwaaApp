@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { MenuItem, Order, CartItem } from '../types';
 import { useLanguage } from './LanguageContext';
-import { X, Trash2, MapPin, Store, CreditCard, ChevronLeft, Plus, Minus, Send, PhoneCall, ShoppingBag, Clock, AlertTriangle, Copy, Check, Landmark, Wallet, Navigation, Loader2 } from 'lucide-react';
+import { X, Trash2, MapPin, Store, CreditCard, ChevronLeft, Plus, Minus, Send, PhoneCall, ShoppingBag, Clock, AlertTriangle, Copy, Check, Landmark, Wallet } from 'lucide-react';
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { isRestaurantOpen, formatTime12h } from '../utils/time';
+import MapPicker from './MapPicker';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -36,113 +37,68 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [tableOrDelivery, setTableOrDelivery] = useState<'table' | 'takeaway' | 'delivery'>('table');
-  const [tableNumber, setTableNumber] = useState('');
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [customMapsUrl, setCustomMapsUrl] = useState('');
-  const [latitude, setLatitude] = useState<number | undefined>(undefined);
-  const [longitude, setLongitude] = useState<number | undefined>(undefined);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [locationSuccess, setLocationSuccess] = useState(false);
-  const [locationError, setLocationError] = useState('');
-
-  const parseGoogleMapsUrl = (url: string) => {
-    try {
-      // 1. Check for @lat,lng
-      const atRegex = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
-      const atMatch = url.match(atRegex);
-      if (atMatch) {
-        return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]) };
-      }
-
-      // 2. Check for q=lat,lng
-      const qRegex = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/;
-      const qMatch = url.match(qRegex);
-      if (qMatch) {
-        return { lat: parseFloat(qMatch[1]), lng: parseFloat(qMatch[2]) };
-      }
-
-      // 3. Check for place/lat,lng or place/lat+lng
-      const placeRegex = /\/place\/(-?\d+\.\d+)[,+](-?\d+\.\d+)/;
-      const placeMatch = url.match(placeRegex);
-      if (placeMatch) {
-        return { lat: parseFloat(placeMatch[1]), lng: parseFloat(placeMatch[2]) };
-      }
-    } catch (e) {
-      console.error('Error parsing coordinates from map URL:', e);
-    }
-    return null;
-  };
-
-  React.useEffect(() => {
-    if (customMapsUrl.trim()) {
-      const parsed = parseGoogleMapsUrl(customMapsUrl);
-      if (parsed) {
-        setLatitude(parsed.lat);
-        setLongitude(parsed.lng);
-        setLocationSuccess(true);
-        setLocationError('');
-      } else {
-        // Just setting it to success if a link is provided even if it cannot parse coordinates directly
-        setLocationSuccess(true);
-        setLocationError('');
-      }
-    }
-  }, [customMapsUrl]);
-
-  const handleGetLocation = () => {
-    setLocationError('');
-    if (!navigator.geolocation) {
-      setLocationError(language === 'ar' ? 'متصفحك لا يدعم تحديد الموقع الجغرافي.' : 'Your browser does not support geolocation.');
-      return;
-    }
-    setLocationLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLatitude(position.coords.latitude);
-        setLongitude(position.coords.longitude);
-        setLocationLoading(false);
-        setLocationSuccess(true);
-        setLocationError('');
-      },
-      (error) => {
-        console.error('Geolocation error:', error);
-        setLocationLoading(false);
-        let errorMsgTxt = '';
-        if (error.code === error.PERMISSION_DENIED) {
-          errorMsgTxt = language === 'ar' 
-            ? 'تم رفض إذن الوصول للموقع. يرجى السماح للتطبيق بالوصول لموقعك الجغرافي من إعدادات المتصفح.' 
-            : 'Location permission denied. Please allow location access in your browser settings.';
-        } else if (error.code === error.POSITION_UNAVAILABLE) {
-          errorMsgTxt = language === 'ar' 
-            ? 'معلومات موقعك غير متوفرة حالياً. يرجى التأكد من تشغيل الـ GPS وجرب مجدداً.' 
-            : 'Location information is unavailable. Please ensure GPS is enabled and try again.';
-        } else if (error.code === error.TIMEOUT) {
-          errorMsgTxt = language === 'ar' 
-            ? 'انتهت مهلة الحصول على الموقع. يرجى التحقق من اتصال الشبكة وجرب مجدداً.' 
-            : 'Request to get user location timed out. Please check your signal/network and try again.';
-        } else {
-          errorMsgTxt = language === 'ar' 
-            ? 'فشل في تحديد الموقع الجغرافي. يرجى المحاولة مرة أخرى.' 
-            : 'Failed to retrieve geolocation. Please try again.';
-        }
-        setLocationError(errorMsgTxt);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  };
+  const [tableNumber, setTableNumber] = useState('محلي');
+  const [deliveryAddress, setDeliveryAddress] = useState('سفري');
   const [orderNotes, setOrderNotes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'applepay' | 'mada' | 'transfer'>('cod');
+  
+  // Geolocation states
+  const [latitude, setLatitude] = useState<number | undefined>(undefined);
+  const [longitude, setLongitude] = useState<number | undefined>(undefined);
+  const [locating, setLocating] = useState(false);
+  const [locSuccess, setLocSuccess] = useState(false);
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      alert(language === 'ar' ? 'خدمة تحديد الموقع غير مدعومة في متصفحك' : 'Geolocation is not supported by your browser');
+      return;
+    }
+    setLocating(true);
+    setLocSuccess(false);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setLatitude(lat);
+        setLongitude(lng);
+        setLocating(false);
+        setLocSuccess(true);
+        
+        // Auto-populate delivery address with Google Maps link as a fallback
+        const mapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
+        const fallbackAddress = language === 'ar' ? `الموقع المحدد: ${mapsLink}` : `Selected Location: ${mapsLink}`;
+        setDeliveryAddress(fallbackAddress);
+
+        // Attempt reverse geocoding to extract real neighborhood and street names in Arabic
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ar`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.display_name) {
+              let cleanAddress = data.display_name;
+              const parts = cleanAddress.split('،').map((p: string) => p.trim());
+              if (parts.length > 3) {
+                cleanAddress = parts.slice(0, Math.min(4, parts.length)).join('، ');
+              }
+              setDeliveryAddress(cleanAddress);
+            }
+          })
+          .catch(err => {
+            console.error("Failed to reverse-geocode GPS coordinates:", err);
+          });
+      },
+      (error) => {
+        console.error(error);
+        setLocating(false);
+        alert(language === 'ar' ? 'عذراً! فشل تحديد موقعك. يرجى إعطاء الصلاحية للمتصفح بالوصول إلى الموقع الجغرافي.' : 'Failed to retrieve location. Please check browser permissions.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
   
   // Card mock state
   const [cardNumber, setCardNumber] = useState('4000 1234 5678 9010');
   const [cardHolder, setCardHolder] = useState('');
   const [cardExpiry, setCardExpiry] = useState('12/28');
-
-  React.useEffect(() => {
-    if ((paymentMethod === 'mada' || paymentMethod === 'applepay') && !businessSettings?.paymentGatewayEnabled) {
-      setPaymentMethod('cod');
-    }
-  }, [businessSettings?.paymentGatewayEnabled, paymentMethod]);
   
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -181,6 +137,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       total = discountedSubtotal + tax;
     }
   }
+
+  const deliveryFee = tableOrDelivery === 'delivery' ? (businessSettings?.deliveryFee ?? 15) : 0;
+  const finalTotal = total + deliveryFee;
 
   // Smart checking of Dine-In only items: popular games (الألعاب الشعبية), coffee (القهوة), tea (الشاي)
   const hasDineInOnlyItems = cartItems.some(it => {
@@ -274,24 +233,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       return;
     }
 
-    if (tableOrDelivery !== 'table' && hasDineInOnlyItems) {
+    if (tableOrDelivery === 'delivery' && hasDineInOnlyItems) {
       setErrorMsg(language === 'ar' 
-        ? 'يا هلا بك! 🌸 عذراً منك يا غالي، لا يمكننا إرسال زمزمية القهوة أو ترمس الشاي أو الألعاب الشعبية استلام من الفرع أو توصيل. هذه الأصناف مخصصة للاستمتاع بها داخل المطعم (محلي) فقط لتجربة مميزة وصحيحة. نتشرف بخدمتك محلياً!' 
-        : 'Welcome! 🌸 Gentle reminder: coffee pots, tea thermoses, and popular board games cannot be ordered for takeaway or delivery. These are exclusively for dine-in enjoyment to ensure the best experience. We would love to serve you here!');
+        ? 'يا هلا بك! 🌸 عذراً منك يا غالي، لا يمكننا إرسال زمزمية القهوة أو ترمس الشاي أو الألعاب الشعبية سفري. هذه الأصناف مخصصة للاستمتاع بها داخل المطعم (محلي) فقط لتجربة مميزة وصحيحة. نتشرف بخدمتك محلياً!' 
+        : 'Welcome! 🌸 Gentle reminder: coffee pots, tea thermoses, and popular board games cannot be ordered for takeaway. These are exclusively for dine-in enjoyment to ensure the best experience. We would love to serve you here!');
       return;
-    }
-
-    if (tableOrDelivery === 'delivery') {
-      if (!deliveryAddress.trim()) {
-        setErrorMsg(language === 'ar' ? 'يرجى إدخال عنوان التوصيل بالتفصيل (الحي، الشارع، رقم المنزل).' : 'Please enter your detailed delivery address.');
-        return;
-      }
-      if (!latitude && !longitude && !customMapsUrl.trim()) {
-        setErrorMsg(language === 'ar' 
-          ? 'تحديد الموقع الجغرافي مطلوب. يرجى الضغط على زر "تحديد موقعي الحالي بدقة" أو لصق رابط موقعك من خرائط جوجل بالأسفل لتسهيل وصول المندوب.' 
-          : 'Geographical location is required. Please click "Locate My Current Position" or paste your Google Maps link below.');
-        return;
-      }
     }
 
     setLoading(true);
@@ -349,12 +295,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       customerPhone,
       tableOrDelivery,
       tableNumber: tableOrDelivery === 'table' ? tableNumber : '',
-      deliveryAddress: tableOrDelivery === 'delivery' ? deliveryAddress : (tableOrDelivery === 'takeaway' ? 'استلام من الفرع' : ''),
+      deliveryAddress: tableOrDelivery === 'delivery' ? deliveryAddress : (tableOrDelivery === 'takeaway' ? 'سفري' : ''),
       notes: orderNotes,
       items: itemsFormatted,
       subtotal,
       tax: Number(tax.toFixed(2)),
-      total: Number(total.toFixed(2)),
+      total: Number(finalTotal.toFixed(2)),
       paymentMethod,
       status: 'pending',
       whatsappSent: true,
@@ -363,16 +309,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       promoDiscount: Number(promoDiscount.toFixed(2)),
       latitude: tableOrDelivery === 'delivery' ? latitude : undefined,
       longitude: tableOrDelivery === 'delivery' ? longitude : undefined,
-      googleMapsUrl: tableOrDelivery === 'delivery' 
-        ? (customMapsUrl.trim() || (latitude && longitude ? `https://www.google.com/maps?q=${latitude},${longitude}` : '')) 
-        : undefined,
+      deliveryFee: tableOrDelivery === 'delivery' ? deliveryFee : undefined,
     };
 
-    // 1. If electronic payment is selected, and gateway is enabled and set to LIVE mode, route through our secure Tap Payments backend API
-    const isGatewayEnabled = businessSettings?.paymentGatewayEnabled ?? false;
-    const isGatewayLive = businessSettings?.paymentGatewayMode === 'live';
-
-    if ((paymentMethod === 'mada' || paymentMethod === 'applepay') && isGatewayEnabled && isGatewayLive) {
+    // 1. If electronic payment is selected, route through our secure Tap Payments backend API
+    if (paymentMethod === 'mada' || paymentMethod === 'applepay') {
       try {
         const payRes = await fetch('/api/pay-tap', {
           method: 'POST',
@@ -381,7 +322,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           },
           body: JSON.stringify({
             orderId: orderId,
-            amount: Number(total.toFixed(2)),
+            amount: Number(finalTotal.toFixed(2)),
             customerName,
             customerPhone,
             redirectOrigin: window.location.origin
@@ -406,7 +347,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           const localOrders = JSON.parse(localOrdersStr);
           localOrders.unshift(pendingOrder);
           localStorage.setItem('simulated_orders', JSON.stringify(localOrders));
-          window.dispatchEvent(new Event('simulated_orders_changed'));
         } catch (e) {
           console.warn('Local cache storage warning:', e);
         }
@@ -434,7 +374,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       const localOrders = JSON.parse(localOrdersStr);
       localOrders.unshift(orderData);
       localStorage.setItem('simulated_orders', JSON.stringify(localOrders));
-      window.dispatchEvent(new Event('simulated_orders_changed'));
     } catch (err) {
       console.warn('Failed to cache order locally:', err);
     }
@@ -459,19 +398,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
     try {
       // 4. Generate WhatsApp formatted string
-      let orderTypeArabic = '';
-      let orderTypeEnglish = '';
-      if (tableOrDelivery === 'table') {
-        orderTypeArabic = tableNumber ? `محلي (داخل المطعم) - طاولة: ${tableNumber}` : 'محلي (داخل المطعم) - لم يحدد طاولة';
-        orderTypeEnglish = tableNumber ? `Dine-In - Table: ${tableNumber}` : 'Dine-In - Table Unspecified';
-      } else if (tableOrDelivery === 'takeaway') {
-        orderTypeArabic = 'استلام من الفرع';
-        orderTypeEnglish = 'Takeaway (Pickup)';
-      } else if (tableOrDelivery === 'delivery') {
-        const mapUrl = customMapsUrl.trim() || (latitude && longitude ? `https://www.google.com/maps?q=${latitude},${longitude}` : '');
-        orderTypeArabic = `توصيل - العنوان: ${deliveryAddress}${mapUrl ? `\n📍 موقع الخرائط: ${mapUrl}` : ''}`;
-        orderTypeEnglish = `Home Delivery - Address: ${deliveryAddress}${mapUrl ? `\n📍 Map Link: ${mapUrl}` : ''}`;
-      }
+      const orderTypeArabic = tableOrDelivery === 'table' 
+        ? 'محلي (داخل المطعم)' 
+        : tableOrDelivery === 'takeaway' 
+          ? 'سفري (خارج المطعم)' 
+          : `توصيل (إلى العنوان: ${deliveryAddress})`;
+      const orderTypeEnglish = tableOrDelivery === 'table' 
+        ? 'Dine-In' 
+        : tableOrDelivery === 'takeaway' 
+          ? 'Takeaway' 
+          : `Delivery (Address: ${deliveryAddress})`;
       
       const payArabic = paymentMethod === 'cod' ? 'الدفع عند الاستلام' : paymentMethod === 'transfer' ? 'تحويل بنكي الراجحي' : paymentMethod === 'applepay' ? 'آبل باي (الدفع الإلكتروني)' : 'مدى (بطاقة بنكية)';
       const payEnglish = paymentMethod === 'cod' ? 'Cash on Delivery' : paymentMethod === 'transfer' ? 'Al Rajhi Bank Transfer' : paymentMethod === 'applepay' ? 'Apple Pay (Mock)' : 'Mada (Mock)';
@@ -496,7 +432,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           `*الحساب الفرعي:* ${subtotal.toFixed(2)} ريال\n` +
           promoArabic +
           (taxEnabled ? `*الضريبة (${taxPercent}%):* ${tax.toFixed(2)} ريال\n` : `*الضريبة:* معفى من الضريبة المضافة\n`) +
-          `*الإجمالي النهائي:* *${total.toFixed(2)} ريال*\n` +
+          (deliveryFee > 0 ? `*رسوم التوصيل:* ${deliveryFee.toFixed(2)} ريال\n` : '') +
+          `*الإجمالي النهائي:* *${finalTotal.toFixed(2)} ريال*\n` +
           `*طريقة الدفع:* ${payArabic}\n\n` +
           `_تم تسجيل وتأكيد الطلب بنجاح في النظام التفاعلي! أرجو تجهيز الطلب بأقرب وقت._`
         : `*New Order from ${businessSettings?.restaurantNameEn || t('appName')}* 🍢🥤\n\n` +
@@ -509,7 +446,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           `*Subtotal:* ${subtotal.toFixed(2)} SAR\n` +
           promoEnglish +
           (taxEnabled ? `*Tax (${taxPercent}%):* ${tax.toFixed(2)} SAR\n` : `*Tax:* VAT Exempted\n`) +
-          `*Estimated Total:* *${total.toFixed(2)} SAR*\n` +
+          (deliveryFee > 0 ? `*Delivery Fee:* ${deliveryFee.toFixed(2)} SAR\n` : '') +
+          `*Estimated Total:* *${finalTotal.toFixed(2)} SAR*\n` +
           `*Payment:* ${payEnglish}\n\n` +
           `_This order has been recorded into our live system. Looking forward to preparing it!_`;
 
@@ -655,6 +593,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </span>
                   <span className="text-dark/80">{tax.toFixed(2)} {t('sar')}</span>
                 </div>
+                {tableOrDelivery === 'delivery' && (
+                  <div className="flex justify-between text-sm text-amber-650 font-semibold bg-amber-50 rounded-lg px-2 py-1.5 border border-amber-500/10">
+                    <span>{language === 'ar' ? 'رسوم التوصيل' : 'Delivery Fee'}</span>
+                    <span>+ {deliveryFee.toFixed(1)} {t('sar')}</span>
+                  </div>
+                )}
                 <div className="h-px bg-black/5 my-2" />
                 <div className="flex justify-between text-base font-extrabold text-dark font-sans">
                   <span>
@@ -662,7 +606,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       ? (taxEnabled ? 'الإجمالي شامل الضريبة' : 'المجموع الإجمالي النهائي')
                       : (taxEnabled ? 'Total (VAT Inclusive)' : 'Final Estimated Total')}
                   </span>
-                  <span className="text-lg text-dark font-black">{total.toFixed(2)} {t('sar')}</span>
+                  <span className="text-lg text-dark font-black">{finalTotal.toFixed(2)} {t('sar')}</span>
                 </div>
               </div>
 
@@ -693,7 +637,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
                   {/* Phone field */}
                   <div>
-                    <label className="block text-xs font-semibold text-dark/60 mb-1">{t('phone')} <span className="text-red-500">*</span></label>
+                    <label className="block text-xs font-semibold text-dark/60 mb-1">{language === 'ar' ? 'رقم الجوال' : 'Mobile Number'} <span className="text-red-500">*</span></label>
                     <input
                       required
                       type="tel"
@@ -711,163 +655,121 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   {/* Order Type Toggle */}
                   <div>
                     <label className="block text-xs font-semibold text-dark/60 mb-2">{language === 'ar' ? 'طريقة الاستلام' : 'Order Type'}</label>
-                    <div className="grid grid-cols-3 gap-1.5 bg-neutral-100 p-1 rounded-xl border border-black/5">
+                    <div className="grid grid-cols-3 gap-2 bg-neutral-100 p-1 rounded-xl border border-black/5">
+                      {/* DINE-IN (LOCAL) */}
                       <button
                         type="button"
                         onClick={() => {
                           setTableOrDelivery('table');
-                          setTableNumber('');
-                          setDeliveryAddress('');
-                          setLatitude(undefined);
-                          setLongitude(undefined);
-                          setLocationSuccess(false);
+                          setTableNumber('محلي');
                         }}
-                        className={`flex items-center justify-center gap-1 py-2 px-1 text-[11px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
+                        className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-2 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
                           tableOrDelivery === 'table'
                             ? 'bg-yellow text-black shadow-sm'
                             : 'text-dark/40 hover:text-dark/70'
                         }`}
                       >
                         <Store className="w-3.5 h-3.5" />
-                        {language === 'ar' ? 'محلي' : 'Dine-In'}
+                        <span>{language === 'ar' ? 'محلي' : 'Dine-In'}</span>
                       </button>
+
+                      {/* TAKEAWAY */}
                       <button
                         type="button"
                         onClick={() => {
                           setTableOrDelivery('takeaway');
-                          setTableNumber('');
-                          setDeliveryAddress('استلام من الفرع');
-                          setLatitude(undefined);
-                          setLongitude(undefined);
-                          setLocationSuccess(false);
+                          setDeliveryAddress('سفري');
                         }}
-                        className={`flex items-center justify-center gap-1 py-2 px-1 text-[11px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
+                        className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-2 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
                           tableOrDelivery === 'takeaway'
                             ? 'bg-yellow text-black shadow-sm'
                             : 'text-dark/40 hover:text-dark/70'
                         }`}
                       >
                         <ShoppingBag className="w-3.5 h-3.5" />
-                        {language === 'ar' ? 'استلام من الفرع' : 'Takeaway'}
+                        <span>{language === 'ar' ? 'سفري' : 'Takeaway'}</span>
                       </button>
+
+                      {/* DELIVERY */}
                       <button
                         type="button"
                         onClick={() => {
                           setTableOrDelivery('delivery');
-                          setTableNumber('');
                           setDeliveryAddress('');
-                          setLatitude(undefined);
-                          setLongitude(undefined);
-                          setLocationSuccess(false);
                         }}
-                        className={`flex items-center justify-center gap-1 py-2 px-1 text-[11px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
+                        className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-2 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
                           tableOrDelivery === 'delivery'
                             ? 'bg-yellow text-black shadow-sm'
                             : 'text-dark/40 hover:text-dark/70'
                         }`}
                       >
                         <MapPin className="w-3.5 h-3.5" />
-                        {language === 'ar' ? 'توصيل' : 'Delivery'}
+                        <span>{language === 'ar' ? 'توصيل' : 'Delivery'}</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Dine-In specific input */}
-                  {tableOrDelivery === 'table' && (
-                    <div>
-                      <label className="block text-xs font-semibold text-dark/60 mb-1">
-                        {language === 'ar' ? 'رقم الطاولة (اختياري)' : 'Table Number (Optional)'}
-                      </label>
-                      <input
-                        type="text"
-                        value={tableNumber}
-                        onChange={(e) => setTableNumber(e.target.value)}
-                        placeholder={language === 'ar' ? 'مثال: طاولة 5' : 'e.g. Table 5'}
-                        className="w-full text-sm bg-white border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
-                      />
-                    </div>
-                  )}
-
-                  {/* Delivery specific input */}
+                  {/* Delivery Address & Geolocation block when delivery is active */}
                   {tableOrDelivery === 'delivery' && (
-                    <div className="space-y-3">
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="space-y-2.5 p-3 bg-white border border-black/5 rounded-2xl w-full"
+                    >
                       <div>
-                        <label className="block text-xs font-semibold text-dark/60 mb-1">
-                          {language === 'ar' ? 'عنوان التوصيل بالتفصيل (الحي، الشارع، المعلم)' : 'Detailed Delivery Address (District, Street, Landmark)'} <span className="text-red-500">*</span>
+                        <label className="block text-[11px] font-semibold text-dark/60 mb-1">
+                          {language === 'ar' ? 'عنوان التوصيل بالتفصيل' : 'Detailed Delivery Address'} <span className="text-red-500">*</span>
                         </label>
                         <input
-                          required
+                          required={tableOrDelivery === 'delivery'}
                           type="text"
-                          value={deliveryAddress}
+                          value={deliveryAddress === 'سفري' || deliveryAddress === 'محلي' ? '' : deliveryAddress}
                           onChange={(e) => setDeliveryAddress(e.target.value)}
-                          placeholder={language === 'ar' ? 'مثال: حي الياسمين، شارع الملقا، فيلا 12' : 'e.g. Alyasmin Dist, Al Malqa St, Villa 12'}
-                          className="w-full text-sm bg-white border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
+                          placeholder={language === 'ar' ? 'مثال: حي الياسمين، شارع القلم، رقم المنزل 4' : 'e.g. Alyasmin Dist, Al-Qalam St, House 4'}
+                          className="w-full text-xs bg-neutral-50 border border-black/10 rounded-xl px-3 py-2 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
                         />
                       </div>
 
-                      {/* GPS Button */}
-                      <div>
-                        <button
-                          type="button"
-                          onClick={handleGetLocation}
-                          disabled={locationLoading}
-                          className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-black rounded-xl border transition-all cursor-pointer ${
-                            locationSuccess 
-                              ? 'bg-emerald-500 hover:bg-emerald-600 text-white border-transparent' 
-                              : 'bg-slate-800 hover:bg-slate-900 text-yellow border-transparent'
-                          }`}
-                        >
-                          {locationLoading ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : locationSuccess ? (
-                            <Check className="w-4 h-4" />
-                          ) : (
-                            <Navigation className="w-4 h-4" />
-                          )}
-                          {locationLoading 
-                            ? (language === 'ar' ? 'جاري تحديد إحداثياتك...' : 'Locating coordinates...')
-                            : locationSuccess 
-                              ? (language === 'ar' ? 'تم تحديد إحداثيات موقعك بنجاح! ✓' : 'GPS Coordinates Locked! ✓')
-                              : (language === 'ar' ? 'تحديد موقعي الحالي بدقة 📍' : 'Locate My Current Position 📍')}
-                        </button>
-                        {locationSuccess && latitude && longitude && (
-                          <div className="text-[10px] text-emerald-600 font-mono text-center mt-1">
-                            {language === 'ar' 
-                              ? `تم حفظ الموقع بنجاح: (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` 
-                              : `Saved Coordinates: (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`}
-                          </div>
-                        )}
-                        {locationError && (
-                          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-xs flex items-start gap-2 mt-1.5 text-start animate-fade-in">
-                            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                            <span className="font-medium leading-normal">{locationError}</span>
-                          </div>
-                        )}
-                      </div>
+                      {/* Determine my current location button */}
+                      <button
+                        type="button"
+                        onClick={handleGetLocation}
+                        disabled={locating}
+                        className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-dark hover:bg-black text-white disabled:bg-neutral-300 font-bold text-xs rounded-xl transition-all shadow-xs cursor-pointer"
+                      >
+                        <MapPin className={`w-4 h-4 ${locating ? 'text-yellow animate-spin' : 'text-yellow'}`} />
+                        <span>
+                          {locating 
+                            ? (language === 'ar' ? 'جاري تحديد موقعك...' : 'Locating you...') 
+                            : (language === 'ar' ? 'تحديد موقعي الحالي 📍' : 'Determine my current location 📍')}
+                        </span>
+                      </button>
 
-                      {/* Google Maps Link manually or as fallback */}
-                      <div className="pt-2.5 border-t border-slate-100 mt-2.5 text-start">
-                        <label className="block text-xs font-bold text-dark/60 mb-1">
-                          {language === 'ar' 
-                            ? 'أو انسخ وألصق رابط موقعك من خرائط جوجل (أو الواتساب) 📍' 
-                            : 'Or paste your Google Maps / WhatsApp location link 📍'}
+                      {/* GPS coordinates & Google Maps link finder */}
+                      <div className="pt-2">
+                        <label className="block text-[11px] font-bold text-dark/70 mb-1.5 text-start">
+                          {language === 'ar' ? 'تأكيد أو تعديل إحداثيات موقعك' : 'Confirm or Edit Your Coordinates'}
                         </label>
-                        <input
-                          type="url"
-                          value={customMapsUrl}
-                          onChange={(e) => setCustomMapsUrl(e.target.value)}
-                          placeholder={language === 'ar' 
-                            ? 'مثال: https://maps.app.goo.gl/... أو https://maps.google.com/?q=...' 
-                            : 'e.g., https://maps.app.goo.gl/...'}
-                          className="w-full text-xs bg-white border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs font-mono"
+                        <MapPicker
+                          latitude={latitude}
+                          longitude={longitude}
+                          onChange={(lat, lng) => {
+                            setLatitude(lat);
+                            setLongitude(lng);
+                            setLocSuccess(true);
+                          }}
+                          onAddressSelect={(address) => {
+                            setDeliveryAddress(address);
+                          }}
                         />
-                        <p className="text-[10px] text-slate-500 mt-1 leading-normal font-medium">
-                          {language === 'ar'
-                            ? '💡 مفيد جداً إذا كان تحديد الموقع الجغرافي التلقائي لمتصفحك غير دقيق أو محجوب. يمكنك نسخ رابط موقعك مباشرة من خرائط جوجل أو تطبيق الواتساب ولصقه هنا لضمان وصول المندوب لباب منزلك مباشرة!'
-                            : '💡 Highly recommended if your browser\'s automatic GPS is inaccurate or blocked. Copy your location link from Google Maps or WhatsApp and paste it here for precise delivery!'}
-                        </p>
                       </div>
-                    </div>
+
+                      {locSuccess && latitude && longitude && (
+                        <div className="text-[10px] text-green-700 bg-green-50/50 border border-green-500/10 p-2 rounded-lg font-mono text-center">
+                          {language === 'ar' ? '✓ تم حفظ الإحداثيات بنجاح:' : '✓ Coordinates locked successfully:'} {latitude.toFixed(6)}, {longitude.toFixed(6)}
+                        </div>
+                      )}
+                    </motion.div>
                   )}
 
                   {/* Dine-In items warning filter */}
@@ -878,7 +780,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       </p>
                       <p className="text-dark/80 leading-normal font-medium">
                         {language === 'ar'
-                          ? 'نود التنبيه بلطف أنه لا يمكن طلب زمزمية القهوة، ترمس الشاي، أو الألعاب الشعبية للاستلام من الفرع أو التوصيل. يسعدنا جداً استضافتك وتقديمها لك للاستمتاع بها داخل المطعم (محلي).'
+                          ? 'نود التنبيه بلطف أنه لا يمكن طلب زمزمية القهوة، ترمس الشاي، أو الألعاب الشعبية سفري أو توصيل. يسعدنا جداً استضافتك وتقديمها لك للاستمتاع بها داخل المطعم (محلي).'
                           : 'We kindly inform you that coffee pots, tea thermoses, and board games cannot be ordered for takeaway or delivery. We would be absolutely delighted to host and serve you these items for dine-in.'}
                       </p>
                     </div>
@@ -901,7 +803,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <label className="block text-xs font-bold text-dark/70 mb-2.5 text-start">
                       {language === 'ar' ? 'طريقة الدفع المتوفرة' : 'Available Payment Method'}
                     </label>
-                    <div className={`grid gap-2 ${businessSettings?.paymentGatewayEnabled ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-2'}`}>
+                    <div className="grid grid-cols-3 gap-2">
                       {/* COD */}
                       <button
                         type="button"
@@ -930,37 +832,24 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         <span className="text-[11px] font-bold whitespace-nowrap">{language === 'ar' ? 'تحويل بنكي' : 'Bank Transfer'}</span>
                       </button>
 
-                      {/* MADA (ONLY IF GATEWAY ENABLED) */}
-                      {businessSettings?.paymentGatewayEnabled && (
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('mada')}
-                          className={`p-3 rounded-2xl border text-center flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            paymentMethod === 'mada'
-                              ? 'border-yellow bg-yellow/10 text-yellow-900 font-extrabold shadow-xs'
-                              : 'border-black/5 bg-neutral-50 text-dark/60 hover:border-black/15 hover:text-dark'
-                          }`}
-                        >
-                          <CreditCard className="w-5 h-5 text-yellow-750" />
-                          <span className="text-[11px] font-bold whitespace-nowrap">{language === 'ar' ? 'بطاقة مدى' : 'Mada Card'}</span>
-                        </button>
-                      )}
-
-                      {/* APPLE PAY (ONLY IF GATEWAY ENABLED) */}
-                      {businessSettings?.paymentGatewayEnabled && (
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('applepay')}
-                          className={`p-3 rounded-2xl border text-center flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            paymentMethod === 'applepay'
-                              ? 'border-yellow bg-yellow/10 text-yellow-900 font-extrabold shadow-xs'
-                              : 'border-black/5 bg-neutral-50 text-dark/60 hover:border-black/15 hover:text-dark'
-                          }`}
-                        >
-                          <span className="font-sans font-black text-xs text-dark/90 mr-0.5"></span>
-                          <span className="text-[11px] font-bold whitespace-nowrap">Apple Pay</span>
-                        </button>
-                      )}
+                      {/* APPLE PAY (SOON) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          alert(
+                            language === 'ar' 
+                              ? ' خدمة الدفع عبر Apple Pay سوف تتوفر قريباً جداً في الموقع لتجربة دفع أكثر سهولة وأماناً!' 
+                              : ' Apple Pay will be available very soon! Please use Bank Transfer or Cash payment methods in the meantime.'
+                          );
+                        }}
+                        className="p-3 rounded-2xl border border-black/5 bg-neutral-50 text-dark/35 relative text-center flex flex-col items-center justify-center gap-1.5 cursor-pointer opacity-70 hover:opacity-90 transition-all"
+                      >
+                        <span className="absolute -top-1.5 -right-1.5 bg-yellow text-[8px] font-black px-1.5 py-0.5 rounded-full text-black shadow-xs border border-white">
+                          {language === 'ar' ? 'قريباً' : 'Soon'}
+                        </span>
+                        <CreditCard className="w-5 h-5 text-dark/30" />
+                        <span className="text-[11px] font-bold whitespace-nowrap">Apple Pay</span>
+                      </button>
                     </div>
                   </div>
 

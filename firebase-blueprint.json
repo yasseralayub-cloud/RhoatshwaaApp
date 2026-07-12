@@ -35,14 +35,13 @@
         "tax": { "type": "number" },
         "total": { "type": "number" },
         "paymentMethod": { "type": "string", "enum": ["cod", "applepay", "mada", "transfer"] },
-        "status": { "type": "string", "enum": ["pending", "searching_driver", "preparing", "ready", "driver_picked_up", "delivering", "delivered", "cancelled"] },
+        "status": { "type": "string", "enum": ["pending", "received", "searching_driver", "preparing", "ready", "driver_picked_up", "on_the_way", "delivered", "cancelled"] },
         "whatsappSent": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" },
         "appliedPromoId": { "type": "string" },
         "promoDiscount": { "type": "number" },
         "latitude": { "type": "number" },
         "longitude": { "type": "number" },
-        "googleMapsUrl": { "type": "string" },
         "driverId": { "type": "string" },
         "driverName": { "type": "string" },
         "driverPhone": { "type": "string" }
@@ -51,16 +50,16 @@
     },
     "Driver": {
       "title": "Driver",
-      "description": "A delivery agent / driver in the system",
+      "description": "A delivery driver",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
         "phone": { "type": "string" },
-        "isAvailable": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "status": { "type": "string", "enum": ["available", "busy"] },
+        "createdAt": { "type": "string" }
       },
-      "required": ["id", "name", "phone", "isAvailable", "createdAt"]
+      "required": ["id", "name", "phone", "status"]
     },
     "Promotion": {
       "title": "Promotion",
@@ -111,13 +110,13 @@
       "schema": "Promotion",
       "description": "Promotional offers with live countdown limits"
     },
+    "/drivers/{driverId}": {
+      "schema": "Driver",
+      "description": "Registered delivery drivers and their current availability status"
+    },
     "/settings/{docId}": {
       "schema": "BusinessSettings",
       "description": "Singleton storing localized values and tax parameters"
-    },
-    "/drivers/{driverId}": {
-      "schema": "Driver",
-      "description": "Drivers collection for delivery agents"
     }
   }
 }

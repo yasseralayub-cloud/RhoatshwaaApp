@@ -1,63 +1,57 @@
 import express from "express";
 import path from "path";
-import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dns from "dns";
 
 dns.setDefaultResultOrder("ipv4first"); // Accelerate local name resolutions
 
-async function getBusinessSettings() {
-  try {
-    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-    let projectId = "gen-lang-client-0153467187";
-    let databaseId = "ai-studio-9e243b44-104d-44d1-bf9e-c7d522d5b155";
-    
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-      projectId = config.projectId || projectId;
-      databaseId = config.firestoreDatabaseId || databaseId;
-    }
-    
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/settings/business`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      return null;
-    }
-    const data = await res.json();
-    
-    const fields = data.fields || {};
-    const settings: any = {};
-    for (const [key, value] of Object.entries(fields)) {
-      const valObj: any = value;
-      if (valObj.stringValue !== undefined) {
-        settings[key] = valObj.stringValue;
-      } else if (valObj.booleanValue !== undefined) {
-        settings[key] = valObj.booleanValue;
-      } else if (valObj.integerValue !== undefined) {
-        settings[key] = parseInt(valObj.integerValue, 10);
-      } else if (valObj.doubleValue !== undefined) {
-        settings[key] = parseFloat(valObj.doubleValue);
-      }
-    }
-    return settings;
-  } catch (err) {
-    console.error("Error reading business settings from Firestore:", err);
-    return null;
-  }
-}
-
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Accept and parse body payloads
-  app.use(express.json());
+  // Accept and parse body payloads with high limit for driver photo/document uploads
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   // API endpoints FIRST
 
   // 1. Health check routing
   app.get("/api/health", (req, res) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
+  });
+
+  // 1.5. Expand Google Maps short URLs to extract coordinates
+  app.post("/api/expand-url", async (req: express.Request, res: express.Response) => {
+    try {
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({ success: false, message: "URL is required" });
+      }
+
+      const cleanUrl = url.trim();
+      if (!cleanUrl.includes("goo.gl") && !cleanUrl.includes("maps")) {
+        return res.status(400).json({ success: false, message: "Not a Google Maps URL" });
+      }
+
+      const response = await fetch(cleanUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+
+      res.json({
+        success: true,
+        expandedUrl: response.url
+      });
+    } catch (err: any) {
+      console.error("Error expanding URL on server:", err);
+      res.status(500).json({
+        success: false,
+        message: err.message || "Failed to expand Google Maps shortened URL"
+      });
+    }
   });
 
   // 2. Create Charge Transaction with Tap Payments
@@ -92,10 +86,7 @@ async function startServer() {
       }
 
       const email = customerEmail?.trim() || `${firstName.toLowerCase().replace(/[^a-z0-9]/g, "") || "guest"}@example.com`;
-      
-      // Load secret key from Firestore business settings, with env fallback
-      const settings = await getBusinessSettings();
-      const secretKey = settings?.tapSecretKey || process.env.TAP_SECRET_KEY;
+      const secretKey = process.env.TAP_SECRET_KEY;
 
       if (!secretKey) {
         console.warn("TAP_SECRET_KEY environment variable is not defined. Initiating safe mock simulator checkout URL...");
@@ -210,9 +201,7 @@ async function startServer() {
         });
       }
 
-      // Load secret key from Firestore business settings, with env fallback
-      const settings = await getBusinessSettings();
-      const secretKey = settings?.tapSecretKey || process.env.TAP_SECRET_KEY;
+      const secretKey = process.env.TAP_SECRET_KEY;
       if (!secretKey) {
         return res.status(500).json({
           success: false,
@@ -253,69 +242,6 @@ async function startServer() {
       return res.status(500).json({
         success: false,
         message: err.message || "Internal error querying payment gateway validation."
-      });
-    }
-  });
-
-  // 3.5. Admin Forgot Password Telegram Notification
-  app.post("/api/admin-forgot-password", async (req: express.Request, res: express.Response) => {
-    try {
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      const chatId = process.env.TELEGRAM_CHAT_ID;
-
-      if (!botToken || !chatId) {
-        console.warn("[Telegram Config Warning] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing.");
-        return res.status(400).json({
-          success: false,
-          message: "تنبيه: لم يتم ربط البوت بتلجرام بعد في خيارات البيئة. يرجى مراجعة الإعدادات."
-        });
-      }
-
-      const clientOrigin = req.body.origin || req.headers.origin || req.headers.referer || process.env.APP_URL || "https://ais-dev.run.app";
-      const cleanOrigin = clientOrigin.replace(/\/$/, ""); // remove trailing slash if any
-      const passwordVal = "Aa102030@";
-
-      const messageText = `🔑 *طلب استعادة كلمة مرور لوحة التحكم* 🔐\n\n` +
-        `مرحباً بك! لقد تم طلب استعادة كلمة مرور لوحة التحكم بناءً على نقر زر "نسيت كلمة المرور".\n\n` +
-        `*بيانات تسجيل الدخول للوحة التحكم:*\n` +
-        `• الرابط المباشر: [اضغط هنا للدخول](${cleanOrigin}/admin)\n` +
-        `• الرابط البديل: ${cleanOrigin}/?page=admin\n` +
-        `• كلمة المرور الحالية: \`${passwordVal}\`\n\n` +
-        `⚡ _تم إرسال هذا التنبيه التلقائي الآمن لحماية حسابك._`;
-
-      const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-      const response = await fetch(telegramUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: messageText,
-          parse_mode: "Markdown"
-        })
-      });
-
-      const data = await response.json() as any;
-
-      if (!response.ok || !data.ok) {
-        console.error("Telegram API admin password send failed:", data);
-        return res.status(502).json({
-          success: false,
-          message: data.description || "فشل إرسال الرسالة عبر تلجرام."
-        });
-      }
-
-      return res.json({
-        success: true,
-        message: "تم إرسال كلمة المرور ورابط لوحة التحكم بنجاح إلى حساب تلجرام الخاص بك!"
-      });
-
-    } catch (err: any) {
-      console.error("Exception in admin-forgot-password:", err);
-      return res.status(500).json({
-        success: false,
-        message: "حدث خطأ داخلي في الخادم أثناء معالجة الطلب."
       });
     }
   });
@@ -408,6 +334,98 @@ async function startServer() {
 
     } catch (telegramErr: any) {
       console.error("Exception handling Telegram dispatch:", telegramErr);
+      return res.status(500).json({
+        success: false,
+        message: telegramErr.message || "Failed to route Telegram notification webhook."
+      });
+    }
+  });
+
+  // 4b. Secure server-side Telegram driver registration notifications
+  app.post("/api/notify-driver-registration", async (req: express.Request, res: express.Response) => {
+    try {
+      const { name, phone, carRegistrationImg } = req.body;
+      if (!name || !phone) {
+        return res.status(400).json({ success: false, message: "Missing registration details" });
+      }
+
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const chatId = process.env.TELEGRAM_CHAT_ID;
+
+      if (!botToken || !chatId) {
+        console.warn(`[Telegram Config Warning] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in environmental settings. Registration skipped telegram dispatch.`);
+        return res.json({
+          success: true,
+          message: "Telegram integration not fully configured. Notification skipped.",
+          isConfigured: false
+        });
+      }
+
+      const captionText = `🚴 *طلب تسجيل كابتن (مندوب) جديد!* 📋\n\n` +
+        `👤 *الاسم الثنائي:* ${name}\n` +
+        `📞 *رقم الجوال:* \`${phone}\`\n\n` +
+        `⚡ _يرجى مراجعة لوحة الإدارة للموافقة عليه أو رفضه._`;
+
+      let telegramResponse;
+      
+      if (carRegistrationImg && carRegistrationImg.includes(";base64,")) {
+        try {
+          const parts = carRegistrationImg.split(";base64,");
+          const contentType = parts[0].split(":")[1] || "image/jpeg";
+          const base64Data = parts[1];
+          const buffer = Buffer.from(base64Data, 'base64');
+          
+          const formData = new FormData();
+          formData.append("chat_id", chatId);
+          
+          const blob = new Blob([buffer], { type: contentType });
+          formData.append("photo", blob, "registration_document.jpg");
+          formData.append("caption", captionText);
+          formData.append("parse_mode", "Markdown");
+
+          const telegramUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+          telegramResponse = await fetch(telegramUrl, {
+            method: "POST",
+            body: formData
+          });
+        } catch (photoErr) {
+          console.error("Failed to send photo to Telegram, falling back to message text:", photoErr);
+        }
+      }
+
+      if (!telegramResponse || !telegramResponse.ok) {
+        const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        telegramResponse = await fetch(telegramUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: captionText + `\n\n⚠️ _(تعذر إرفاق صورة الاستمارة بالتلجرام، يرجى رؤيتها بلوحة الإدارة)_`,
+            parse_mode: "Markdown"
+          })
+        });
+      }
+
+      const data = await telegramResponse.json() as any;
+
+      if (!telegramResponse.ok || !data.ok) {
+        console.error("Telegram API registration endpoint error response:", data);
+        return res.status(502).json({
+          success: false,
+          message: data.description || "Telegram API rejected notification request."
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Registration notification sent successfully to Telegram.",
+        isConfigured: true
+      });
+
+    } catch (telegramErr: any) {
+      console.error("Exception handling Telegram registration dispatch:", telegramErr);
       return res.status(500).json({
         success: false,
         message: telegramErr.message || "Failed to route Telegram notification webhook."

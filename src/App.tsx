@@ -6,20 +6,85 @@ import { MenuCard } from './components/MenuCard';
 import { CartDrawer } from './components/CartDrawer';
 import { OrderTracker } from './components/OrderTracker';
 import { AdminPanel } from './components/AdminPanel';
+import { DriverPortal } from './components/DriverPortal';
 import { CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_BUSINESS_SETTINGS } from './initialData';
 import { MenuItem, Promotion, BusinessSettings, CartItem, CartItemOption } from './types';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { Flame, Star, Coffee, AlertCircle, MessageCircle } from 'lucide-react';
+import { Flame, Star, Coffee, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PromotionCountdown } from './components/PromotionCountdown';
 import { WelcomePortalModal } from './components/WelcomePortalModal';
 import { SandwichCustomizationModal, isSandwichItem, isFriesItem } from './components/SandwichCustomizationModal';
+import { PrivacyPolicyModal } from './components/PrivacyPolicyModal';
 
 function MenuAndOrdersApp() {
   const { language, t, isRtl } = useLanguage();
 
   // Selected State variables
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(() => {
+    return localStorage.getItem('rehla_privacy_accepted') !== 'true';
+  });
+
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [isIos, setIsIos] = useState(false);
+  const [showIosPrompt, setShowIosPrompt] = useState(false);
+
+  // PWA & iOS install prompt detectors
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      (window as any).deferredPrompt = e;
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Detect iOS standalone & browser type
+    const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    if (isIosDevice && !isStandalone) {
+      setIsIos(true);
+      const dismissed = sessionStorage.getItem('ios_pwa_dismissed');
+      if (dismissed !== 'true') {
+        setShowIosPrompt(true);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`PWA install prompt outcome: ${outcome}`);
+    setDeferredPrompt(null);
+    setShowInstallBanner(false);
+  };
+
+  const handleInstallOrWelcomeClick = async () => {
+    const promptEvent = (window as any).deferredPrompt || deferredPrompt;
+    if (promptEvent) {
+      try {
+        promptEvent.prompt();
+        const { outcome } = await promptEvent.userChoice;
+        console.log(`Native PWA install prompt response: ${outcome}`);
+        (window as any).deferredPrompt = null;
+        setDeferredPrompt(null);
+        setShowInstallBanner(false);
+      } catch (err) {
+        console.error("Error launching native PWA prompt:", err);
+        setIsWelcomeOpen(true);
+      }
+    } else {
+      setIsWelcomeOpen(true);
+    }
+  };
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
     // Check if there is an existing local cache, otherwise start with initial
     const saved = localStorage.getItem('simulated_menu');
@@ -30,25 +95,15 @@ function MenuAndOrdersApp() {
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('main');
-  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin'>('menu');
+  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver'>('menu');
   const [showAdminTab, setShowAdminTab] = useState(() => {
     return localStorage.getItem('show_admin_tab') === 'true';
   });
-  const [isAdminRoute, setIsAdminRoute] = useState(() => {
-    const path = window.location.pathname;
-    const params = new URLSearchParams(window.location.search);
-    return path === '/admin' || params.get('page') === 'admin' || params.get('admin') === 'true';
+  const [showDriverTab, setShowDriverTab] = useState(() => {
+    return localStorage.getItem('show_driver_tab') === 'true';
   });
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
-    return sessionStorage.getItem('admin_authenticated') === 'true';
-  });
-  const [adminPassword, setAdminPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [forgotLoading, setForgotLoading] = useState(false);
-  const [forgotPasswordMessage, setForgotPasswordMessage] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
-  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
   
   // Tracked last placed order to automatically show status tracking screen
   const [lastPlacedOrderId, setLastPlacedOrderId] = useState('');
@@ -164,58 +219,34 @@ function MenuAndOrdersApp() {
     }
   }, [businessSettings?.logoUrl, language]);
 
-  // Check for admin query parameter or path to enter isolated Admin mode
+  // Check for admin/driver query parameter to reveal the hidden tabs
   useEffect(() => {
-    const path = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
-    if (path === '/admin' || params.get('page') === 'admin' || params.get('admin') === 'true') {
-      setIsAdminRoute(true);
-      
-      // Clean up the query parameters so they don't linger in the address bar
-      if (params.get('admin') === 'true' || params.get('page') === 'admin') {
-        const cleanParams = new URLSearchParams(window.location.search);
-        cleanParams.delete('admin');
-        cleanParams.delete('page');
-        const suffix = cleanParams.toString();
-        const newUrl = window.location.pathname + (suffix ? `?${suffix}` : '');
-        window.history.replaceState({}, document.title, newUrl);
-      }
+    let changed = false;
+
+    if (params.get('admin') === 'true') {
+      setShowAdminTab(true);
+      localStorage.setItem('show_admin_tab', 'true');
+      changed = true;
+    }
+
+    if (params.get('driver') === 'true') {
+      setShowDriverTab(true);
+      localStorage.setItem('show_driver_tab', 'true');
+      setActiveTab('driver');
+      changed = true;
+    }
+
+    if (changed) {
+      // Clean up the address bar cleanly so the suffix doesn't linger
+      const cleanParams = new URLSearchParams(window.location.search);
+      cleanParams.delete('admin');
+      cleanParams.delete('driver');
+      const suffix = cleanParams.toString();
+      const newUrl = window.location.pathname + (suffix ? `?${suffix}` : '');
+      window.history.replaceState({}, document.title, newUrl);
     }
   }, []);
-
-  const handleAdminLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminPassword === 'Aa102030@') {
-      setIsAdminAuthenticated(true);
-      sessionStorage.setItem('admin_authenticated', 'true');
-      setLoginError('');
-    } else {
-      setLoginError(language === 'ar' ? 'كلمة المرور غير صحيحة! يرجى المحاولة مجدداً.' : 'Incorrect password! Please try again.');
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    setForgotLoading(true);
-    setForgotPasswordMessage('');
-    try {
-      const res = await fetch('/api/admin-forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin: window.location.origin })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setForgotPasswordMessage(language === 'ar' ? 'تم إرسال رابط لوحة التحكم وكلمة المرور إلى تليجرام بنجاح! 🚀' : 'Sent password and link to Telegram successfully! 🚀');
-      } else {
-        setForgotPasswordMessage(data.message || (language === 'ar' ? 'فشل إرسال التنبيه تليجرام.' : 'Failed to send Telegram alert.'));
-      }
-    } catch (err) {
-      console.error(err);
-      setForgotPasswordMessage(language === 'ar' ? 'حدث خطأ في الاتصال بالخادم.' : 'Connection error occurred.');
-    } finally {
-      setForgotLoading(false);
-    }
-  };
 
   // 1.95 Check if PWA installer / welcome wizard should show automatically on first visit
   useEffect(() => {
@@ -491,119 +522,36 @@ function MenuAndOrdersApp() {
 
   const cartTotalItemsCount = cart.reduce((sum, c) => sum + c.quantity, 0);
 
-  if (isAdminRoute) {
+  // Check if we are on standalone sub-pages
+  const isStandaloneDriver = window.location.pathname === '/driver' || window.location.pathname.startsWith('/driver/') || window.location.search.includes('driver=true') || window.location.search.includes('mode=driver');
+  const isStandaloneAdmin = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/') || window.location.search.includes('admin=true');
+
+  if (isStandaloneDriver) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col font-sans selection:bg-yellow/30 selection:text-black select-none">
-        {/* Special clean admin header */}
-        <header className="bg-slate-900 border-b border-slate-800 p-4">
-          <div className="max-w-7xl mx-auto flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-yellow flex items-center justify-center font-bold text-black text-sm">
-                <span>🔑</span>
-              </div>
-              <h1 className="font-serif font-black text-sm md:text-lg text-yellow tracking-wide uppercase">
-                {language === 'ar' ? 'لوحة تحكم رحلة شواء' : 'Grill Journey Admin'}
-              </h1>
-            </div>
-            
-            <button
-              onClick={() => {
-                setIsAdminRoute(false);
-                window.history.replaceState({}, document.title, '/');
-              }}
-              className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-2 rounded-xl border border-slate-700 transition-all cursor-pointer"
-            >
-              {language === 'ar' ? '← العودة للموقع' : '← Back to Website'}
-            </button>
-          </div>
-        </header>
+      <div className="min-h-screen bg-[#F9F9FB] text-dark select-none py-6 px-4">
+        <div className="max-w-7xl mx-auto">
+          <DriverPortal businessSettings={businessSettings} />
+        </div>
+      </div>
+    );
+  }
 
-        <main className="flex-1 flex items-center justify-center p-4">
-          {!isAdminAuthenticated ? (
-            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 space-y-6 shadow-2xl animate-fade-in text-start">
-              <div className="text-center space-y-2">
-                <div className="w-16 h-16 bg-yellow/15 border border-yellow/20 text-yellow rounded-full flex items-center justify-center text-2xl mx-auto shadow-inner">
-                  🛡️
-                </div>
-                <h2 className="text-xl font-black text-white">
-                  {language === 'ar' ? 'تسجيل دخول لوحة التحكم' : 'Admin Area Secure Login'}
-                </h2>
-                <p className="text-xs text-slate-400">
-                  {language === 'ar' ? 'الرجاء إدخال كلمة المرور للوصول إلى لوحة التحكم.' : 'Please enter the administrative password to gain access.'}
-                </p>
-              </div>
-
-              {loginError && (
-                <div className="bg-rose-500/10 border border-rose-500/15 text-rose-400 p-3.5 rounded-xl text-xs font-semibold text-center leading-normal">
-                  ⚠️ {loginError}
-                </div>
-              )}
-
-              {forgotPasswordMessage && (
-                <div className={`p-3.5 rounded-xl text-xs font-semibold text-center leading-normal border ${
-                  forgotPasswordMessage.includes('بنجاح') || forgotPasswordMessage.includes('successfully')
-                    ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400'
-                    : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
-                }`}>
-                  {forgotPasswordMessage}
-                </div>
-              )}
-
-              <form onSubmit={handleAdminLogin} className="space-y-4">
-                <div className="space-y-1.5 text-start">
-                  <label className="block text-xs font-bold text-slate-400">
-                    {language === 'ar' ? 'كلمة المرور' : 'Password'}
-                  </label>
-                  <input
-                    type="password"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder={language === 'ar' ? '••••••••' : '••••••••'}
-                    className="w-full bg-slate-950 text-white border border-slate-800 rounded-2xl p-3.5 outline-none focus:border-yellow text-sm font-mono text-center placeholder:text-slate-600"
-                    required
-                  />
-                </div>
-
-                <div className="flex justify-between items-center pt-1 text-xs">
-                  <button
-                    type="button"
-                    onClick={handleForgotPassword}
-                    disabled={forgotLoading}
-                    className="text-amber-400 hover:text-amber-300 font-bold transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {forgotLoading 
-                      ? (language === 'ar' ? 'جاري إرسال التنبيه...' : 'Sending Alert...') 
-                      : (language === 'ar' ? 'نسيت كلمة المرور؟' : 'Forgot Password?')}
-                  </button>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-3.5 px-4 bg-yellow text-black font-black rounded-2xl cursor-pointer hover:bg-yellow/90 hover:scale-[1.01] transition-all text-sm shadow-md"
-                >
-                  {language === 'ar' ? 'دخول آمن' : 'Secure Login'}
-                </button>
-              </form>
-            </div>
-          ) : (
-            <div className="w-full bg-white text-dark rounded-3xl p-4 md:p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
-              <AdminPanel 
-                onMenuUpdate={handleMenuUpdate} 
-                menuItems={menuItems} 
-                onPromoUpdate={handlePromoUpdate}
-                activePromo={activePromo}
-                businessSettings={businessSettings}
-                onSettingsUpdate={handleSettingsUpdate}
-                onHideAdminTab={() => {
-                  setIsAdminAuthenticated(false);
-                  sessionStorage.removeItem('admin_authenticated');
-                  setIsAdminRoute(false);
-                  window.history.replaceState({}, document.title, '/');
-                }}
-              />
-            </div>
-          )}
-        </main>
+  if (isStandaloneAdmin) {
+    return (
+      <div className="min-h-screen bg-[#F9F9FB] text-dark select-none py-6 px-4">
+        <div className="max-w-7xl mx-auto">
+          <AdminPanel 
+            onMenuUpdate={handleMenuUpdate} 
+            menuItems={menuItems} 
+            onPromoUpdate={handlePromoUpdate}
+            activePromo={activePromo}
+            businessSettings={businessSettings}
+            onSettingsUpdate={handleSettingsUpdate}
+            onHideAdminTab={() => {
+              window.location.href = '/';
+            }}
+          />
+        </div>
       </div>
     );
   }
@@ -618,17 +566,12 @@ function MenuAndOrdersApp() {
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          if (tab === 'admin') {
-            setIsAdminRoute(true);
-          } else {
-            setActiveTab(tab);
-          }
-        }}
-        isAdminAuthenticated={isAdminAuthenticated}
+        onTabChange={(tab) => setActiveTab(tab)}
+        isAdminAuthenticated={localStorage.getItem('last_order_id') !== null}
         businessSettings={businessSettings}
-        showAdminTab={false}
-        onWelcomeClick={() => setIsWelcomeOpen(true)}
+        showAdminTab={showAdminTab}
+        showDriverTab={showDriverTab}
+        onWelcomeClick={handleInstallOrWelcomeClick}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-6 font-sans">
@@ -718,65 +661,6 @@ function MenuAndOrdersApp() {
               )}
             </div>
 
-            {/* Elegant Restaurant Location section with Embedded Map */}
-            <div className="mt-12 bg-white rounded-[2rem] border border-black/5 p-6 md:p-8 shadow-xs hover:shadow-md transition-all text-start space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-black/5 pb-4">
-                <div>
-                  <h3 className="font-serif font-black text-xl text-dark flex items-center gap-2">
-                    <span>📍</span>
-                    {language === 'ar' ? 'موقعنا على الخارطة' : 'Our Location on the Map'}
-                  </h3>
-                  <p className="text-xs text-dark/50 mt-1">
-                    {language === 'ar' 
-                      ? 'شرفنا بزيارتك واستمتع بأجواء الشواء الطازجة واللذيذة!' 
-                      : 'Visit us and savor fresh, delicious grilling in our welcoming branch!'}
-                  </p>
-                </div>
-                <div className="text-xs space-y-1 font-mono text-dark/60 bg-neutral-50 px-4 py-2.5 rounded-xl border border-black/5">
-                  <p className="font-bold text-amber-600">{language === 'ar' ? '🕒 أوقات العمل:' : '🕒 Opening Hours:'}</p>
-                  <p>{language === 'ar' ? 'يومياً: من الساعة ١٢:٣٠ ظهراً حتى ٢:٠٠ صباحاً' : 'Daily: 12:30 PM till 2:00 AM'}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-                <div className="lg:col-span-2 rounded-2xl overflow-hidden border border-black/10 shadow-inner bg-neutral-100 h-[280px] w-full relative">
-                  <iframe 
-                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3570.163484495013!2d43.6468382255101!3d26.514866077076427!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x1578a9860620016b%3A0x9c1444742cb50351!2z2LHYrdmE2Kkg2LTZiNin2KE!5e0!3m2!1sar!2ssa!4v1783554084700!5m2!1sar!2ssa" 
-                    width="100%" 
-                    height="100%" 
-                    style={{ border: 0 }} 
-                    allowFullScreen={true} 
-                    loading="lazy" 
-                    referrerPolicy="strict-origin-when-cross-origin"
-                  ></iframe>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="bg-amber-500/5 border border-amber-500/10 rounded-2xl p-4 space-y-3">
-                    <h4 className="font-bold text-sm text-amber-800 flex items-center gap-1.5">
-                      <span>🍢</span>
-                      {language === 'ar' ? 'فرع رحلة شواء - القصيم' : 'Rehla BBQ Branch - Qassim'}
-                    </h4>
-                    <p className="text-xs text-dark/70 leading-relaxed font-sans">
-                      {language === 'ar' 
-                        ? 'القصيم، عيون الجواء، حي المرقب، طريق الملك فهد. يسعدنا استقبال طلباتكم المحلية واستلامكم من الفرع مباشرة مع خدمة سريعة وجودة لا تضاهى.'
-                        : 'Al-Qassim, Uyun Al-Jiwa, Al-Murqab Dist, King Fahd Road. We are delighted to welcome your dine-in, takeaway, and pickup orders with superb quality and rapid service.'}
-                    </p>
-                  </div>
-
-                  <a 
-                    href="https://maps.google.com/?q=26.514866077076427,43.6468382255101"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-3 px-4 bg-yellow hover:bg-yellow/90 text-black font-extrabold rounded-xl transition-all shadow-xs text-xs flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <span>🧭</span>
-                    {language === 'ar' ? 'افتح في خرائط جوجل' : 'Open in Google Maps'}
-                  </a>
-                </div>
-              </div>
-            </div>
-
           </div>
         )}
 
@@ -806,6 +690,11 @@ function MenuAndOrdersApp() {
           />
         )}
 
+        {/* Independent Driver logistics hub */}
+        {activeTab === 'driver' && showDriverTab && (
+          <DriverPortal businessSettings={businessSettings} />
+        )}
+
       </main>
 
       {/* Cart Slider modal drawer overlay */}
@@ -821,25 +710,10 @@ function MenuAndOrdersApp() {
         businessSettings={businessSettings}
       />
 
-      {/* Decorative footer */}
+      {/* Decorative footer with independent access ports */}
       <footer className="bg-neutral-50 border-t border-black/5 text-dark/60 py-8 text-center text-xs mt-16 font-mono">
         <p className="text-dark/80 uppercase tracking-widest font-semibold">{t('appName')} • Traditional Taste</p>
         <p className="text-dark/40 mt-2">© {new Date().getFullYear()} {t('appName')} Co. All rights reserved.</p>
-        <button
-          type="button"
-          onClick={() => setIsPrivacyOpen(true)}
-          className="mt-3 text-amber-600 hover:text-amber-700 hover:underline cursor-pointer font-bold transition-all block mx-auto text-xs"
-        >
-          {language === 'ar' ? '🔒 سياسة الخصوصية وحماية البيانات' : '🔒 Privacy Policy & Data Protection'}
-        </button>
-        <a
-          href="https://wa.me/966502163363"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2.5 text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer font-bold transition-all block mx-auto text-xs"
-        >
-          {language === 'ar' ? '💬 الدعم الفني والشكاوى والاقتراحات' : '💬 Support, Complaints & Suggestions'}
-        </a>
       </footer>
 
       {/* Welcome & PWA Onboarding Modal Wizard */}
@@ -857,119 +731,100 @@ function MenuAndOrdersApp() {
         onConfirm={handleCustomSandwichConfirm}
       />
 
-      {/* Privacy Policy Modal */}
+      {/* Mandatory Privacy Policy & Terms Modal */}
+      <PrivacyPolicyModal
+        isOpen={isPrivacyOpen}
+        onAccept={() => {
+          localStorage.setItem('rehla_privacy_accepted', 'true');
+          setIsPrivacyOpen(false);
+        }}
+      />
+
+      {/* Standard PWA Install Promo Overlay */}
       <AnimatePresence>
-        {isPrivacyOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[9999] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ duration: 0.2 }}
-              className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-neutral-100 flex flex-col max-h-[85vh]"
-            >
-              <div className="p-5 border-b border-neutral-100 flex items-center justify-between bg-stone-50">
-                <div className="flex items-center gap-2 text-amber-600 font-extrabold text-lg text-start">
-                  <span>🔒</span>
-                  <h3 className="font-bold">{language === 'ar' ? 'سياسة الخصوصية وحماية البيانات' : 'Privacy Policy & Data Protection'}</h3>
+        {showInstallBanner && deferredPrompt && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 right-6 left-6 md:left-auto md:w-96 z-[9999] bg-gradient-to-br from-neutral-900 to-amber-950 text-white rounded-3xl p-5 shadow-2xl border border-white/10 text-start font-sans"
+          >
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-yellow rounded-2xl shrink-0 text-black">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </div>
+              <div className="flex-1 space-y-1">
+                <h4 className="font-extrabold text-sm tracking-wide">
+                  {language === 'ar' ? 'تثبيت تطبيق رحلة شواء' : 'Install Rehla BBQ'}
+                </h4>
+                <p className="text-white/75 text-xs leading-relaxed">
+                  {language === 'ar' 
+                    ? 'ثبّت التطبيق الآن على الشاشة الرئيسية للحصول على تجربة طلب سريعة ومتابعة حية بدون تصفح!' 
+                    : 'Add Rehla BBQ to your home screen for instant access and live order tracking.'}
+                </p>
+                <div className="flex gap-2.5 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={handleInstallClick}
+                    className="flex-1 py-2 px-4 bg-yellow hover:bg-yellow-500 text-black text-xs font-black rounded-xl shadow-md transition-all cursor-pointer text-center"
+                  >
+                    {language === 'ar' ? 'تثبيت الآن 📱' : 'Install Now 📱'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowInstallBanner(false)}
+                    className="py-2 px-3 bg-white/10 hover:bg-white/15 text-white/80 text-xs font-semibold rounded-xl transition-all cursor-pointer"
+                  >
+                    {language === 'ar' ? 'لاحقاً' : 'Later'}
+                  </button>
                 </div>
-                <button
-                  onClick={() => setIsPrivacyOpen(false)}
-                  className="w-8 h-8 rounded-full bg-neutral-200/80 hover:bg-neutral-200 text-stone-600 flex items-center justify-center font-bold text-lg transition-colors cursor-pointer"
-                >
-                  ✕
-                </button>
               </div>
-
-              <div className="p-6 overflow-y-auto space-y-6 text-start text-xs md:text-sm leading-relaxed text-stone-700">
-                {language === 'ar' ? (
-                  <div className="space-y-4 font-sans text-right" dir="rtl">
-                    <p className="font-extrabold text-amber-700 text-sm">أهلاً بك في تطبيق "رحلة شواء" الرسمي.</p>
-                    <p>نحن نولي خصوصية بياناتك أهمية قصوى ونلتزم بحمايتها وفق أعلى معايير الأمان الثنائية والتشريعات المحلية.</p>
-                    
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-stone-800 text-xs">١. ما هي البيانات التي نجمعها؟</h4>
-                      <ul className="list-disc list-inside space-y-1 text-stone-600 pr-2">
-                        <li><strong>رقم الجوال:</strong> لنتمكن من تأكيد طلبك وإرسال تحديثات حالة طلبك عبر الواتساب وتنسيق الاستلاف أو التوصيل.</li>
-                        <li><strong>الإحداثيات الجغرافية (الموقع):</strong> في حال اختيارك لخدمة "التوصيل"، نقوم بطلب الوصول لموقعك الحالي لتسهيل وصول المندوب إليك بدقة تامة.</li>
-                        <li><strong>تفاصيل الطلب:</strong> وتشمل قائمة المأكولات، الملاحظات الإضافية، والاسم المفضل لطباعته في الفاتورة وتنسيق الطلب.</li>
-                      </ul>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-stone-800 text-xs">٢. كيف نستخدم بياناتك؟</h4>
-                      <p className="text-stone-600 font-sans">تُستخدم هذه البيانات حصرياً من أجل معالجة طلبك، طباعة فاتورة التحضير للمطبخ، تعيين المندوب المناسب، وتحديثك بحالة الطلب في الوقت الحقيقي. لا نقوم بمشاركة أي من بياناتك مع أطراف ثالثة لأغراض تسويقية أو تجارية على الإطلاق.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-stone-800 text-xs">٣. تخزين البيانات وأمنها</h4>
-                      <p className="text-stone-600">يتم تخزين بيانات طلبك بشكل آمن عبر سحابة Google Firebase الموثوقة والمحمية بأحدث بروتوكولات الأمان الإلكتروني وقواعد التحقق الثنائية لمنع أي وصول غير مصرح به.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-stone-800 text-xs">٤. تواصل معنا</h4>
-                      <p className="text-stone-600 font-sans">إذا كان لديك أي استفسار أو ترغب في طلب حذف بياناتك من سجلاتنا، يسعدنا تواصلك معنا مباشرة عبر رقم الواتساب الموضح في التطبيق.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4 font-sans text-left" dir="ltr">
-                    <p className="font-extrabold text-amber-700 text-sm">Welcome to the official "Grilling Journey" application.</p>
-                    <p>We hold your privacy in the highest regard and are fully committed to protecting your personal data in accordance with best safety practices.</p>
-                    
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-stone-800 text-xs">1. What Information Do We Collect?</h4>
-                      <ul className="list-disc list-inside space-y-1 text-stone-600 pl-2">
-                        <li><strong>Mobile Phone Number:</strong> Collected to verify orders, transmit real-time WhatsApp updates, and facilitate driver delivery.</li>
-                        <li><strong>Geographical Coordinates (Location):</strong> If "Delivery" is selected, we request one-time geolocation access to deliver your fresh meals with perfect precision.</li>
-                        <li><strong>Order Contents:</strong> Selected meals, customer notes, and preference details for kitchen invoice printouts.</li>
-                      </ul>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-stone-800 text-xs">2. How Do We Use Your Data?</h4>
-                      <p className="text-stone-600">Your details are exclusively processed to manage and prepare your orders, route them to designated drivers, and notify you of delivery milestones. We strictly never sell, trade, or share your data with external marketing parties.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-stone-800 text-xs">3. Secure Storage & Encryption</h4>
-                      <p className="text-stone-600">Your data is stored securely using hardened cloud servers via Google Firebase, equipped with industry-standard rules to deny unauthorized or illegal network access.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-stone-800 text-xs">4. Contact Us</h4>
-                      <p className="text-stone-600">For inquiries, or to request complete erasure of your active logs and data records, reach out directly through our registered WhatsApp portal listed in the application.</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-4 border-t border-neutral-100 flex justify-end bg-stone-50">
-                <button
-                  onClick={() => setIsPrivacyOpen(false)}
-                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors cursor-pointer"
-                >
-                  {language === 'ar' ? 'فهمت وموافق' : 'I Understand & Agree'}
-                </button>
-              </div>
-            </motion.div>
-          </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
-      
-      {/* Floating WhatsApp Support Button */}
-      <a
-        href="https://wa.me/966502163363"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="fixed bottom-6 left-6 z-[9999] bg-emerald-500 hover:bg-emerald-600 text-white p-3 md:p-3.5 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 group cursor-pointer"
-        title={language === 'ar' ? 'الدعم الفني والشكاوى' : 'Support & Complaints'}
-        id="floating-support-btn"
-      >
-        <MessageCircle className="w-5 h-5 md:w-6 md:h-6 animate-pulse" />
-        <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-out font-sans font-bold text-xs whitespace-nowrap">
-          {language === 'ar' ? 'الدعم الفني والشكاوى' : 'Support & Complaints'}
-        </span>
-      </a>
+
+      {/* iOS Safari PWA Install Helper */}
+      <AnimatePresence>
+        {showIosPrompt && isIos && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 right-6 left-6 md:left-auto md:w-96 z-[9999] bg-gradient-to-br from-neutral-900 to-amber-950 text-white rounded-3xl p-5 shadow-2xl border border-white/10 text-start font-sans"
+          >
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-yellow rounded-2xl shrink-0 text-black font-extrabold text-lg flex items-center justify-center w-12 h-12">
+                📲
+              </div>
+              <div className="flex-1 space-y-1">
+                <h4 className="font-extrabold text-sm tracking-wide">
+                  {language === 'ar' ? 'تثبيت التطبيق على الآيفون' : 'Install on iPhone / iOS'}
+                </h4>
+                <p className="text-white/75 text-xs leading-relaxed">
+                  {language === 'ar' 
+                    ? 'لتنزيل التطبيق على الآيفون: اضغط على زر "مشاركة" أسفل المتصفح 📄، ثم اختر "إضافة إلى الشاشة الرئيسية" ➕.' 
+                    : 'To install on iOS: tap the "Share" button at the bottom 📄, then select "Add to Home Screen" ➕.'}
+                </p>
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowIosPrompt(false);
+                      sessionStorage.setItem('ios_pwa_dismissed', 'true');
+                    }}
+                    className="py-1.5 px-4 bg-yellow text-black text-xs font-black rounded-xl cursor-pointer"
+                  >
+                    {language === 'ar' ? 'حسناً، فهمت' : 'Okay, Got it'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
