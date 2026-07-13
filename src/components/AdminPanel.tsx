@@ -51,12 +51,14 @@ import {
   Truck,
   Upload,
   X,
+  Search,
   AlertTriangle,
   Info,
   Lock,
   Mail,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Bell
 } from 'lucide-react';
 import {
   BarChart,
@@ -145,7 +147,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // New incoming orders alerts for visual & continuous auditory notifications
+  const [incomingAlertOrders, setIncomingAlertOrders] = useState<Order[]>([]);
 
   // sound alerts toggle
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -305,6 +311,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
     return () => unsub();
   }, [language]);
+
+  // Request browser desktop notification permissions on admin mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   // Sync activePromo state inputs
   useEffect(() => {
@@ -472,6 +485,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             if (soundEnabled) {
               playOrderChime();
             }
+
+            // Genuinely new pending orders detection for visual & audible popup notifications
+            setOrders((prevOrders) => {
+              const existingIds = new Set(prevOrders.map(o => o.id));
+              const newlyAddedPending = docs.filter(o => !existingIds.has(o.id) && o.status === 'pending');
+              
+              if (newlyAddedPending.length > 0) {
+                setIncomingAlertOrders(prevAlerts => {
+                  const prevAlertIds = new Set(prevAlerts.map(a => a.id));
+                  const uniqueNew = newlyAddedPending.filter(o => !prevAlertIds.has(o.id));
+                  return [...prevAlerts, ...uniqueNew];
+                });
+
+                if (soundEnabled) {
+                  // Trigger continuous urgent alarm loop so the chef/cashier never misses a local/takeaway order!
+                  startContinuousAlarm();
+                }
+
+                // Push-notify via standard browser Notification API
+                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                  newlyAddedPending.forEach(order => {
+                    const typeText = order.tableOrDelivery === 'table' ? 'محلي (صالة)' : (order.tableOrDelivery === 'takeaway' ? 'استلام من الفرع' : 'توصيل');
+                    new Notification(`طلب جديد وارد (${typeText})! 🍢`, {
+                      body: `العميل: ${order.customerName}\nالإجمالي: ${order.total} ريال`,
+                      tag: order.id
+                    });
+                  });
+                }
+              }
+              return prevOrders;
+            });
           }
           previousOrdersCountRef.current = docs.length;
           setOrders(docs);
@@ -613,7 +657,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     return () => unsub();
   }, [isAdmin]);
 
-  // Continuous alarm checker for pending orders whose 60-second customer grace period has ended
+  // Continuous alarm checker for pending orders (triggers immediately to notify admin in real-time)
   useEffect(() => {
     if (!soundEnabled) {
       stopContinuousAlarm();
@@ -621,15 +665,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
 
     const checkAndTriggerAlarm = () => {
-      const now = Date.now();
       const needsAlarm = orders.some((ord) => {
-        if (ord.status === 'pending') {
-          const createdAtTime = new Date(ord.createdAt).getTime();
-          const elapsedMs = now - createdAtTime;
-          // Trigger continuous alarm only after 60 seconds (60000ms) has expired
-          return elapsedMs >= 60000;
-        }
-        return false;
+        // Trigger continuous alarm immediately for any new pending order
+        return ord.status === 'pending';
       });
 
       if (needsAlarm) {
@@ -875,7 +913,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             body = `طلبك رقم (#${orderId}) صار جاهز وساخن ومنتظر المندوب يستلمه الآن للحركة!\nتتبع من هنا:\n${trackingLink}`;
           } else {
             welcome = `يا هلا يا ${orderToUpdate.customerName} 🎉`;
-            const locationType = orderToUpdate.tableOrDelivery === 'table' ? `طاولة رقم ${orderToUpdate.tableNumber}` : 'قسم الاستلام سفري';
+            const locationType = orderToUpdate.tableOrDelivery === 'table' ? `طاولة رقم ${orderToUpdate.tableNumber}` : 'قسم استلام من الفرع';
             const readyTransferNote = orderToUpdate.paymentMethod === 'transfer'
               ? `\n\n🌸 يرجى إبراز إيصال التحويل البنكي للموظف عند الاستلام لتأكيد الدفع. شكراً جزيلاً لك! ❤️`
               : '';
@@ -1633,10 +1671,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     { name: language === 'ar' ? 'ملغي' : 'Cancelled', value: orders.filter((o) => o.status === 'cancelled').length, color: '#EF4444' }
   ].filter((v) => v.value > 0);
 
-  // Filters live orders list
+  // Filters live orders list by status and search query (ID, Name, or Phone)
   const filteredOrders = orders.filter((ord) => {
-    if (filterStatus === 'all') return true;
-    return ord.status === filterStatus;
+    // 1. Filter by Search Query (ID, Name, or Phone Number) - Override status filter for full cross-status search!
+    if (orderSearchQuery.trim() !== '') {
+      const q = orderSearchQuery.toLowerCase().trim();
+      const matchId = ord.id && ord.id.toLowerCase().includes(q);
+      const matchName = ord.customerName && ord.customerName.toLowerCase().includes(q);
+      const matchPhone = ord.customerPhone && ord.customerPhone.includes(q);
+      return matchId || matchName || matchPhone;
+    }
+
+    // 2. Filter by Status (If search is empty)
+    if (filterStatus !== 'all' && ord.status !== filterStatus) {
+      return false;
+    }
+    
+    return true;
   });
 
   // Login authentication request gate
@@ -1806,7 +1857,139 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-4 space-y-8 font-sans text-start">
+    <div className="max-w-7xl mx-auto p-4 space-y-8 font-sans text-start pb-24">
+      
+      {/* 🍢 Giant Visual & Audible Alert Modal Popup on New Incoming Orders! */}
+      {incomingAlertOrders.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border-4 border-amber-500 relative overflow-hidden"
+          >
+            {/* Pulsing colored glowing effect */}
+            <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 animate-pulse" />
+            
+            <div className="text-center space-y-4">
+              {/* Ringing Bell Icon Animation */}
+              <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center animate-bounce">
+                <Bell className="w-8 h-8 text-amber-600" />
+              </div>
+
+              <h3 className="text-xl md:text-2xl font-black text-stone-950">
+                {language === 'ar' ? '⚠️ طلب جديد وارد الآن!' : '⚠️ New Incoming Order!'}
+              </h3>
+              
+              <p className="text-xs text-stone-500 font-bold">
+                {language === 'ar' 
+                  ? 'يرجى مراجعة تفاصيل الطلب وتأكيده للبدء بالتحضير:' 
+                  : 'Please review and accept the order parameters to begin kitchen prep:'}
+              </p>
+
+              {/* Orders List scroll area */}
+              <div className="space-y-3 max-h-60 overflow-y-auto pt-2">
+                {incomingAlertOrders.map((ord) => {
+                  const typeLabel = ord.tableOrDelivery === 'table' 
+                    ? (language === 'ar' ? '🍽️ محلي - صالة' : '🍽️ Dine-In')
+                    : ord.tableOrDelivery === 'takeaway'
+                    ? (language === 'ar' ? '🛍️ استلام من الفرع' : '🛍️ Takeaway')
+                    : (language === 'ar' ? '🚴 توصيل للمنزل' : '🚴 Home Delivery');
+
+                  return (
+                    <div key={ord.id} className="bg-stone-50 border border-stone-200/80 rounded-2xl p-4 text-start space-y-2">
+                      <div className="flex justify-between items-center border-b border-stone-100 pb-2">
+                        <span className="font-extrabold text-sm text-stone-900">{ord.customerName}</span>
+                        <span className="bg-amber-100 text-amber-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full">
+                          {typeLabel}
+                        </span>
+                      </div>
+                      
+                      <div className="text-xs text-stone-600 space-y-1">
+                        <div>
+                          <strong>{language === 'ar' ? 'رقم الطلب:' : 'Order ID:'}</strong> <span className="font-mono">{ord.id}</span>
+                        </div>
+                        <div>
+                          <strong>{language === 'ar' ? 'رقم الجوال:' : 'Mobile Number:'}</strong> <span className="font-mono">{ord.customerPhone}</span>
+                        </div>
+                        {ord.tableOrDelivery === 'table' && ord.tableNumber && (
+                          <div>
+                            <strong>{language === 'ar' ? 'رقم الطاولة:' : 'Table Number:'}</strong> <span>{ord.tableNumber}</span>
+                          </div>
+                        )}
+                        <div>
+                          <strong>{language === 'ar' ? 'قائمة الأصناف:' : 'Items list:'}</strong>
+                          <ul className="list-disc list-inside pl-1 mt-1 font-bold text-stone-800">
+                            {ord.items.map((it, idx) => (
+                              <li key={idx}>
+                                {it.quantity}x {language === 'ar' ? it.nameAr : it.name}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-2 border-t border-stone-100 text-sm font-extrabold text-stone-900">
+                        <span>{language === 'ar' ? 'إجمالي الطلب:' : 'Order Total:'}</span>
+                        <span className="text-amber-600 font-mono text-base">{ord.total} {language === 'ar' ? 'ريال' : 'SAR'}</span>
+                      </div>
+
+                      {/* Individual Accept button */}
+                      <button
+                        onClick={() => {
+                          // Change status to 'received'
+                          handleUpdateStatus(ord.id, 'received');
+                          // Acknowledge locally
+                          setIncomingAlertOrders(prev => {
+                            const updated = prev.filter(p => p.id !== ord.id);
+                            if (updated.length === 0) {
+                              stopContinuousAlarm();
+                            }
+                            return updated;
+                          });
+                          showNotification(language === 'ar' ? 'تم قبول وتأكيد الطلب بنجاح! ✅' : 'Order accepted and confirmed! ✅', 'success');
+                        }}
+                        className="w-full bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-2 px-3 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        {language === 'ar' ? 'قبول وتأكيد هذا الطلب فقط ✅' : 'Accept & Confirm this Order Only ✅'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Actions row */}
+              <div className="grid grid-cols-2 gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Acknowledge all locally
+                    setIncomingAlertOrders([]);
+                    stopContinuousAlarm();
+                  }}
+                  className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-extrabold text-xs py-3 px-4 rounded-xl transition-all cursor-pointer text-center"
+                >
+                  {language === 'ar' ? 'إغلاق التنبيه فقط ❌' : 'Close Alert Only ❌'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Accept all pending alerts and close
+                    incomingAlertOrders.forEach((ord) => {
+                      handleUpdateStatus(ord.id, 'received');
+                    });
+                    setIncomingAlertOrders([]);
+                    stopContinuousAlarm();
+                    showNotification(language === 'ar' ? 'تم قبول وتأكيد جميع الطلبات الواردة! ✅' : 'All incoming orders accepted and confirmed! ✅', 'success');
+                  }}
+                  className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 rounded-xl transition-all cursor-pointer text-center shadow-md active:scale-[0.98]"
+                >
+                  {language === 'ar' ? 'قبول وتأكيد الجميع ✅' : 'Accept & Confirm All ✅'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
       
       {/* Admin Title banner */}
       <div className="bg-stone-900 text-stone-100 rounded-3xl p-6 shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden border border-amber-500/20">
@@ -2093,6 +2276,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </div>
 
+        {/* Search Bar Input (Search by ID, Name, or Phone) */}
+        <div className="relative">
+          <div className="absolute inset-y-0 right-3 pl-3 flex items-center pointer-events-none text-slate-400">
+            <Search className="w-4 h-4" />
+          </div>
+          <input
+            id="order-search-input"
+            type="text"
+            value={orderSearchQuery}
+            onChange={(e) => setOrderSearchQuery(e.target.value)}
+            placeholder={language === 'ar' ? 'البحث السريع برقم الطلب، اسم العميل، أو رقم الجوال...' : 'Search by order ID, customer name, or mobile number...'}
+            className="w-full pr-10 pl-10 py-2.5 bg-slate-50 border border-slate-200 focus:border-amber-500 focus:bg-white rounded-xl text-xs font-semibold outline-none transition text-slate-800 placeholder-slate-400 text-start"
+            dir={language === 'ar' ? 'rtl' : 'ltr'}
+          />
+          {orderSearchQuery && (
+            <button
+              onClick={() => setOrderSearchQuery('')}
+              className="absolute inset-y-0 left-3 flex items-center text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
         {/* Real-time Order lists container */}
         {loadingOrders ? (
           <div className="flex items-center justify-center py-12">
@@ -2132,6 +2339,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           {ord.status === 'pending' && (
                             <PendingCountdown createdAt={ord.createdAt} />
                           )}
+                          
+                          {/* Beautiful Order Type Badges */}
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            {ord.tableOrDelivery === 'table' && (
+                              <span className="bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-extrabold px-2 py-0.5 rounded-lg flex items-center gap-1">
+                                🍽️ {language === 'ar' ? 'محلي - صالة' : 'Dine-In'}
+                              </span>
+                            )}
+                            {ord.tableOrDelivery === 'takeaway' && (
+                              <span className="bg-indigo-100 text-indigo-900 border border-indigo-200 text-[10px] font-extrabold px-2 py-0.5 rounded-lg flex items-center gap-1">
+                                🛍️ {language === 'ar' ? 'استلام من الفرع' : 'Takeaway'}
+                              </span>
+                            )}
+                            {ord.tableOrDelivery === 'delivery' && (
+                              <span className="bg-emerald-100 text-emerald-900 border border-emerald-200 text-[10px] font-extrabold px-2 py-0.5 rounded-lg flex items-center gap-1">
+                                🚴 {language === 'ar' ? 'توصيل للمنزل' : 'Delivery'}
+                              </span>
+                            )}
+                            
+                            {/* Table Number or Delivery Address information */}
+                            {ord.tableOrDelivery === 'table' && ord.tableNumber && (
+                              <span className="bg-stone-100 text-stone-800 text-[10px] font-bold px-2 py-0.5 rounded-lg border border-stone-200">
+                                📍 {ord.tableNumber}
+                              </span>
+                            )}
+                            {ord.tableOrDelivery === 'takeaway' && ord.deliveryAddress && (
+                              <span className="bg-slate-100 text-slate-800 text-[10px] font-bold px-2 py-0.5 rounded-lg border border-slate-200 max-w-[150px] truncate" title={ord.deliveryAddress}>
+                                📍 {ord.deliveryAddress}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${
@@ -2156,6 +2394,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
+                      </div>
+
+                      {/* Items Ordered List directly on Card for Quick Cook view */}
+                      <div className="bg-stone-50 border border-stone-100/80 rounded-xl p-3 my-2 space-y-1 text-xs">
+                        <span className="font-extrabold text-slate-500 block border-b border-stone-100 pb-1 mb-1.5 text-start">
+                          📋 {language === 'ar' ? 'الأصناف المطلوبة:' : 'Ordered Items:'}
+                        </span>
+                        <div className="space-y-1 divide-y divide-stone-100/60">
+                          {ord.items.map((it, idx) => (
+                            <div key={idx} className="flex justify-between items-center py-1 font-semibold text-slate-700">
+                              <span className="text-start">
+                                {it.quantity}x {language === 'ar' ? it.nameAr : it.name}
+                              </span>
+                              <span className="text-slate-400 font-mono text-[11px] shrink-0">
+                                {it.price * it.quantity} {language === 'ar' ? 'ريال' : 'SAR'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Display Total, Notes */}
+                        <div className="flex justify-between items-center pt-2 border-t border-stone-100 text-xs font-extrabold text-slate-800">
+                          <span>{language === 'ar' ? 'المجموع النهائي:' : 'Total:'}</span>
+                          <span className="text-amber-600 font-mono text-sm">{ord.total} {language === 'ar' ? 'ريال' : 'SAR'}</span>
+                        </div>
+                        
+                        {ord.notes && (
+                          <div className="mt-2 text-[10px] text-red-600 bg-red-50 border border-red-100/50 rounded-lg p-1.5 text-start leading-relaxed">
+                            ⚠️ <strong>{language === 'ar' ? 'ملاحظة العميل:' : 'Customer Note:'}</strong> {ord.notes}
+                          </div>
+                        )}
                       </div>
                       {ord.tableOrDelivery === 'delivery' && (
                         <div className="bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs text-start space-y-1 my-2">
@@ -3990,7 +4259,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     className="w-4 h-4 accent-amber-600"
                   />
                   <label htmlFor="dineinonly-chkbx" className="text-xs font-bold text-slate-600">
-                    {language === 'ar' ? 'للطلب محلي فقط (داخل الصالة يمنع سفري) 🍽️' : 'Dine-In Only (Restricted from Takeaway) 🍽️'}
+                    {language === 'ar' ? 'للطلب محلي فقط (داخل الصالة يمنع استلام من الفرع) 🍽️' : 'Dine-In Only (Restricted from Takeaway) 🍽️'}
                   </label>
                 </div>
 
@@ -4339,7 +4608,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <span className="font-bold">
                       {printingOrder.tableOrDelivery === 'table' 
                         ? (language === 'ar' ? 'محلي' : 'Dine-In')
-                        : (language === 'ar' ? 'سفري' : 'Takeaway')}
+                        : (language === 'ar' ? 'استلام من الفرع' : 'Takeaway')}
                     </span>
                   </div>
                   <div className="mt-1 text-end">
@@ -4490,7 +4759,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <div className="font-extrabold text-[12px] mt-0.5">
                     {printingOrder.tableOrDelivery === 'table' 
                       ? (language === 'ar' ? 'طلب محلي' : 'Dine-In Order')
-                      : (language === 'ar' ? 'طلب سفري' : 'Takeaway Order')}
+                      : (language === 'ar' ? 'استلام من الفرع' : 'Takeaway Order')}
                   </div>
                 </div>
 

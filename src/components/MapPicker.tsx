@@ -75,6 +75,7 @@ export default function MapPicker({ latitude, longitude, onChange, onAddressSele
       return;
     }
     setLocating(true);
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const lat = position.coords.latitude;
@@ -84,15 +85,39 @@ export default function MapPicker({ latitude, longitude, onChange, onAddressSele
         setLocating(false);
       },
       (error) => {
-        console.error('Locate me error:', error);
-        setLocating(false);
-        alert(
-          language === 'ar'
-            ? 'فشل تحديد موقعك الحالي تلقائياً. يرجى تفعيل الـ GPS وإعطاء الإذن للمتصفح، أو استخدام ميزة لصق الرابط بالأسفل.'
-            : 'Failed to find your location. Please enable GPS and allow permission, or paste a location link.'
-        );
+        console.warn('Locate me high-accuracy error, trying low-accuracy fallback:', error);
+        
+        if (error.code === 1) { // PERMISSION_DENIED
+          setLocating(false);
+          alert(
+            language === 'ar'
+              ? 'تنبيه لأجهزة الآيفون:\nيرجى الذهاب إلى الإعدادات ⚙️ -> الخصوصية والأمن -> خدمات الموقع، وتأكد من تفعيل خدمات الموقع والسماح لمتصفحك بالوصول للموقع، أو يمكنك البحث عن موقعك يدوياً.'
+              : 'For iPhone & iOS users:\nPlease go to Settings ⚙️ -> Privacy & Security -> Location Services, ensure they are enabled, and allow your browser to access your location, or search manually.'
+          );
+        } else {
+          // Fallback to low accuracy
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const lat = position.coords.latitude;
+              const lng = position.coords.longitude;
+              onChange(lat, lng);
+              fetchAddress(lat, lng);
+              setLocating(false);
+            },
+            (fallbackErr) => {
+              console.error('All locate attempts failed:', fallbackErr);
+              setLocating(false);
+              alert(
+                language === 'ar'
+                  ? 'تعذر تحديد موقعك تلقائياً. يرجى البحث بكتابة اسم الحي في خانة البحث بالأعلى، أو لصق رابط قوقل ماب.'
+                  : 'Unable to locate you automatically. Please type your neighborhood name in the search bar above, or paste a Google Maps link.'
+              );
+            },
+            { enableHighAccuracy: false, timeout: 12000, maximumAge: 30000 }
+          );
+        }
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 4500, maximumAge: 10000 }
     );
   };
 

@@ -155,8 +155,16 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const getWhatsAppMessageLink = () => {
     if (!order) return '';
     try {
-      const orderTypeArabic = order.tableOrDelivery === 'table' ? 'محلي (داخل المطعم)' : 'سفري (خارج المطعم)';
-      const orderTypeEnglish = order.tableOrDelivery === 'table' ? 'Dine-In' : 'Takeaway';
+      const orderTypeArabic = order.tableOrDelivery === 'table' 
+        ? 'محلي (داخل المطعم)' 
+        : order.tableOrDelivery === 'takeaway' 
+          ? 'استلام من الفرع' 
+          : `توصيل (العنوان: ${order.deliveryAddress})`;
+      const orderTypeEnglish = order.tableOrDelivery === 'table' 
+        ? 'Dine-In' 
+        : order.tableOrDelivery === 'takeaway' 
+          ? 'Pick up from branch' 
+          : `Delivery (Address: ${order.deliveryAddress})`;
       
       const payArabic = order.paymentMethod === 'cod' ? 'الدفع عند الاستلام' : order.paymentMethod === 'applepay' ? 'آبل باي' : 'مدى';
       const payEnglish = order.paymentMethod === 'cod' ? 'Cash on Delivery' : order.paymentMethod === 'applepay' ? 'Apple Pay' : 'Mada';

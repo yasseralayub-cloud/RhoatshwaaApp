@@ -38,7 +38,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [customerPhone, setCustomerPhone] = useState('');
   const [tableOrDelivery, setTableOrDelivery] = useState<'table' | 'takeaway' | 'delivery'>('table');
   const [tableNumber, setTableNumber] = useState('محلي');
-  const [deliveryAddress, setDeliveryAddress] = useState('سفري');
+  const [deliveryAddress, setDeliveryAddress] = useState('استلام من الفرع');
   const [orderNotes, setOrderNotes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'applepay' | 'mada' | 'transfer'>('cod');
   
@@ -55,6 +55,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
     setLocating(true);
     setLocSuccess(false);
+
+    // Try high accuracy first, fall back to low accuracy for faster/indoor cellular lock
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const lat = position.coords.latitude;
@@ -87,11 +89,39 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           });
       },
       (error) => {
-        console.error(error);
-        setLocating(false);
-        alert(language === 'ar' ? 'عذراً! فشل تحديد موقعك. يرجى إعطاء الصلاحية للمتصفح بالوصول إلى الموقع الجغرافي.' : 'Failed to retrieve location. Please check browser permissions.');
+        console.warn("High accuracy GPS failed or timed out, trying low-accuracy network fallback...", error);
+        
+        // If it's a permission denied error, or if fallback fails too, show iOS helper instructions
+        if (error.code === 1) { // PERMISSION_DENIED
+          setLocating(false);
+          alert(language === 'ar' 
+            ? 'لأجهزة الآيفون والـ iOS:\nيرجى الذهاب إلى الإعدادات ⚙️ -> الخصوصية والأمن -> خدمات الموقع، وتأكد من تفعيلها والسماح لمتصفحك (سافاري أو كروم) بالوصول للموقع أثناء استخدام التطبيق.'
+            : 'For iPhone & iOS users:\nPlease go to Settings ⚙️ -> Privacy & Security -> Location Services, ensure they are enabled, and allow your browser (Safari/Chrome) to access your location.');
+        } else {
+          // Low-accuracy fallback
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const lat = position.coords.latitude;
+              const lng = position.coords.longitude;
+              setLatitude(lat);
+              setLongitude(lng);
+              setLocating(false);
+              setLocSuccess(true);
+              const mapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
+              setDeliveryAddress(language === 'ar' ? `الموقع المحدد: ${mapsLink}` : `Selected Location: ${mapsLink}`);
+            },
+            (fallbackErr) => {
+              console.error("All geolocation attempts failed:", fallbackErr);
+              setLocating(false);
+              alert(language === 'ar' 
+                ? 'فشل تحديد الموقع. للتفعيل على الآيفون: الإعدادات ⚙️ -> الخصوصية -> خدمات الموقع، وتأكد من السماح لمتصفحك بالوصول للموقع، أو أدخل عنوانك يدوياً بالأسفل.' 
+                : 'Failed to locate. To fix on iPhone: Settings ⚙️ -> Privacy -> Location Services, verify browser access is allowed, or type your address manually below.');
+            },
+            { enableHighAccuracy: false, timeout: 12000, maximumAge: 30000 }
+          );
+        }
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 4500, maximumAge: 10000 }
     );
   };
   
@@ -235,7 +265,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
     if (tableOrDelivery === 'delivery' && hasDineInOnlyItems) {
       setErrorMsg(language === 'ar' 
-        ? 'يا هلا بك! 🌸 عذراً منك يا غالي، لا يمكننا إرسال زمزمية القهوة أو ترمس الشاي أو الألعاب الشعبية سفري. هذه الأصناف مخصصة للاستمتاع بها داخل المطعم (محلي) فقط لتجربة مميزة وصحيحة. نتشرف بخدمتك محلياً!' 
+        ? 'يا هلا بك! 🌸 عذراً منك يا غالي، لا يمكننا إرسال زمزمية القهوة أو ترمس الشاي أو الألعاب الشعبية استلام من الفرع. هذه الأصناف مخصصة للاستمتاع بها داخل المطعم (محلي) فقط لتجربة مميزة وصحيحة. نتشرف بخدمتك محلياً!' 
         : 'Welcome! 🌸 Gentle reminder: coffee pots, tea thermoses, and popular board games cannot be ordered for takeaway. These are exclusively for dine-in enjoyment to ensure the best experience. We would love to serve you here!');
       return;
     }
@@ -295,7 +325,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       customerPhone,
       tableOrDelivery,
       tableNumber: tableOrDelivery === 'table' ? tableNumber : '',
-      deliveryAddress: tableOrDelivery === 'delivery' ? deliveryAddress : (tableOrDelivery === 'takeaway' ? 'سفري' : ''),
+      deliveryAddress: tableOrDelivery === 'delivery' ? deliveryAddress : (tableOrDelivery === 'takeaway' ? 'استلام من الفرع' : ''),
       notes: orderNotes,
       items: itemsFormatted,
       subtotal,
@@ -307,10 +337,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       createdAt: new Date().toISOString(),
       appliedPromoId: hasPromo ? (activePromo?.id || 'active') : '',
       promoDiscount: Number(promoDiscount.toFixed(2)),
-      latitude: tableOrDelivery === 'delivery' ? latitude : undefined,
-      longitude: tableOrDelivery === 'delivery' ? longitude : undefined,
-      deliveryFee: tableOrDelivery === 'delivery' ? deliveryFee : undefined,
     };
+
+    if (tableOrDelivery === 'delivery') {
+      if (latitude !== undefined) {
+        orderData.latitude = latitude;
+      }
+      if (longitude !== undefined) {
+        orderData.longitude = longitude;
+      }
+      if (deliveryFee !== undefined) {
+        orderData.deliveryFee = deliveryFee;
+      }
+    }
 
     // 1. If electronic payment is selected, route through our secure Tap Payments backend API
     if (paymentMethod === 'mada' || paymentMethod === 'applepay') {
@@ -401,12 +440,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       const orderTypeArabic = tableOrDelivery === 'table' 
         ? 'محلي (داخل المطعم)' 
         : tableOrDelivery === 'takeaway' 
-          ? 'سفري (خارج المطعم)' 
+          ? 'استلام من الفرع' 
           : `توصيل (إلى العنوان: ${deliveryAddress})`;
       const orderTypeEnglish = tableOrDelivery === 'table' 
         ? 'Dine-In' 
         : tableOrDelivery === 'takeaway' 
-          ? 'Takeaway' 
+          ? 'Pick up from branch' 
           : `Delivery (Address: ${deliveryAddress})`;
       
       const payArabic = paymentMethod === 'cod' ? 'الدفع عند الاستلام' : paymentMethod === 'transfer' ? 'تحويل بنكي الراجحي' : paymentMethod === 'applepay' ? 'آبل باي (الدفع الإلكتروني)' : 'مدى (بطاقة بنكية)';
@@ -678,7 +717,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         type="button"
                         onClick={() => {
                           setTableOrDelivery('takeaway');
-                          setDeliveryAddress('سفري');
+                          setDeliveryAddress('استلام من الفرع');
                         }}
                         className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-1.5 px-2 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
                           tableOrDelivery === 'takeaway'
@@ -687,7 +726,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         }`}
                       >
                         <ShoppingBag className="w-3.5 h-3.5" />
-                        <span>{language === 'ar' ? 'سفري' : 'Takeaway'}</span>
+                        <span>{language === 'ar' ? 'استلام من الفرع' : 'Takeaway'}</span>
                       </button>
 
                       {/* DELIVERY */}
@@ -723,7 +762,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         <input
                           required={tableOrDelivery === 'delivery'}
                           type="text"
-                          value={deliveryAddress === 'سفري' || deliveryAddress === 'محلي' ? '' : deliveryAddress}
+                          value={deliveryAddress === 'استلام من الفرع' || deliveryAddress === 'محلي' ? '' : deliveryAddress}
                           onChange={(e) => setDeliveryAddress(e.target.value)}
                           placeholder={language === 'ar' ? 'مثال: حي الياسمين، شارع القلم، رقم المنزل 4' : 'e.g. Alyasmin Dist, Al-Qalam St, House 4'}
                           className="w-full text-xs bg-neutral-50 border border-black/10 rounded-xl px-3 py-2 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
@@ -780,7 +819,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       </p>
                       <p className="text-dark/80 leading-normal font-medium">
                         {language === 'ar'
-                          ? 'نود التنبيه بلطف أنه لا يمكن طلب زمزمية القهوة، ترمس الشاي، أو الألعاب الشعبية سفري أو توصيل. يسعدنا جداً استضافتك وتقديمها لك للاستمتاع بها داخل المطعم (محلي).'
+                          ? 'نود التنبيه بلطف أنه لا يمكن طلب زمزمية القهوة، ترمس الشاي، أو الألعاب الشعبية استلام من الفرع أو توصيل. يسعدنا جداً استضافتك وتقديمها لك للاستمتاع بها داخل المطعم (محلي).'
                           : 'We kindly inform you that coffee pots, tea thermoses, and board games cannot be ordered for takeaway or delivery. We would be absolutely delighted to host and serve you these items for dine-in.'}
                       </p>
                     </div>
