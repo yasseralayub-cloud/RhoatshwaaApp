@@ -11,7 +11,7 @@ import {
   Share, 
   X, 
   AlertCircle, 
-  UtensilsCrossed
+  ChefHat
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -206,7 +206,7 @@ export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, 
               >
                 <div className="bg-slate-50 p-4 border border-slate-200/50 rounded-2xl flex items-start gap-4">
                   <div className="bg-amber-100 p-2 text-amber-700 rounded-xl shrink-0">
-                    <UtensilsCrossed className="w-5 h-5 animate-pulse" />
+                    <ChefHat className="w-5 h-5 animate-pulse" />
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-sm font-black text-slate-800">

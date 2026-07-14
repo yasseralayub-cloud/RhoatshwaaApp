@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Order } from '../types';
 import { useLanguage } from './LanguageContext';
-import { Search, Loader2, UtensilsCrossed, CheckCircle2, Clock, Ban, User, Phone, MapPin, Clipboard, FileText, Printer, QrCode, Sparkles, Bell, X, Truck } from 'lucide-react';
+import { Search, Loader2, ChefHat, CheckCircle2, Clock, Ban, User, Phone, MapPin, Clipboard, FileText, Printer, QrCode, Sparkles, Bell, X, Truck } from 'lucide-react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
+import html2canvas from 'html2canvas';
 
 interface OrderTrackerProps {
   initialOrderId?: string;
@@ -28,6 +29,8 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+  const [isSavingImage, setIsSavingImage] = useState(false);
+  const printAreaRef = useRef<HTMLDivElement>(null);
 
   // Directly trigger print system for thermal receipt printer layout
   const handleDirectPrint = () => {
@@ -35,6 +38,59 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
     setTimeout(() => {
       window.print();
     }, 250);
+  };
+
+  const handleSaveAsImage = async () => {
+    if (!printAreaRef.current) return;
+    setIsSavingImage(true);
+    try {
+      const element = printAreaRef.current;
+      const originalStyle = element.style.cssText;
+      
+      element.style.overflowY = 'visible';
+      element.style.maxHeight = 'none';
+      element.style.backgroundColor = '#ffffff';
+      
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false
+      });
+      
+      element.style.cssText = originalStyle;
+
+      const imgData = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `Fatoora-${order?.id || 'Receipt'}.png`;
+      link.href = imgData;
+      link.click();
+      
+      setToast({
+        show: true,
+        orderId: order?.id || '',
+        customerName: order?.customerName || '',
+        titleAr: 'تم الحفظ بنجاح! 📸',
+        titleEn: 'Saved Successfully! 📸',
+        messageAr: 'تم حفظ الفاتورة كصورة بنجاح في جهازك كملف PNG.',
+        messageEn: 'The invoice has been saved as a PNG image on your device.',
+        type: 'success'
+      });
+    } catch (err) {
+      console.error('Failed to capture receipt canvas:', err);
+      setToast({
+        show: true,
+        orderId: order?.id || '',
+        customerName: order?.customerName || '',
+        titleAr: 'فشل الحفظ ❌',
+        titleEn: 'Saving Failed ❌',
+        messageAr: 'حدث خطأ أثناء حفظ الفاتورة كصورة. يرجى تكرار المحاولة.',
+        messageEn: 'An error occurred while saving the invoice. Please try again.',
+        type: 'alert'
+      });
+    } finally {
+      setIsSavingImage(false);
+    }
   };
 
   // States & Refs for Visual Toast Notifications
@@ -72,7 +128,8 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
     }
 
     const calculateTimeLeft = () => {
-      const gracePeriodMs = 60 * 1000; // 60 seconds (1 minute)
+      const gracePeriodSec = businessSettings?.gracePeriod ?? 30;
+      const gracePeriodMs = gracePeriodSec * 1000;
       const createdAtTime = new Date(order.createdAt).getTime();
       const elapsed = Date.now() - createdAtTime;
       const remainingSeconds = Math.max(0, Math.ceil((gracePeriodMs - elapsed) / 1000));
@@ -697,12 +754,12 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
               <div className="relative z-10 flex justify-between items-center text-center">
                 {(order.tableOrDelivery === 'delivery' ? [
                   { key: 'received', labelAr: 'تم استلام الطلب', labelEn: 'Received', icon: Clock },
-                  { key: 'preparing', labelAr: 'جاري التحضير', labelEn: 'Preparing', icon: UtensilsCrossed },
+                  { key: 'preparing', labelAr: 'جاري التحضير', labelEn: 'Preparing', icon: ChefHat },
                   { key: 'transit', labelAr: 'مع المندوب', labelEn: 'With Driver', icon: Truck },
                   { key: 'delivered', labelAr: 'تم التوصيل 🎉', labelEn: 'Delivered 🎉', icon: CheckCircle2 }
                 ] : [
                   { key: 'received', labelAr: 'تم استلام الطلب', labelEn: 'Received', icon: Clock },
-                  { key: 'preparing', labelAr: 'جاري التحضير', labelEn: 'Preparing', icon: UtensilsCrossed },
+                  { key: 'preparing', labelAr: 'جاري التحضير', labelEn: 'Preparing', icon: ChefHat },
                   { key: 'ready', labelAr: 'جاهز للاستلام', labelEn: 'Ready for Pickup', icon: Sparkles },
                   { key: 'delivered', labelAr: 'تم التسليم 🎉', labelEn: 'Delivered 🎉', icon: CheckCircle2 }
                 ]).map((st, idx) => {
@@ -740,7 +797,9 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                     <Clock className="w-5 h-5 text-amber-500 animate-pulse shrink-0" />
                     <div>
                       <h4 className="font-bold text-sm text-amber-800">
-                        {language === 'ar' ? 'يمكنك تعديل أو إلغاء الطلب خلال دقيقة ⏱️' : 'You can modify or cancel within 1 minute ⏱️'}
+                        {language === 'ar' 
+                          ? `يمكنك تعديل أو إلغاء الطلب خلال ${businessSettings?.gracePeriod ?? 30} ثانية ⏱️` 
+                          : `You can modify or cancel within ${businessSettings?.gracePeriod ?? 30} seconds ⏱️`}
                       </h4>
                       <p className="text-[11px] text-amber-700/85 leading-relaxed md:leading-normal font-medium">
                         {language === 'ar' 
@@ -768,7 +827,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                       onClick={handleEditOrderClick}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-black rounded-2xl font-bold text-xs cursor-pointer transition-all shadow-sm"
                     >
-                      <UtensilsCrossed className="w-3.5 h-3.5" />
+                      <ChefHat className="w-3.5 h-3.5" />
                       <span>{language === 'ar' ? 'تعديل وتحديث الطلب' : 'Modify Order'}</span>
                     </button>
                   )}
@@ -1025,7 +1084,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
             </div>
 
             {/* Print Body Container */}
-            <div id="recept-print-area" className="p-6 md:p-8 overflow-y-auto space-y-6 flex-1 text-dark/80 print:text-black print:bg-white font-sans text-start print:overflow-visible print:p-0">
+            <div id="recept-print-area" ref={printAreaRef} className="p-6 md:p-8 overflow-y-auto space-y-6 flex-1 text-dark/80 print:text-black print:bg-white font-sans text-start print:overflow-visible print:p-0">
               
               {/* Receipt Header */}
               <div className="text-center space-y-2 border-b border-dashed border-black/10 pb-5 print:border-black/30">
@@ -1202,13 +1261,28 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
             </div>
 
             {/* Modal Bottom Actions Row (Hidden in Print) */}
-            <div className="p-4 bg-neutral-50 border-t border-black/5 flex gap-3 print:hidden">
+            <div className="p-4 bg-neutral-50 border-t border-black/5 flex flex-col sm:flex-row gap-3 print:hidden">
               <button
+                type="button"
                 onClick={() => window.print()}
-                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-yellow hover:bg-yellow/90 text-black rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all border border-black/5"
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-zinc-100 hover:bg-zinc-200 text-dark rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all border border-black/5"
               >
-                <Printer className="w-4 h-4" />
+                <Printer className="w-4 h-4 text-dark" />
                 <span>{language === 'ar' ? 'طباعة / حفظ PDF' : 'Print / Save PDF'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveAsImage}
+                disabled={isSavingImage}
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-amber-500 hover:bg-amber-600 text-black rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all border border-black/5 disabled:opacity-55"
+              >
+                {isSavingImage ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-black" />
+                ) : (
+                  <Clipboard className="w-4 h-4 text-black" />
+                )}
+                <span>{language === 'ar' ? (isSavingImage ? 'جاري الحفظ...' : 'حفظ الفاتورة كصورة 📸') : (isSavingImage ? 'Saving...' : 'Save as Image 📸')}</span>
               </button>
             </div>
 

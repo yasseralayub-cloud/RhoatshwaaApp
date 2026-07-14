@@ -9,6 +9,7 @@ interface SandwichCustomizationModalProps {
   onClose: () => void;
   item: MenuItem | null;
   onConfirm: (item: MenuItem, quantity: number, options: CartItemOption) => void;
+  menuItems?: MenuItem[];
 }
 
 export const isFriesItem = (item: { name: string; nameAr: string }): boolean => {
@@ -53,11 +54,13 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   isOpen,
   onClose,
   item,
-  onConfirm
+  onConfirm,
+  menuItems = []
 }) => {
   const { language, isRtl } = useLanguage();
   const [selectedNotes, setSelectedNotes] = useState<string[]>([]);
   const [selectedAddons, setSelectedAddons] = useState<{ nameAr: string; nameEn: string; price: number }[]>([]);
+  const [selectedDrink, setSelectedDrink] = useState<{ id: string; nameAr: string; nameEn: string; price: number } | null>(null);
   const [quantity, setQuantity] = useState(1);
 
   if (!isOpen || !item) return null;
@@ -126,18 +129,20 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   };
 
   // Compute calculated values
-  const addonsTotal = selectedAddons.reduce((sum, a) => sum + a.price, 0);
+  const addonsTotal = selectedAddons.reduce((sum, a) => sum + a.price, 0) + (selectedDrink ? selectedDrink.price : 0);
   const singleItemPrice = item.price + addonsTotal;
   const totalCustomPrice = singleItemPrice * quantity;
 
   const handleAddClick = () => {
     onConfirm(item, quantity, {
       notes: selectedNotes,
-      addons: selectedAddons
+      addons: selectedAddons,
+      selectedDrink: selectedDrink || undefined
     });
     // Reset local state & close
     setSelectedNotes([]);
     setSelectedAddons([]);
+    setSelectedDrink(null);
     setQuantity(1);
     onClose();
   };
@@ -296,6 +301,103 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                 })}
               </div>
             </div>
+
+            {/* 3. Soft Drink Selection */}
+            {menuItems && menuItems.length > 0 && (
+              <div className="space-y-3.5 pt-1">
+                <div className="flex justify-between items-center flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🥤</span>
+                    <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
+                      {language === 'ar' ? 'اختر المشروب الغازي المصاحب' : 'Select Accompanying Soft Drink'}
+                    </h4>
+                  </div>
+                  <span className="text-[11px] sm:text-xs text-stone-500 font-bold whitespace-nowrap bg-stone-100 px-2.5 py-1 rounded-full border border-black/5">
+                    {language === 'ar' ? 'اختياري' : 'Optional'}
+                  </span>
+                </div>
+                
+                <p className="text-xs sm:text-sm text-stone-500 text-start leading-normal pl-1">
+                  {language === 'ar' ? 'اختر مشروبك المفضل مع الوجبة. سيتم تعطيل المشروبات غير المتوفرة تلقائياً:' : 'Select your favorite soft drink. Unavailable choices are auto-disabled:'}
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  {/* Option for No Drink */}
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setSelectedDrink(null)}
+                    className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start cursor-pointer active:scale-95 shadow-xs ${
+                      selectedDrink === null
+                        ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold'
+                        : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10'
+                    }`}
+                  >
+                    <span className="flex-1">{language === 'ar' ? '❌ بدون مشروب' : '❌ No Drink'}</span>
+                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0 ${
+                      selectedDrink === null ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
+                    }`}>
+                      {selectedDrink === null ? <Check className="w-3 h-3 stroke-[3]" /> : null}
+                    </div>
+                  </motion.button>
+
+                  {/* Dynamic Drinks from menuItems */}
+                  {menuItems
+                    .filter(mi => mi.category === 'drinks')
+                    .map((drink) => {
+                      const drinkLabel = language === 'ar' ? drink.nameAr : drink.name;
+                      const isSelected = selectedDrink?.id === drink.id;
+                      const isDrinkAvailable = drink.isAvailable !== false; // Check if drink is available
+
+                      return (
+                        <motion.button
+                          key={drink.id}
+                          disabled={!isDrinkAvailable}
+                          whileTap={isDrinkAvailable ? { scale: 0.97 } : undefined}
+                          onClick={() => {
+                            if (isDrinkAvailable) {
+                              setSelectedDrink({
+                                id: drink.id,
+                                nameAr: drink.nameAr,
+                                nameEn: drink.name,
+                                price: drink.price
+                              });
+                            }
+                          }}
+                          className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start shadow-xs relative ${
+                            !isDrinkAvailable
+                              ? 'bg-stone-100 border-stone-200 text-stone-400 opacity-65 cursor-not-allowed'
+                              : isSelected
+                              ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold cursor-pointer active:scale-95'
+                              : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10 cursor-pointer active:scale-95'
+                          }`}
+                        >
+                          <div className="flex flex-col text-start flex-1 pr-2">
+                            <span>{drinkLabel}</span>
+                            <span className="text-[10px] font-extrabold text-stone-500">
+                              +{drink.price}.0 {language === 'ar' ? 'ريال' : 'SAR'}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isDrinkAvailable && (
+                              <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                                {language === 'ar' ? 'غير متوفر' : 'Unavailable'}
+                              </span>
+                            )}
+                            {isDrinkAvailable && (
+                              <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                                isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
+                              }`}>
+                                {isSelected ? <Check className="w-3 h-3 stroke-[3]" /> : null}
+                              </div>
+                            )}
+                          </div>
+                        </motion.button>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Footer Quantity + Sum button */}

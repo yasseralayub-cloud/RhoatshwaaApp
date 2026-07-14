@@ -40,12 +40,13 @@ import {
   Flame,
   Volume2,
   Loader2,
-  UtensilsCrossed,
+  ChefHat,
   Printer,
   Eye,
   Type,
   Image,
   Settings,
+  Menu,
   Landmark,
   MessageSquare,
   Truck,
@@ -85,13 +86,13 @@ interface AdminPanelProps {
   onHideAdminTab?: () => void;
 }
 
-const PendingCountdown = ({ createdAt, onTimeout }: { createdAt: string; onTimeout?: () => void }) => {
-  const [timeLeft, setTimeLeft] = useState(60);
+const PendingCountdown = ({ createdAt, onTimeout, gracePeriod = 30 }: { createdAt: string; onTimeout?: () => void; gracePeriod?: number }) => {
+  const [timeLeft, setTimeLeft] = useState(gracePeriod);
 
   useEffect(() => {
     const calculateTime = () => {
       const elapsed = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
-      const remaining = Math.max(0, 60 - elapsed);
+      const remaining = Math.max(0, gracePeriod - elapsed);
       setTimeLeft(remaining);
       if (remaining === 0 && onTimeout) {
         onTimeout();
@@ -101,7 +102,7 @@ const PendingCountdown = ({ createdAt, onTimeout }: { createdAt: string; onTimeo
     calculateTime();
     const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
-  }, [createdAt]);
+  }, [createdAt, gracePeriod]);
 
   if (timeLeft > 0) {
     return (
@@ -114,7 +115,7 @@ const PendingCountdown = ({ createdAt, onTimeout }: { createdAt: string; onTimeo
     return (
       <div className="bg-red-500/10 text-red-700 text-[11px] font-extrabold px-2.5 py-1.5 rounded-xl border border-red-500/20 flex items-center gap-1.5 mt-1.5 justify-center md:justify-start">
         <span className="text-xs">🚨</span>
-        <span>انتهت مهلة الـ 60 ثانية! التنبيه مستمر..</span>
+        <span>انتهت مهلة الـ {gracePeriod} ثانية! التنبيه مستمر..</span>
       </div>
     );
   }
@@ -240,6 +241,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [setWorkingHoursStart, setSetWorkingHoursStart] = useState('17:00');
   const [setWorkingHoursEnd, setSetWorkingHoursEnd] = useState('02:00');
   const [setDeliveryFee, setSetDeliveryFee] = useState(15);
+  const [setGracePeriod, setSetGracePeriod] = useState(30);
 
   // Bank transfer state variables
   const [bankNameAr, setBankNameAr] = useState('مصرف الراجحي');
@@ -284,8 +286,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [pendingDrivers, setPendingDrivers] = useState<PendingDriver[]>([]);
   const [loadingPendingDrivers, setLoadingPendingDrivers] = useState(false);
   const [selectedDocPreview, setSelectedDocPreview] = useState<string | null>(null);
+  const [activeAdminTab, setActiveAdminTab] = useState<'orders' | 'menu' | 'promotions' | 'drivers' | 'stats' | 'settings'>('orders');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const previousOrdersCountRef = useRef<number>(0);
+  const alarmedOrderIdsRef = useRef<Set<string>>(new Set());
+  const mountTimeRef = useRef<number>(Date.now());
 
   // Listen to Auth State
   useEffect(() => {
@@ -365,6 +371,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSetWorkingHoursStart(businessSettings.workingHoursStart || '17:00');
       setSetWorkingHoursEnd(businessSettings.workingHoursEnd || '02:00');
       setSetDeliveryFee(businessSettings.deliveryFee ?? 15);
+      setSetGracePeriod(businessSettings.gracePeriod ?? 30);
       setSetReceiptWidth(businessSettings.receiptWidth || '80mm');
       
       // Sync bank settings
@@ -442,7 +449,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       kitchenPrinterIp: kitchenPrinterIp,
       kitchenPrinterPort: Number(kitchenPrinterPort),
       printRoutingMode: printRoutingMode,
-      deliveryFee: Number(setDeliveryFee)
+      deliveryFee: Number(setDeliveryFee),
+      gracePeriod: Number(setGracePeriod || 30)
     };
 
     if (onSettingsUpdate) {
@@ -479,44 +487,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           snapshot.forEach((snap) => {
             docs.push(snap.data() as Order);
           });
-
-          // Play Audio Bell chime if a NEW order was added to the list
-          if (docs.length > previousOrdersCountRef.current && previousOrdersCountRef.current > 0) {
-            if (soundEnabled) {
-              playOrderChime();
-            }
-
-            // Genuinely new pending orders detection for visual & audible popup notifications
-            setOrders((prevOrders) => {
-              const existingIds = new Set(prevOrders.map(o => o.id));
-              const newlyAddedPending = docs.filter(o => !existingIds.has(o.id) && o.status === 'pending');
-              
-              if (newlyAddedPending.length > 0) {
-                setIncomingAlertOrders(prevAlerts => {
-                  const prevAlertIds = new Set(prevAlerts.map(a => a.id));
-                  const uniqueNew = newlyAddedPending.filter(o => !prevAlertIds.has(o.id));
-                  return [...prevAlerts, ...uniqueNew];
-                });
-
-                if (soundEnabled) {
-                  // Trigger continuous urgent alarm loop so the chef/cashier never misses a local/takeaway order!
-                  startContinuousAlarm();
-                }
-
-                // Push-notify via standard browser Notification API
-                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                  newlyAddedPending.forEach(order => {
-                    const typeText = order.tableOrDelivery === 'table' ? 'محلي (صالة)' : (order.tableOrDelivery === 'takeaway' ? 'استلام من الفرع' : 'توصيل');
-                    new Notification(`طلب جديد وارد (${typeText})! 🍢`, {
-                      body: `العميل: ${order.customerName}\nالإجمالي: ${order.total} ريال`,
-                      tag: order.id
-                    });
-                  });
-                }
-              }
-              return prevOrders;
-            });
-          }
           previousOrdersCountRef.current = docs.length;
           setOrders(docs);
         },
@@ -584,6 +554,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     return () => unsub();
   }, [isAdmin, isSimulated, soundEnabled]);
+
+  // Dedicated background countdown timer to play alarms exactly when grace periods expire!
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const gracePeriodSec = businessSettings?.gracePeriod ?? 30;
+      const gracePeriodMs = gracePeriodSec * 1000;
+
+      let hasNewAlarm = false;
+      const newAlertOrders: Order[] = [];
+
+      orders.forEach((o) => {
+        if (o.status === 'pending') {
+          const createdAtTime = new Date(o.createdAt).getTime();
+          const elapsed = now - createdAtTime;
+          
+          // Only alarm if the order was created after this session started
+          if (createdAtTime >= mountTimeRef.current) {
+            if (elapsed >= gracePeriodMs) {
+              if (!alarmedOrderIdsRef.current.has(o.id)) {
+                alarmedOrderIdsRef.current.add(o.id);
+                hasNewAlarm = true;
+                newAlertOrders.push(o);
+
+                // Push-notify via standard browser Notification API
+                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                  const typeText = o.tableOrDelivery === 'table' ? 'محلي (صالة)' : (o.tableOrDelivery === 'takeaway' ? 'استلام من الفرع' : 'توصيل');
+                  new Notification(`طلب جديد وارد ومؤكد (${typeText})! 🍢`, {
+                    body: `العميل: ${o.customerName}\nالإجمالي: ${o.total} ريال`,
+                    tag: o.id
+                  });
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (newAlertOrders.length > 0) {
+        setIncomingAlertOrders((prevAlerts) => {
+          const prevAlertIds = new Set(prevAlerts.map(a => a.id));
+          const uniqueNew = newAlertOrders.filter(o => !prevAlertIds.has(o.id));
+          return [...prevAlerts, ...uniqueNew];
+        });
+      }
+
+      if (hasNewAlarm && soundEnabled) {
+        playOrderChime();
+        startContinuousAlarm();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [orders, isAdmin, businessSettings, soundEnabled]);
 
   // Fetch drivers from Firestore or local simulated store
   useEffect(() => {
@@ -697,7 +723,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (current === 'pending') return 'received';
     if (current === 'received') return deliveryType === 'delivery' ? 'searching_driver' : 'preparing';
     if (current === 'searching_driver') return 'preparing';
-    if (current === 'preparing') return 'ready';
+    if (current === 'preparing') {
+      return deliveryType === 'table' ? 'delivered' : 'ready';
+    }
     if (current === 'ready') return deliveryType === 'delivery' ? 'driver_picked_up' : 'delivered';
     if (current === 'driver_picked_up') return 'on_the_way';
     if (current === 'on_the_way') return 'delivered';
@@ -1994,27 +2022,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* Admin Title banner */}
       <div className="bg-stone-900 text-stone-100 rounded-3xl p-6 shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden border border-amber-500/20">
         <div className="absolute -top-12 -right-12 w-44 h-44 bg-amber-600/10 rounded-full blur-2xl pointer-events-none" />
-        <div className="z-10 text-start space-y-1">
-          <div className="flex items-center gap-2.5">
-            <span className="bg-amber-500/25 text-amber-500 text-xs font-mono font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">
-              {isSimulated ? 'محاكي الإدارة • Demo Mode' : 'اتصال حي • Connected to Live Cloud DB'}
-            </span>
-            <button
-              onClick={() => {
-                if (soundEnabled) {
-                  playOrderChime();
-                }
-              }}
-              title="Test Sound Alert"
-              className="p-1 rounded bg-stone-800 text-stone-400 hover:text-white"
-            >
-              <Volume2 className="w-3.5 h-3.5" />
-            </button>
+        
+        <div className="z-10 flex items-center gap-3">
+          {/* Responsive Sidebar Hamburger Button */}
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="lg:hidden p-2.5 bg-stone-800 hover:bg-stone-700 text-amber-500 hover:text-amber-400 border border-stone-700/50 rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
+            title={language === 'ar' ? 'افتح القائمة الجانبية' : 'Open Sidebar'}
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div className="text-start space-y-1">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="bg-amber-500/25 text-amber-500 text-xs font-mono font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">
+                {isSimulated ? 'محاكي الإدارة • Demo Mode' : 'اتصال حي • Connected to Live Cloud DB'}
+              </span>
+              <button
+                onClick={() => {
+                  if (soundEnabled) {
+                    playOrderChime();
+                  }
+                }}
+                title="Test Sound Alert"
+                className="p-1 rounded bg-stone-800 text-stone-400 hover:text-white"
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <h2 className="text-xl md:text-2xl font-black text-amber-500">{t('adminWelcome')}</h2>
+            <p className="text-xs text-stone-400 font-mono">
+              {currentUser ? `${currentUser.displayName || 'Admin'} (${currentUser.email})` : 'Simulated Session Dashboard'}
+            </p>
           </div>
-          <h2 className="text-xl md:text-2xl font-black text-amber-500">{t('adminWelcome')}</h2>
-          <p className="text-xs text-stone-400 font-mono">
-            {currentUser ? `${currentUser.displayName || 'Admin'} (${currentUser.email})` : 'Simulated Session Dashboard'}
-          </p>
         </div>
 
         <div className="z-10 flex gap-2 w-full sm:w-auto">
@@ -2052,8 +2092,93 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       </div>
 
-      {/* Quick Administration & Order Management Panel */}
-      <div className="p-5 bg-stone-50 border border-stone-200/60 rounded-3xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 text-start">
+      {/* 2. Responsive Multi-Tab Grid Workspace */}
+      <div className="flex flex-col lg:flex-row gap-8 items-start w-full">
+        {/* Mobile Drawer Backdrop */}
+        <AnimatePresence>
+          {isSidebarOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-xs"
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Elegant Sidebar drawer */}
+        <aside className={`
+          fixed inset-y-0 start-0 z-50 w-72 bg-stone-900 text-stone-100 border-e border-stone-800 p-6 space-y-6 transform transition-transform duration-300 ease-in-out flex flex-col justify-between
+          lg:static lg:translate-x-0 lg:w-64 lg:h-[620px] lg:rounded-3xl lg:border lg:bg-stone-900 lg:p-5 lg:shrink-0
+          ${isSidebarOpen 
+            ? 'translate-x-0' 
+            : (language === 'ar' ? 'translate-x-full lg:translate-x-0' : '-translate-x-full lg:translate-x-0')
+          }
+        `}>
+          <div className="space-y-6 flex-1 text-start">
+            <div className="flex items-center justify-between border-b border-stone-850 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🍔</span>
+                <div>
+                  <h3 className="font-extrabold text-sm tracking-tight text-white">{language === 'ar' ? 'وجبة - الإدارة' : 'Meal - Admin'}</h3>
+                  <p className="text-[10px] text-stone-400 font-bold">{language === 'ar' ? 'لوحة التحكم الفورية' : 'Live Dashboard'}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsSidebarOpen(false)}
+                className="lg:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Navigation list */}
+            <nav className="space-y-1.5">
+              {[
+                { id: 'orders', labelAr: '📋 الطلبات الحالية', labelEn: '📋 Active Orders' },
+                { id: 'stats', labelAr: '📊 التقارير والإحصائيات', labelEn: '📊 Reports & Stats' },
+                { id: 'menu', labelAr: '🍔 قائمة المأكولات', labelEn: '🍔 Menu Management' },
+                { id: 'promotions', labelAr: '🏷️ العروض والخصومات', labelEn: '🏷️ Promotions' },
+                { id: 'drivers', labelAr: '🚚 إدارة المندوبين', labelEn: '🚚 Drivers List' },
+                { id: 'settings', labelAr: '⚙️ إعدادات المطعم', labelEn: '⚙️ Restaurant Settings' },
+              ].map((tab) => {
+                const isActive = activeAdminTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveAdminTab(tab.id as any);
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full text-start px-4 py-3 rounded-xl text-xs sm:text-[13px] font-extrabold transition-all duration-150 flex items-center justify-between cursor-pointer ${
+                      isActive 
+                        ? 'bg-amber-500 text-stone-950 font-black shadow-lg shadow-amber-500/15' 
+                        : 'text-stone-300 hover:bg-stone-800 hover:text-white'
+                    }`}
+                  >
+                    <span>{language === 'ar' ? tab.labelAr : tab.labelEn}</span>
+                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-stone-950" />}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          <div className="border-t border-stone-850 pt-4 space-y-2">
+            <p className="text-[10px] text-stone-500 text-center font-bold leading-normal">
+              {language === 'ar' ? 'شاورما شواء وجبة © ٢٠٢٦' : 'BBQ Shawarma Meal © 2026'}
+            </p>
+          </div>
+        </aside>
+
+        {/* Main Tab content Workspace */}
+        <div className="flex-1 w-full space-y-8">
+
+          {/* 1. REPORTS & STATS TAB */}
+          {activeAdminTab === 'stats' && (
+            <>
+              <div className="p-5 bg-stone-50 border border-stone-200/60 rounded-3xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 text-start">
         {/* Seed Database (Visible for Cloud Admin or Simulated) */}
         <div className="flex flex-col justify-between p-4 bg-white border border-slate-100 rounded-2xl shadow-xs">
           <div>
@@ -2243,9 +2368,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </div>
       </div>
+        </>
+      )}
 
-      {/* LIVE ORDERS TRACKER SECTION */}
-      <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-4">
+      {/* 2. LIVE ACTIVE ORDERS TAB */}
+      {activeAdminTab === 'orders' && (
+        <>
+          {/* Quick Status KPIs for Orders */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { labelAr: '⏳ بانتظار التأكيد', labelEn: '⏳ Pending', count: orders.filter(o => o.status === 'pending').length, color: 'border-amber-500/20 text-amber-600 bg-amber-500/5' },
+              { labelAr: '🔥 قيد التحضير', labelEn: '🔥 Preparing', count: orders.filter(o => o.status === 'preparing').length, color: 'border-blue-500/20 text-blue-600 bg-blue-500/5' },
+              { labelAr: '📦 جاهز للاستلام', labelEn: '📦 Ready', count: orders.filter(o => o.status === 'ready').length, color: 'border-indigo-500/20 text-indigo-600 bg-indigo-500/5' },
+              { labelAr: '🎉 تم التسليم/التوصيل', labelEn: '🎉 Delivered', count: orders.filter(o => o.status === 'delivered').length, color: 'border-emerald-500/20 text-emerald-600 bg-emerald-500/5' }
+            ].map((kpi, idx) => (
+              <div key={idx} className={`p-4 border-2 rounded-2xl flex flex-col justify-between text-start ${kpi.color}`}>
+                <span className="text-xs font-extrabold text-stone-500">{language === 'ar' ? kpi.labelAr : kpi.labelEn}</span>
+                <span className="text-2xl font-black mt-2 font-mono">{kpi.count}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* LIVE ORDERS TRACKER SECTION */}
+          <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-4">
         
         {/* Toggle & Filter header */}
         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 pb-4">
@@ -2320,6 +2465,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   ord.status === 'delivered' ? 'border-emerald-400 bg-emerald-50/5' : 
                   'border-red-400 opacity-60 bg-red-50/5';
 
+                const typeHighlight = 
+                  ord.tableOrDelivery === 'table' ? 'border-s-6 border-s-amber-500' :
+                  ord.tableOrDelivery === 'takeaway' ? 'border-s-6 border-s-indigo-500' :
+                  'border-s-6 border-s-emerald-500';
+
                 return (
                   <motion.div
                     id={`admin-order-id-${ord.id}`}
@@ -2328,7 +2478,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    className={`p-4 rounded-2xl border-2 shadow-xs flex flex-col justify-between space-y-4 text-start ${ringAccent}`}
+                    className={`p-4 rounded-2xl border-2 shadow-xs flex flex-col justify-between space-y-4 text-start ${ringAccent} ${typeHighlight}`}
                   >
                     <div>
                       {/* Name Card title bar */}
@@ -2337,7 +2487,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <h4 className="font-extrabold text-sm text-slate-800">{ord.customerName}</h4>
                           <span className="font-mono text-[10px] text-slate-400 block mt-0.5">{ord.id}</span>
                           {ord.status === 'pending' && (
-                            <PendingCountdown createdAt={ord.createdAt} />
+                            <PendingCountdown createdAt={ord.createdAt} gracePeriod={businessSettings?.gracePeriod ?? 30} />
                           )}
                           
                           {/* Beautiful Order Type Badges */}
@@ -2667,9 +2817,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         )}
       </div>
+      </>
+      )}
 
-      {/* BUSINESS CONFIGURATION & SAUDI VAT TAX SYSTEM */}
-      <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
+      {/* 3. RESTAURANT SETTINGS TAB */}
+      {activeAdminTab === 'settings' && (
+        <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
         <div className="text-start border-b border-slate-100 pb-4">
           <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
             <Sliders className="w-5 h-5 text-amber-500 font-bold" />
@@ -2963,6 +3116,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     className="w-16 text-center outline-none bg-transparent"
                   />
                   <span>{language === 'ar' ? 'ريال' : 'SAR'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Order Grace Period Settings Section */}
+            <div className="md:col-span-2 pt-4 border-t border-slate-100 text-start">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-amber-500" />
+                {language === 'ar' ? 'فترة انتظار وإلغاء العميل (المهلة الزمنية للطلب)' : 'Order Wait & Grace Period (Countdown)'}
+              </h4>
+              <div className="bg-amber-500/5 p-4 rounded-2xl border border-amber-500/10 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700">
+                    {language === 'ar' ? 'مهلة انتظار العميل قبل القفل التلقائي (بالثواني):' : 'Customer waiting time before automatic lock (seconds):'}
+                  </label>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    {language === 'ar' 
+                      ? 'المهلة الممنوحة للعميل لتعديل أو إلغاء طلبه من صفحة التتبع قبل إرسال التنبيه للمطبخ وإقفال التعديل. الافتراضي: 30 ثانية.' 
+                      : 'The allowed countdown time for the customer to cancel/modify their order from the tracker page. Default: 30 seconds.'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl font-mono text-xs font-bold shadow-xs">
+                  <input
+                    type="number"
+                    min="5"
+                    max="600"
+                    value={setGracePeriod}
+                    onChange={(e) => setSetGracePeriod(Number(e.target.value))}
+                    className="w-16 text-center outline-none bg-transparent"
+                  />
+                  <span>{language === 'ar' ? 'ثانية' : 'sec'}</span>
                 </div>
               </div>
             </div>
@@ -3726,9 +3910,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </form>
       </div>
+      )}
 
-      {/* PROMOTIONS & DEALS MANAGEMENT SECTION */}
-      <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
+      {/* 4. PROMOTIONS & DEALS TAB */}
+      {activeAdminTab === 'promotions' && (
+        <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
         <div className="text-start border-b border-slate-100 pb-4">
           <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
             <Flame className="w-5 h-5 text-red-500 fill-red-500/10 animate-pulse font-bold" />
@@ -3863,9 +4049,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </form>
       </div>
+      )}
 
-      {/* DRIVERS MANAGEMENT SECTION */}
-      <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
+      {/* 5. DRIVERS LIST TAB */}
+      {activeAdminTab === 'drivers' && (
+        <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
         <div className="text-start border-b border-slate-100 pb-4">
           <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
             <Truck className="w-5 h-5 text-amber-500 font-bold" />
@@ -4092,9 +4280,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </div>
       </div>
+      )}
 
-      {/* CORE MENU ITEMS CONTROLS */}
-      <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
+      {/* 6. CORE MENU ITEMS CONTROLS TAB */}
+      {activeAdminTab === 'menu' && (
+        <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
         
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
           <div className="text-start">
@@ -4384,6 +4574,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         )}
       </div>
+      )}
+
+        </div> {/* End Main Tab content Workspace */}
+      </div> {/* End Responsive Multi-Tab Grid Workspace */}
 
       {/* Custom Confirmation Dialog Modal */}
       {confirmDialog && confirmDialog.isOpen && (

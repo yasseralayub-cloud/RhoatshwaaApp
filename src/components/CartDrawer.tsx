@@ -142,7 +142,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   // Calculations
   const subtotal = cartItems.reduce((sum, current) => {
-    const addonsTotal = current.customizations ? current.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0;
+    const drinkPrice = current.customizations?.selectedDrink ? current.customizations.selectedDrink.price : 0;
+    const addonsTotal = (current.customizations ? current.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) + drinkPrice;
     return sum + ((current.item.price + addonsTotal) * current.quantity);
   }, 0);
   const hasPromo = !!(activePromo && activePromo.isActive && new Date(activePromo.endsAt).getTime() > Date.now());
@@ -278,7 +279,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     const orderId = `Rehla-${randNum}`;
 
     const itemsFormatted = cartItems.map(c => {
-      const addonsTotal = c.customizations ? c.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0;
+      const drinkPrice = c.customizations?.selectedDrink ? c.customizations.selectedDrink.price : 0;
+      const addonsTotal = (c.customizations ? c.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) + drinkPrice;
       
       let suffixAr = '';
       let suffixEn = '';
@@ -303,6 +305,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         if (c.customizations.addons.length > 0) {
           partsAr.push(...c.customizations.addons.map(a => a.nameAr));
           partsEn.push(...c.customizations.addons.map(a => a.nameEn));
+        }
+        if (c.customizations.selectedDrink) {
+          partsAr.push(`مشروب: ${c.customizations.selectedDrink.nameAr}`);
+          partsEn.push(`Drink: ${c.customizations.selectedDrink.nameEn}`);
         }
         if (partsAr.length > 0) {
           suffixAr = ` [${partsAr.join('، ')}]`;
@@ -544,7 +550,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="divide-y divide-black/5 border border-black/5 rounded-2xl bg-neutral-50 p-2.5 space-y-3">
                 {cartItems.map((c) => {
                   const { item, quantity } = c;
-                  const addonsTotal = c.customizations ? c.customizations.addons.reduce((sum, a) => sum + a.price, 0) : 0;
+                  const drinkPrice = c.customizations?.selectedDrink ? c.customizations.selectedDrink.price : 0;
+                  const addonsTotal = (c.customizations ? c.customizations.addons.reduce((sum, a) => sum + a.price, 0) : 0) + drinkPrice;
                   const itemTotalPrice = (item.price + addonsTotal) * quantity;
                   
                   return (
@@ -579,6 +586,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                     {language === 'ar' ? addon.nameAr : addon.nameEn} {addon.price > 0 ? `(+${addon.price})` : ''}
                                   </span>
                                 ))}
+                                {c.customizations.selectedDrink && (
+                                  <span className="bg-blue-50 text-blue-700 text-[11px] sm:text-xs px-2 py-0.5 rounded-md font-bold border border-blue-500/20 shadow-xs flex items-center gap-1">
+                                    🥤 {language === 'ar' ? c.customizations.selectedDrink.nameAr : c.customizations.selectedDrink.nameEn}
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>

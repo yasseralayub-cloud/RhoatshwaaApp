@@ -199,7 +199,7 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
   {
     id: 's3',
     name: 'BBQ Shawarma',
-    nameAr: 'شاورما شواء',
+    nameAr: 'شاورما شواء (وجبة)',
     description: 'Special shawarma prepared with traditional BBQ techniques.',
     descriptionAr: 'شاورما دجاج مدخنة محضرة على طريقة شواء الخاصة.',
     price: 15,

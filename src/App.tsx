@@ -729,6 +729,7 @@ function MenuAndOrdersApp() {
         onClose={() => setCustomizingItem(null)}
         item={customizingItem}
         onConfirm={handleCustomSandwichConfirm}
+        menuItems={menuItems}
       />
 
       {/* Mandatory Privacy Policy & Terms Modal */}
