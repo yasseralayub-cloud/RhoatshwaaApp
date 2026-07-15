@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MenuItem, Order, Driver, PendingDriver } from '../types';
 import { useLanguage } from './LanguageContext';
-import { playOrderChime, startContinuousAlarm, stopContinuousAlarm } from './AudioAlert';
+import { playOrderChime, startContinuousAlarm, stopContinuousAlarm, initSharedAudio } from './AudioAlert';
 import { generateZatcaQr } from '../utils/time';
 import {
   collection,
@@ -597,21 +597,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     const unlockAudio = () => {
       try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioContextClass) {
-          const ctx = new AudioContextClass();
-          if (ctx.state === 'suspended') {
-            ctx.resume();
-          }
-          // Play a super short silent note to register activity
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.01);
-        }
+        initSharedAudio();
       } catch (e) {
         console.warn('Audio unlock failed:', e);
       }

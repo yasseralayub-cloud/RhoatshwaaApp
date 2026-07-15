@@ -3,19 +3,54 @@
  * Handles the instant new-order chime and the urgent continuous alert alarm.
  */
 
-// Global singletons for the continuous alarm
+// Global singletons for the continuous alarm and shared context
 let alarmInterval: any = null;
-let alarmAudioCtx: AudioContext | null = null;
+let sharedAudioCtx: AudioContext | null = null;
+
+/**
+ * Retrieves or initializes the shared, authorized AudioContext.
+ */
+export function getSharedAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) return null;
+
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new AudioContextClass();
+  }
+
+  if (sharedAudioCtx.state === 'suspended') {
+    sharedAudioCtx.resume().catch(() => {});
+  }
+
+  return sharedAudioCtx;
+}
+
+/**
+ * Pre-warms and resumes the shared context on initial page interaction.
+ */
+export function initSharedAudio() {
+  try {
+    const ctx = getSharedAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+  } catch (e) {
+    // Ignore
+  }
+}
 
 /**
  * Plays a quick, premium dual chime bell sound for new orders.
  */
 export function playOrderChime() {
   try {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) return;
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
 
-    const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
     
     // First bell tone (higher pitch)
     const osc1 = ctx.createOscillator();
@@ -56,64 +91,66 @@ export function playOrderChime() {
  */
 export function startContinuousAlarm(ringtoneType: string = 'high-pitch') {
   if (alarmInterval) {
-    // If already ringing but the tone type is different, stop and restart
     stopContinuousAlarm();
   }
 
   try {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) return;
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
 
-    alarmAudioCtx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
 
     const playBeep = () => {
-      if (!alarmAudioCtx) return;
+      const activeCtx = getSharedAudioContext();
+      if (!activeCtx) return;
       
       // Ensure the audio context is active (handling browser autoplay policies)
-      if (alarmAudioCtx.state === 'suspended') {
-        alarmAudioCtx.resume();
+      if (activeCtx.state === 'suspended') {
+        activeCtx.resume().catch(() => {});
       }
       
-      const osc = alarmAudioCtx.createOscillator();
-      const gain = alarmAudioCtx.createGain();
+      const osc = activeCtx.createOscillator();
+      const gain = activeCtx.createGain();
       
       if (ringtoneType === 'classic-digital') {
         osc.type = 'square';
-        osc.frequency.setValueAtTime(2048, alarmAudioCtx.currentTime); // Standard digital alarm freq
-        gain.gain.setValueAtTime(0.25, alarmAudioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.12);
+        osc.frequency.setValueAtTime(2048, activeCtx.currentTime); // Standard digital alarm freq
+        gain.gain.setValueAtTime(0.25, activeCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, activeCtx.currentTime + 0.12);
         osc.connect(gain);
-        gain.connect(alarmAudioCtx.destination);
-        osc.start(alarmAudioCtx.currentTime);
-        osc.stop(alarmAudioCtx.currentTime + 0.15);
+        gain.connect(activeCtx.destination);
+        osc.start(activeCtx.currentTime);
+        osc.stop(activeCtx.currentTime + 0.15);
       } else if (ringtoneType === 'bell-chime') {
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, alarmAudioCtx.currentTime); // A5 note
-        gain.gain.setValueAtTime(0.3, alarmAudioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, alarmAudioCtx.currentTime + 0.7);
+        osc.frequency.setValueAtTime(880, activeCtx.currentTime); // A5 note
+        gain.gain.setValueAtTime(0.3, activeCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, activeCtx.currentTime + 0.7);
         osc.connect(gain);
-        gain.connect(alarmAudioCtx.destination);
-        osc.start(alarmAudioCtx.currentTime);
-        osc.stop(alarmAudioCtx.currentTime + 0.8);
+        gain.connect(activeCtx.destination);
+        osc.start(activeCtx.currentTime);
+        osc.stop(activeCtx.currentTime + 0.8);
       } else if (ringtoneType === 'soft-synth') {
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(523.25, alarmAudioCtx.currentTime); // C5 note
-        gain.gain.setValueAtTime(0.35, alarmAudioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.38);
+        osc.frequency.setValueAtTime(523.25, activeCtx.currentTime); // C5 note
+        gain.gain.setValueAtTime(0.35, activeCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, activeCtx.currentTime + 0.38);
         osc.connect(gain);
-        gain.connect(alarmAudioCtx.destination);
-        osc.start(alarmAudioCtx.currentTime);
-        osc.stop(alarmAudioCtx.currentTime + 0.4);
+        gain.connect(activeCtx.destination);
+        osc.start(activeCtx.currentTime);
+        osc.stop(activeCtx.currentTime + 0.4);
       } else {
         // Default high-pitch sawtooth
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(1400, alarmAudioCtx.currentTime);
-        gain.gain.setValueAtTime(0.35, alarmAudioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.28);
+        osc.frequency.setValueAtTime(1400, activeCtx.currentTime);
+        gain.gain.setValueAtTime(0.35, activeCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, activeCtx.currentTime + 0.28);
         osc.connect(gain);
-        gain.connect(alarmAudioCtx.destination);
-        osc.start(alarmAudioCtx.currentTime);
-        osc.stop(alarmAudioCtx.currentTime + 0.3);
+        gain.connect(activeCtx.destination);
+        osc.start(activeCtx.currentTime);
+        osc.stop(activeCtx.currentTime + 0.3);
       }
     };
 
@@ -138,13 +175,5 @@ export function stopContinuousAlarm() {
   if (alarmInterval) {
     clearInterval(alarmInterval);
     alarmInterval = null;
-  }
-  if (alarmAudioCtx) {
-    try {
-      alarmAudioCtx.close();
-    } catch (e) {
-      // Ignore
-    }
-    alarmAudioCtx = null;
   }
 }

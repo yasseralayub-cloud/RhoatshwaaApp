@@ -684,7 +684,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         const filtered = e.target.value.replace(/[^a-zA-Z\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '');
                         setCustomerName(filtered);
                       }}
-                      placeholder={language === 'ar' ? 'مثال: محمد الربيعان' : 'e.g. Mohammed Al-Rubaian'}
+                      placeholder={language === 'ar' ? 'الاسم' : 'Name'}
                       className="w-full text-sm bg-white border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
                     />
                   </div>
@@ -701,7 +701,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         const filtered = e.target.value.replace(/[^0-9\+]/g, '');
                         setCustomerPhone(filtered);
                       }}
-                      placeholder="+966 5x xxx xxxx"
+                      placeholder={language === 'ar' ? '05xxxxxxxx' : '05xxxxxxxx'}
                       className="w-full text-sm bg-white border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
                     />
                   </div>

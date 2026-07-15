@@ -5,13 +5,12 @@ import dns from "dns";
 
 dns.setDefaultResultOrder("ipv4first"); // Accelerate local name resolutions
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  // Accept and parse body payloads with high limit for driver photo/document uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+// Accept and parse body payloads with high limit for driver photo/document uploads
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   // API endpoints FIRST
 
@@ -485,23 +484,28 @@ async function startServer() {
   });
 
   // Vite development vs production asset static handling
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req: express.Request, res: express.Response) => {
-      res.sendFile(path.join(distPath, "index.html"));
+  async function startViteAndListen() {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (req: express.Request, res: express.Response) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Fullstack Express Server bound to host 0.0.0.0 and port ${PORT}`);
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Fullstack Express Server bound to host 0.0.0.0 and port ${PORT}`);
-  });
-}
+  if (!process.env.VERCEL) {
+    startViteAndListen();
+  }
 
-startServer();
+  export default app;
