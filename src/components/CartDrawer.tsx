@@ -142,7 +142,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   // Calculations
   const subtotal = cartItems.reduce((sum, current) => {
-    const drinkPrice = current.customizations?.selectedDrink ? current.customizations.selectedDrink.price : 0;
+    const isDrinkIncluded = current.item.id === 's3' || current.item.nameAr === 'شاورما شواء وجبة' || current.item.name === 'BBQ Shawarma Meal';
+    const drinkPrice = (current.customizations?.selectedDrink && !isDrinkIncluded) ? current.customizations.selectedDrink.price : 0;
     const addonsTotal = (current.customizations ? current.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) + drinkPrice;
     return sum + ((current.item.price + addonsTotal) * current.quantity);
   }, 0);
@@ -279,7 +280,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     const orderId = `Rehla-${randNum}`;
 
     const itemsFormatted = cartItems.map(c => {
-      const drinkPrice = c.customizations?.selectedDrink ? c.customizations.selectedDrink.price : 0;
+      const isDrinkIncluded = c.item.id === 's3' || c.item.nameAr === 'شاورما شواء وجبة' || c.item.name === 'BBQ Shawarma Meal';
+      const drinkPrice = (c.customizations?.selectedDrink && !isDrinkIncluded) ? c.customizations.selectedDrink.price : 0;
       const addonsTotal = (c.customizations ? c.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) + drinkPrice;
       
       let suffixAr = '';
@@ -550,7 +552,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="divide-y divide-black/5 border border-black/5 rounded-2xl bg-neutral-50 p-2.5 space-y-3">
                 {cartItems.map((c) => {
                   const { item, quantity } = c;
-                  const drinkPrice = c.customizations?.selectedDrink ? c.customizations.selectedDrink.price : 0;
+                  const isDrinkIncluded = item.id === 's3' || item.nameAr === 'شاورما شواء وجبة' || item.name === 'BBQ Shawarma Meal';
+                  const drinkPrice = (c.customizations?.selectedDrink && !isDrinkIncluded) ? c.customizations.selectedDrink.price : 0;
                   const addonsTotal = (c.customizations ? c.customizations.addons.reduce((sum, a) => sum + a.price, 0) : 0) + drinkPrice;
                   const itemTotalPrice = (item.price + addonsTotal) * quantity;
                   

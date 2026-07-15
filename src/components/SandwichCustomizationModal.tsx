@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { MenuItem, CartItemOption } from '../types';
 import { useLanguage } from './LanguageContext';
-import { X, Check, Flame, Plus, Minus,Sparkles } from 'lucide-react';
+import { X, Check, Flame, Plus, Minus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface SandwichCustomizationModalProps {
@@ -83,7 +83,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
         ]
       : [
           { ar: 'مع حمص', en: 'With Hummus', displayAr: '🥣 مع حمص', displayEn: 'With Hummus 🥣' },
-          { ar: 'مع متبل', en: 'With Mutabbal', displayAr: '🍆 مع متبل', displayEn: 'With Mutabbal 🍆' },
+          { ar: 'مع متبل', en: 'With Mutabbal', displayAr: '🫕 مع متبل', displayEn: 'With Mutabbal 🫕' },
           { ar: 'بدون بصل وبقدونس', en: 'No Onion & Parsley', displayAr: '🌿 بدون بصل وبقدونس', displayEn: 'No Onion/Parsley 🌿' }
         ];
 
@@ -129,7 +129,9 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   };
 
   // Compute calculated values
-  const addonsTotal = selectedAddons.reduce((sum, a) => sum + a.price, 0) + (selectedDrink ? selectedDrink.price : 0);
+  const isDrinkIncluded = item.id === 's3' || item.nameAr === 'شاورما شواء وجبة' || item.name === 'BBQ Shawarma Meal';
+  const drinkPrice = (selectedDrink && !isDrinkIncluded) ? selectedDrink.price : 0;
+  const addonsTotal = selectedAddons.reduce((sum, a) => sum + a.price, 0) + drinkPrice;
   const singleItemPrice = item.price + addonsTotal;
   const totalCustomPrice = singleItemPrice * quantity;
 
@@ -214,18 +216,12 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
             <div className="space-y-3.5">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600">
-                  <Sparkles className="w-4.5 h-4.5" />
+                  <Plus className="w-4.5 h-4.5" />
                 </div>
                 <h4 className="font-extrabold text-sm sm:text-base text-stone-900 text-start">
-                  {isFries 
-                    ? (language === 'ar' ? 'خيارات مجانية للبطاطس بنقرة واحدة 💡' : 'One-Tap Free Fries Options 💡')
-                    : (language === 'ar' ? 'خيارات وملاحظات سريعة ومجانية 💡' : 'Quick Free Prep Choices 💡')}
+                  {language === 'ar' ? 'الاضافات' : 'Addons & Options'}
                 </h4>
               </div>
-              
-              <p className="text-xs sm:text-sm text-stone-500 text-start leading-normal pl-1">
-                {language === 'ar' ? 'اختر تفضيلاتك بنقرة واحدة ليتم تسليم طلبك بالشكل المطلوب للمطبخ:' : 'Tap to customize preparation specs in real-time:'}
-              </p>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                 {smartNotesList.map((note) => {
@@ -373,8 +369,10 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                         >
                           <div className="flex flex-col text-start flex-1 pr-2">
                             <span>{drinkLabel}</span>
-                            <span className="text-[10px] font-extrabold text-stone-500">
-                              +{drink.price}.0 {language === 'ar' ? 'ريال' : 'SAR'}
+                            <span className={`text-[10px] font-extrabold ${isDrinkIncluded ? 'text-emerald-600' : 'text-stone-500'}`}>
+                              {isDrinkIncluded 
+                                ? (language === 'ar' ? 'مشمول مع الوجبة' : 'Included with Meal') 
+                                : `+${drink.price}.0 ${language === 'ar' ? 'ريال' : 'SAR'}`}
                             </span>
                           </div>
                           
