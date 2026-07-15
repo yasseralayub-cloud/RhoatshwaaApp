@@ -124,6 +124,7 @@ export interface BusinessSettings {
   bankEnabled?: boolean;
   deliveryFee?: number;
   gracePeriod?: number;
+  ringtoneType?: string;
 }
 
 export interface Category {

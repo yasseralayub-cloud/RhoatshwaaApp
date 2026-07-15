@@ -35,8 +35,31 @@ body {
 }
 
 @media print {
-  #root {
-    display: none !important;
+  /* Hide everything on the page by default */
+  body * {
+    visibility: hidden !important;
+  }
+  /* Make only the print area and its contents visible */
+  #recept-print-area, #recept-print-area * {
+    visibility: visible !important;
+  }
+  /* Position the print area perfectly on the printed page */
+  #recept-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: black !important;
+    font-size: 11px !important;
+    line-height: 1.4 !important;
+  }
+  /* Setup page geometry for clean thermal receipt printout */
+  @page {
+    size: 80mm auto;
+    margin: 0mm !important;
   }
 }
 

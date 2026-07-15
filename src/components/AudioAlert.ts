@@ -54,8 +54,11 @@ export function playOrderChime() {
 /**
  * Starts a loud, high-pitched continuous alarm beep loop that plays until stopped.
  */
-export function startContinuousAlarm() {
-  if (alarmInterval) return; // Already ringing
+export function startContinuousAlarm(ringtoneType: string = 'high-pitch') {
+  if (alarmInterval) {
+    // If already ringing but the tone type is different, stop and restart
+    stopContinuousAlarm();
+  }
 
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -74,22 +77,55 @@ export function startContinuousAlarm() {
       const osc = alarmAudioCtx.createOscillator();
       const gain = alarmAudioCtx.createGain();
       
-      osc.type = 'sawtooth'; // Sharp, loud and bright tone to grab attention
-      osc.frequency.setValueAtTime(1400, alarmAudioCtx.currentTime); // High pitch 1400Hz
-      
-      gain.gain.setValueAtTime(0.4, alarmAudioCtx.currentTime); // Clear high volume
-      gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.28);
-      
-      osc.connect(gain);
-      gain.connect(alarmAudioCtx.destination);
-      
-      osc.start(alarmAudioCtx.currentTime);
-      osc.stop(alarmAudioCtx.currentTime + 0.3);
+      if (ringtoneType === 'classic-digital') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(2048, alarmAudioCtx.currentTime); // Standard digital alarm freq
+        gain.gain.setValueAtTime(0.25, alarmAudioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(alarmAudioCtx.destination);
+        osc.start(alarmAudioCtx.currentTime);
+        osc.stop(alarmAudioCtx.currentTime + 0.15);
+      } else if (ringtoneType === 'bell-chime') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, alarmAudioCtx.currentTime); // A5 note
+        gain.gain.setValueAtTime(0.3, alarmAudioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, alarmAudioCtx.currentTime + 0.7);
+        osc.connect(gain);
+        gain.connect(alarmAudioCtx.destination);
+        osc.start(alarmAudioCtx.currentTime);
+        osc.stop(alarmAudioCtx.currentTime + 0.8);
+      } else if (ringtoneType === 'soft-synth') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(523.25, alarmAudioCtx.currentTime); // C5 note
+        gain.gain.setValueAtTime(0.35, alarmAudioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.38);
+        osc.connect(gain);
+        gain.connect(alarmAudioCtx.destination);
+        osc.start(alarmAudioCtx.currentTime);
+        osc.stop(alarmAudioCtx.currentTime + 0.4);
+      } else {
+        // Default high-pitch sawtooth
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(1400, alarmAudioCtx.currentTime);
+        gain.gain.setValueAtTime(0.35, alarmAudioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.28);
+        osc.connect(gain);
+        gain.connect(alarmAudioCtx.destination);
+        osc.start(alarmAudioCtx.currentTime);
+        osc.stop(alarmAudioCtx.currentTime + 0.3);
+      }
     };
 
-    // Play immediately, then repeat every 350ms for a rapid, high-attention alarm
+    // Determine repeating interval based on sound profile
+    let beepInterval = 350;
+    if (ringtoneType === 'classic-digital') beepInterval = 500;
+    else if (ringtoneType === 'bell-chime') beepInterval = 1200;
+    else if (ringtoneType === 'soft-synth') beepInterval = 700;
+
+    // Play immediately, then repeat
     playBeep();
-    alarmInterval = setInterval(playBeep, 350);
+    alarmInterval = setInterval(playBeep, beepInterval);
   } catch (error) {
     console.warn('Failed to start continuous alarm:', error);
   }

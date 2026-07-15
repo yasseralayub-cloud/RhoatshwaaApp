@@ -43,6 +43,10 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const handleSaveAsImage = async () => {
     if (!printAreaRef.current) return;
     setIsSavingImage(true);
+    
+    // Backup original window.getComputedStyle to bypass any oklab/oklch parser issues in html2canvas
+    const originalGetComputedStyle = window.getComputedStyle;
+    
     try {
       const element = printAreaRef.current;
       const originalStyle = element.style.cssText;
@@ -50,6 +54,130 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
       element.style.overflowY = 'visible';
       element.style.maxHeight = 'none';
       element.style.backgroundColor = '#ffffff';
+
+      // Simple OKLab/OKLch to RGB conversion helper
+      const oklabToRgb = (oklabStr: string): string => {
+        const str = oklabStr.toLowerCase().trim();
+        if (!str.startsWith('oklab') && !str.startsWith('oklch')) {
+          return oklabStr;
+        }
+        
+        const isOklch = str.startsWith('oklch');
+        const match = str.match(/(?:oklab|oklch)\(([^)]+)\)/);
+        if (!match) return oklabStr;
+        
+        const content = match[1].trim();
+        const parts = content.split(/[\s/]+/);
+        if (parts.length < 3) return oklabStr;
+        
+        const L = parseFloat(parts[0]);
+        const val2 = parseFloat(parts[1]); // a for oklab, c for oklch
+        const val3 = parseFloat(parts[2]); // b for oklab, h for oklch
+        const alpha = parts.length >= 4 ? parseFloat(parts[3]) : 1;
+        
+        let l = L;
+        let a = 0;
+        let b = 0;
+        
+        if (isOklch) {
+          const c = val2;
+          const hDeg = val3;
+          const hRad = (hDeg * Math.PI) / 180;
+          a = c * Math.cos(hRad);
+          b = c * Math.sin(hRad);
+        } else {
+          a = val2;
+          b = val3;
+        }
+        
+        // Inverse OKLab transform to LMS
+        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+        const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+        
+        // LMS to linear sRGB
+        const l3 = l_ * l_ * l_;
+        const m3 = m_ * m_ * m_;
+        const s3 = s_ * s_ * s_;
+        
+        const rLinear = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        const gLinear = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        const bLinear = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+        
+        const gamma = (c: number) => {
+          return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+        };
+        
+        let r = Math.round(Math.max(0, Math.min(1, gamma(rLinear))) * 255);
+        let g = Math.round(Math.max(0, Math.min(1, gamma(gLinear))) * 255);
+        let b_val = Math.round(Math.max(0, Math.min(1, gamma(bLinear))) * 255);
+        
+        if (isNaN(r)) r = 0;
+        if (isNaN(g)) g = 0;
+        if (isNaN(b_val)) b_val = 0;
+        
+        if (alpha === 1) {
+          return `rgb(${r}, ${g}, ${b_val})`;
+        } else {
+          return `rgba(${r}, ${g}, ${b_val}, ${alpha})`;
+        }
+      };
+
+      const colorProperties = [
+        'color',
+        'backgroundColor',
+        'borderColor',
+        'borderTopColor',
+        'borderBottomColor',
+        'borderLeftColor',
+        'borderRightColor',
+        'outlineColor',
+        'fill',
+        'stroke'
+      ];
+
+      // Temporary override window.getComputedStyle
+      window.getComputedStyle = function(elt, pseudoElt) {
+        const style = originalGetComputedStyle(elt, pseudoElt);
+        
+        return new Proxy(style, {
+          get(target, prop, receiver) {
+            const val = Reflect.get(target, prop, receiver);
+            
+            if (typeof prop === 'string' && typeof val === 'string') {
+              const lowerProp = prop.toLowerCase();
+              const isColorProp = colorProperties.includes(prop) || 
+                                  lowerProp.includes('color') || 
+                                  lowerProp === 'fill' || 
+                                  lowerProp === 'stroke';
+              
+              if (isColorProp && (val.includes('oklab') || val.includes('oklch'))) {
+                try {
+                  return oklabToRgb(val);
+                } catch (e) {
+                  return val;
+                }
+              }
+            }
+            
+            if (typeof val === 'function') {
+              return function(...args: any[]) {
+                const res = val.apply(target, args);
+                if (typeof res === 'string' && (res.includes('oklab') || res.includes('oklch'))) {
+                  try {
+                    return oklabToRgb(res);
+                  } catch (e) {
+                    return res;
+                  }
+                }
+                return res;
+              };
+            }
+            
+            return val;
+          }
+        });
+      };
       
       const canvas = await html2canvas(element, {
         scale: 2,
@@ -89,6 +217,8 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
         type: 'alert'
       });
     } finally {
+      // Restore getComputedStyle!
+      window.getComputedStyle = originalGetComputedStyle;
       setIsSavingImage(false);
     }
   };
@@ -1096,15 +1226,15 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                   )}
                 </div>
                 
-                <h3 className="font-bold text-lg text-dark print:text-black mt-2 font-serif print:text-xl print:font-extrabold">
+                <h3 className="font-bold text-xl text-dark print:text-black mt-2 print:text-2xl print:font-extrabold">
                   {language === 'ar' ? businessSettings.restaurantNameAr : businessSettings.restaurantNameEn}
                 </h3>
-                <p className="text-[10px] text-dark/40 uppercase tracking-widest print:text-zinc-700">
+                <p className="text-[11px] font-bold text-dark/65 uppercase tracking-wide print:text-zinc-800">
                   {language === 'ar' ? businessSettings.taglineAr : businessSettings.taglineEn}
                 </p>
 
                 <div className="bg-yellow/15 border border-yellow/25 text-yellow-700 font-bold px-3 py-1 rounded-full text-[10px] inline-block uppercase tracking-wider print:bg-gray-150 print:border-gray-300 print:text-black mt-1">
-                  {language === 'ar' ? 'فاتورة ضريبة مبسطة' : 'Simplified Tax Invoice'}
+                  {language === 'ar' ? 'فاتورة ضريبية مبسطة' : 'Simplified Tax Invoice'}
                 </div>
 
                 <p className="text-xs text-dark/60 print:text-zinc-700 font-mono mt-3">
@@ -1117,10 +1247,10 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                   {language === 'ar' ? 'الرقم الضريبي للبائع: ' : 'Seller VAT Registration No: '}
                   <span className="font-bold text-dark print:text-black font-mono">{businessSettings.vatNumber || '310123456700003'}</span>
                 </p>
-                <p className="text-[10px] text-dark/40 print:text-zinc-700">
+                <p className="text-[10px] text-dark/40 print:text-zinc-700 font-bold">
                   {language === 'ar' ? businessSettings.addressAr : businessSettings.addressEn}
                 </p>
-                <div className="flex justify-center gap-3 text-[9px] text-dark/50 print:text-zinc-700 font-mono mt-1">
+                <div className="flex justify-center gap-3 text-[10px] text-dark/60 print:text-zinc-700 font-mono font-bold mt-1">
                   {businessSettings.phone && (
                     <span>{language === 'ar' ? `هاتف: ${businessSettings.phone}` : `Tel: ${businessSettings.phone}`}</span>
                   )}
@@ -1130,104 +1260,133 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                 </div>
               </div>
 
-              {/* Bill Details Grid */}
-              <div className="grid grid-cols-2 gap-4 text-xs font-mono py-1 border-b border-dashed border-black/10 pb-5 print:border-black/30 print:text-black">
-                <div className="space-y-1.5">
-                  <span className="text-[9px] text-dark/40 block uppercase print:text-black/60">{language === 'ar' ? 'رقم الفاتورة' : 'Invoice Number'}</span>
-                  <span className="font-bold text-dark print:text-black">{order.id}</span>
+              {/* Bill Details Key-Value rows */}
+              <div className="text-xs font-mono space-y-2 py-3 border-b border-dashed border-black/10 print:border-black/30 print:text-black">
+                <div className="flex justify-between">
+                  <span className="text-dark/50 print:text-black">{language === 'ar' ? 'رقم الفاتورة:' : 'Invoice No:'}</span>
+                  <span className="font-bold text-dark print:text-black">#{order.id.slice(0, 8).toUpperCase()}</span>
                 </div>
-                <div className="space-y-1.5 text-end">
-                  <span className="text-[9px] text-dark/40 block uppercase print:text-black/60">{language === 'ar' ? 'تاريخ الإصدار' : 'Issue Date'}</span>
+                <div className="flex justify-between">
+                  <span className="text-dark/50 print:text-black">{language === 'ar' ? 'التاريخ والوقت:' : 'Date & Time:'}</span>
                   <span className="font-bold text-dark print:text-black font-mono">
-                    {new Date(order.createdAt).toISOString().replace('T', ' ').substring(0, 19)}
+                    {new Date(order.createdAt).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-US', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: true
+                    })}
                   </span>
                 </div>
-
-                <div className="space-y-1.5 mt-2">
-                  <span className="text-[9px] text-dark/40 block uppercase print:text-black/60">{language === 'ar' ? 'نوع الطلب' : 'Billing Type'}</span>
+                <div className="flex justify-between">
+                  <span className="text-dark/50 print:text-black">{language === 'ar' ? 'المستخدم:' : 'User:'}</span>
+                  <span className="font-bold text-dark print:text-black">{language === 'ar' ? 'الموقع الإلكتروني (كاشير)' : 'Website (Cashier)'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-dark/50 print:text-black">{language === 'ar' ? 'نوع الطلب:' : 'Order Type:'}</span>
                   <span className="font-bold text-dark print:text-black">
                     {order.tableOrDelivery === 'table' 
-                      ? (language === 'ar' ? `طاولة رقم ${order.tableNumber}` : `Table #${order.tableNumber}`)
+                      ? (language === 'ar' ? `محلي - طاولة رقم ${order.tableNumber}` : `Dine-In - Table #${order.tableNumber}`)
+                      : order.tableOrDelivery === 'takeaway'
+                      ? (language === 'ar' ? 'استلام من الفرع' : 'Takeaway')
                       : (language === 'ar' ? 'توصيل منزلي' : 'Delivery Order')}
                   </span>
                 </div>
-                <div className="space-y-1.5 text-end mt-2">
-                  <span className="text-[9px] text-dark/40 block uppercase print:text-black/60">{language === 'ar' ? 'العميل' : 'Customer'}</span>
+                
+                {/* Customer Info (Name and Phone) requested by user */}
+                <div className="flex justify-between border-t border-dashed border-black/5 pt-2">
+                  <span className="text-dark/50 print:text-black">{language === 'ar' ? 'اسم صاحب الطلب:' : 'Customer Name:'}</span>
                   <span className="font-bold text-dark print:text-black">{order.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-dark/50 print:text-black">{language === 'ar' ? 'رقم جوال العميل:' : 'Customer Phone:'}</span>
+                  <span className="font-bold text-dark print:text-black font-mono">{order.customerPhone || 'N/A'}</span>
                 </div>
               </div>
 
-              {/* Items Summary Table */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-[10px] text-dark/40 font-mono tracking-wider border-b border-black/5 pb-2 print:border-black/30">
-                  <span className="w-1/2 print:text-black print:font-bold">{language === 'ar' ? 'البيان' : 'Item Description'}</span>
-                  <span className="w-1/6 text-center print:text-black print:font-bold">{language === 'ar' ? 'الكمية' : 'Qty'}</span>
-                  <span className="w-1/3 text-end print:text-black print:font-bold">{language === 'ar' ? 'السعر' : 'Amount'}</span>
-                </div>
-
-                <div className="space-y-2.5 pt-1.5">
-                  {order.items.map((item) => (
-                    <div key={item.id} className="flex justify-between items-center text-xs text-dark/80 print:text-black font-semibold">
-                      <span className="w-1/2 font-sans">{language === 'ar' ? item.nameAr : item.name}</span>
-                      <span className="w-1/6 text-center font-mono">{item.quantity}</span>
-                      <span className="w-1/3 text-end font-mono">{(item.price * item.quantity).toFixed(2)} {t('sar')}</span>
+              {/* Items Summary List */}
+              <div className="space-y-3 py-1 text-xs border-b border-dashed border-black/10 pb-4 print:border-black/30">
+                {order.items.map((item) => (
+                  <div key={item.id} className="space-y-1">
+                    {/* Item Name */}
+                    <div className="font-sans font-bold text-dark text-start print:text-black text-sm">
+                      {language === 'ar' ? item.nameAr : item.name}
                     </div>
-                  ))}
+                    {/* Qty x Price and Total */}
+                    <div className="flex justify-between items-center text-dark/70 font-mono text-[11px] print:text-black font-medium">
+                      <span>
+                        {item.quantity} x {item.price.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}
+                      </span>
+                      <span className="font-bold">
+                        {(item.price * item.quantity).toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="border-t border-dashed border-black/5 pt-2 flex justify-between text-xs font-bold text-dark/70 print:text-black">
+                  <span>{language === 'ar' ? 'عدد المنتجات:' : 'Total Items:'}</span>
+                  <span>{order.items.reduce((sum, item) => sum + item.quantity, 0)}</span>
                 </div>
               </div>
 
               {/* Math Computations Receipt Footer */}
-              <div className="border-t border-dashed border-black/10 pt-4 space-y-2 font-mono text-xs print:border-black/30">
+              <div className="pt-1 space-y-2 font-mono text-xs border-b border-dashed border-black/10 pb-4 print:border-black/30">
                 <div className="flex justify-between text-dark/60 print:text-black">
-                  <span>
-                    {language === 'ar'
-                      ? (businessSettings.taxEnabled ? 'المجموع الخاضع للضريبة' : 'المجموع الفرعي')
-                      : (businessSettings.taxEnabled ? 'Subtotal (Excl. VAT)' : 'Subtotal')}
-                  </span>
-                  <span className="font-mono">{(order.subtotal - (order.promoDiscount || 0)).toFixed(2)} {t('sar')}</span>
+                  <span>{language === 'ar' ? 'المجموع الخاضع للضريبة:' : 'Taxable Subtotal:'}</span>
+                  <span>{(order.subtotal - (order.promoDiscount || 0)).toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
                 </div>
 
                 {order.promoDiscount > 0 && (
                   <div className="flex justify-between text-red-650 font-bold print:text-black print:font-bold">
-                    <span>{language === 'ar' ? 'التخفيض المطبق' : 'Applied Discount'}</span>
-                    <span className="font-mono">-{order.promoDiscount.toFixed(2)} {t('sar')}</span>
+                    <span>{language === 'ar' ? 'التخفيض المطبق:' : 'Applied Discount:'}</span>
+                    <span>-{order.promoDiscount.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
                   </div>
                 )}
 
                 {businessSettings.taxEnabled && (
                   <div className="flex justify-between text-dark/60 print:text-black">
-                    <span>
-                      {language === 'ar' 
-                        ? `ضريبة القيمة المضافة (${businessSettings.taxPercent}%)` 
-                        : `VAT (${businessSettings.taxPercent}%)`}
-                    </span>
-                    <span className="font-mono">{order.tax.toFixed(2)} {t('sar')}</span>
+                    <span>{language === 'ar' ? `ضريبة القيمة المضافة (${businessSettings.taxPercent}%):` : `VAT (${businessSettings.taxPercent}%):`}</span>
+                    <span>{order.tax.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
                   </div>
                 )}
 
                 {order.deliveryFee && order.deliveryFee > 0 && (
                   <div className="flex justify-between text-dark/60 print:text-black font-semibold">
-                    <span>{language === 'ar' ? 'رسوم التوصيل' : 'Delivery Fee'}</span>
-                    <span className="font-mono">+{order.deliveryFee.toFixed(2)} {t('sar')}</span>
+                    <span>{language === 'ar' ? 'رسوم التوصيل:' : 'Delivery Fee:'}</span>
+                    <span>+{order.deliveryFee.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
                   </div>
                 )}
 
                 <div className="h-px bg-black/5 print:bg-black/30 my-2" />
-                <div className="flex justify-between text-dark font-black text-sm print:text-black print:font-extrabold">
+                <div className="flex justify-between text-dark font-black text-sm print:text-black print:font-extrabold border-b border-dashed border-black/10 pb-2">
+                  <span className="text-sm">{language === 'ar' ? 'إجمالي الدفع شامل الضريبة:' : 'Total (VAT Inclusive):'}</span>
+                  <span className="text-dark print:text-black font-black text-base">{(order.total).toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
+                </div>
+
+                {/* Added payment details similar to photo (Card or Cash) */}
+                <div className="flex justify-between text-dark/70 font-bold text-xs pt-1">
+                  <span>{language === 'ar' ? 'طريقة الدفع:' : 'Payment Method:'}</span>
                   <span>
-                    {language === 'ar'
-                      ? (businessSettings.taxEnabled ? 'المجموع الإجمالي شامل الضريبة' : 'المجموع الإجمالي النهائي')
-                      : (businessSettings.taxEnabled ? 'Total (VAT Inclusive)' : 'Final Estimated Total')}
+                    {order.paymentMethod === 'mada' ? (language === 'ar' ? 'بطاقة مدى (Card)' : 'Mada (Card)') :
+                     order.paymentMethod === 'applepay' ? 'Apple Pay' :
+                     order.paymentMethod === 'transfer' ? (language === 'ar' ? 'تحويل بنكي' : 'Bank Transfer') :
+                     (language === 'ar' ? 'دفع عند الاستلام (كاش)' : 'Cash on Delivery')}
                   </span>
-                  <span className="text-dark print:text-black font-black font-mono print:text-base">{(order.total).toFixed(2)} {t('sar')}</span>
+                </div>
+                <div className="flex justify-between text-dark font-bold text-xs pb-1">
+                  <span>{language === 'ar' ? 'المبلغ المدفوع:' : 'Paid Amount:'}</span>
+                  <span>{(order.total).toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
                 </div>
               </div>
 
               {/* QR and Compliance Block */}
               {businessSettings.taxEnabled && (
-                <div className="flex flex-col items-center justify-center pt-4 text-center space-y-3.5 print:break-inside-avoid">
-                  <div className="bg-white p-2.5 rounded-2xl inline-block shadow-xs border border-black/5">
-                    {/* Real Cryptographic TLV QR code generated dynamically via free reliable QR server API */}
+                <div className="flex flex-col items-center justify-center pt-2 text-center space-y-2 print:break-inside-avoid">
+                  <div className="bg-white p-2 inline-block rounded-xl border border-black/5">
+                    {/* Real Cryptographic TLV QR code */}
                     <img
                       src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
                         generateZatcaQr(
@@ -1240,23 +1399,21 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                       )}`}
                       alt="ZATCA VAT QR Code"
                       referrerPolicy="no-referrer"
-                      className="w-36 h-36 mx-auto"
+                      className="w-28 h-28 mx-auto"
                     />
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-center gap-1.5 text-emerald-600 font-bold text-[10px] tracking-wide uppercase">
-                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                      <span>{language === 'ar' ? 'ربط مباشر مع الفاتورة الضريبية الفورية' : 'ZATCA Compliance Stage 1 Secured'}</span>
-                    </div>
-                    <p className="text-[9px] text-dark/40 max-w-xs leading-relaxed print:text-zinc-700 mx-auto">
-                      {language === 'ar' 
-                        ? 'فاتورة إلكترونية مبسطة مكودة ومهيأة للربط المباشر مع الهيئة العامة للزكاة والضريبة والجمارك بالمملكة العربية السعودية.'
-                        : 'Cryptographic invoice complies with Saudi ZATCA Simplified Tax Invoice specifications under Stage 1 integration rules.'}
-                    </p>
                   </div>
                 </div>
               )}
+
+              {/* Receipt Footer Message */}
+              <div className="text-center pt-3 border-t border-dashed border-black/10 print:border-black/30 mt-4">
+                <p className="font-serif italic font-bold text-xs text-dark/70 print:text-black">
+                  {language === 'ar' ? 'طعمنا غير...........وجودتنا تميزنا' : 'Our taste is unique...........Our quality is our signature'}
+                </p>
+                <p className="text-[9px] text-dark/40 font-mono mt-1">
+                  {language === 'ar' ? 'شكراً لزيارتكم ونتمنى لكم وجبة هنيئة! ❤️' : 'Thank you for your visit, enjoy your meal! ❤️'}
+                </p>
+              </div>
 
             </div>
 

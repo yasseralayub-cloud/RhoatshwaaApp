@@ -72,7 +72,11 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  LineChart,
+  Line,
+  AreaChart,
+  Area
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -120,6 +124,29 @@ const PendingCountdown = ({ createdAt, onTimeout, gracePeriod = 30 }: { createdA
     );
   }
 };
+
+const OrderSkeleton = ({ language }: { language: string }) => (
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+    {[1, 2, 3].map((n) => (
+      <div key={n} className="p-4 rounded-2xl border-2 border-slate-100 bg-stone-50/50 shadow-xs flex flex-col justify-between space-y-4 text-start animate-pulse">
+        <div className="space-y-2 flex-1">
+          <div className="h-4 bg-slate-200 rounded-lg w-2/3" />
+          <div className="h-3 bg-slate-150 rounded-lg w-1/3" />
+          <div className="h-5 bg-slate-100 rounded-lg w-1/2 mt-2" />
+        </div>
+        <div className="bg-stone-50 border border-stone-100/80 rounded-xl p-3 my-2 space-y-2">
+          <div className="h-3 bg-slate-200 rounded-lg w-1/2" />
+          <div className="h-3 bg-slate-150 rounded-lg w-5/6" />
+          <div className="h-3 bg-slate-150 rounded-lg w-2/3" />
+        </div>
+        <div className="flex gap-2.5">
+          <div className="h-10 bg-slate-200 rounded-xl flex-1" />
+          <div className="h-10 bg-slate-200 rounded-xl flex-1" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
   onMenuUpdate, 
@@ -242,6 +269,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [setWorkingHoursEnd, setSetWorkingHoursEnd] = useState('02:00');
   const [setDeliveryFee, setSetDeliveryFee] = useState(15);
   const [setGracePeriod, setSetGracePeriod] = useState(30);
+  const [setRingtoneType, setSetRingtoneType] = useState('high-pitch');
 
   // Bank transfer state variables
   const [bankNameAr, setBankNameAr] = useState('مصرف الراجحي');
@@ -288,10 +316,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [selectedDocPreview, setSelectedDocPreview] = useState<string | null>(null);
   const [activeAdminTab, setActiveAdminTab] = useState<'orders' | 'menu' | 'promotions' | 'drivers' | 'stats' | 'settings'>('orders');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [statsPeriod, setStatsPeriod] = useState<'7days' | '30days' | 'all'>('7days');
 
   const previousOrdersCountRef = useRef<number>(0);
   const alarmedOrderIdsRef = useRef<Set<string>>(new Set());
   const mountTimeRef = useRef<number>(Date.now());
+  const activeAlarmRingtoneRef = useRef<string | null>(null);
 
   // Listen to Auth State
   useEffect(() => {
@@ -320,8 +350,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Request browser desktop notification permissions on admin mount
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    } catch (e) {
+      console.warn('Notification API permission request is blocked or unsupported in this sandbox environment:', e);
     }
   }, []);
 
@@ -372,6 +406,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSetWorkingHoursEnd(businessSettings.workingHoursEnd || '02:00');
       setSetDeliveryFee(businessSettings.deliveryFee ?? 15);
       setSetGracePeriod(businessSettings.gracePeriod ?? 30);
+      setSetRingtoneType(businessSettings.ringtoneType || 'high-pitch');
       setSetReceiptWidth(businessSettings.receiptWidth || '80mm');
       
       // Sync bank settings
@@ -450,7 +485,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       kitchenPrinterPort: Number(kitchenPrinterPort),
       printRoutingMode: printRoutingMode,
       deliveryFee: Number(setDeliveryFee),
-      gracePeriod: Number(setGracePeriod || 30)
+      gracePeriod: Number(setGracePeriod || 30),
+      ringtoneType: setRingtoneType || 'high-pitch'
     };
 
     if (onSettingsUpdate) {
@@ -476,7 +512,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     let unsub = () => {};
 
     if (isAdmin) {
-      setLoadingOrders(true);
+      if (previousOrdersCountRef.current === 0) {
+        setLoadingOrders(true);
+      }
       const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
       
       unsub = onSnapshot(
@@ -555,61 +593,114 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     return () => unsub();
   }, [isAdmin, isSimulated, soundEnabled]);
 
-  // Dedicated background countdown timer to play alarms exactly when grace periods expire!
+  // Pre-unlock audio context on first user interaction with the page to bypass autoplay restrictions
   useEffect(() => {
-    if (!isAdmin) return;
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const gracePeriodSec = businessSettings?.gracePeriod ?? 30;
-      const gracePeriodMs = gracePeriodSec * 1000;
-
-      let hasNewAlarm = false;
-      const newAlertOrders: Order[] = [];
-
-      orders.forEach((o) => {
-        if (o.status === 'pending') {
-          const createdAtTime = new Date(o.createdAt).getTime();
-          const elapsed = now - createdAtTime;
-          
-          // Only alarm if the order was created after this session started
-          if (createdAtTime >= mountTimeRef.current) {
-            if (elapsed >= gracePeriodMs) {
-              if (!alarmedOrderIdsRef.current.has(o.id)) {
-                alarmedOrderIdsRef.current.add(o.id);
-                hasNewAlarm = true;
-                newAlertOrders.push(o);
-
-                // Push-notify via standard browser Notification API
-                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                  const typeText = o.tableOrDelivery === 'table' ? 'محلي (صالة)' : (o.tableOrDelivery === 'takeaway' ? 'استلام من الفرع' : 'توصيل');
-                  new Notification(`طلب جديد وارد ومؤكد (${typeText})! 🍢`, {
-                    body: `العميل: ${o.customerName}\nالإجمالي: ${o.total} ريال`,
-                    tag: o.id
-                  });
-                }
-              }
-            }
+    const unlockAudio = () => {
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const ctx = new AudioContextClass();
+          if (ctx.state === 'suspended') {
+            ctx.resume();
           }
+          // Play a super short silent note to register activity
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.01);
         }
-      });
-
-      if (newAlertOrders.length > 0) {
-        setIncomingAlertOrders((prevAlerts) => {
-          const prevAlertIds = new Set(prevAlerts.map(a => a.id));
-          const uniqueNew = newAlertOrders.filter(o => !prevAlertIds.has(o.id));
-          return [...prevAlerts, ...uniqueNew];
-        });
+      } catch (e) {
+        console.warn('Audio unlock failed:', e);
       }
+      
+      // Remove listeners after first interaction
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
 
-      if (hasNewAlarm && soundEnabled) {
+    document.addEventListener('click', unlockAudio);
+    document.addEventListener('touchstart', unlockAudio);
+    document.addEventListener('keydown', unlockAudio);
+
+    return () => {
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+  }, []);
+
+  // Unified Real-Time Alarm Manager:
+  // Starts ringing immediately for ANY pending order, and stops IMMEDIATELY when receipt is confirmed.
+  useEffect(() => {
+    if (!isAdmin) {
+      if (activeAlarmRingtoneRef.current) {
+        stopContinuousAlarm();
+        activeAlarmRingtoneRef.current = null;
+      }
+      return;
+    }
+
+    // Find any order whose status is 'pending'
+    const pendingOrders = orders.filter((o) => o.status === 'pending');
+    const hasPending = pendingOrders.length > 0;
+    const selectedRingtone = businessSettings?.ringtoneType || 'high-pitch';
+
+    // 1. Manage the continuous sound alert
+    if (soundEnabled && hasPending) {
+      // Start or switch alarm if not already ringing this specific ringtone
+      if (activeAlarmRingtoneRef.current !== selectedRingtone) {
         playOrderChime();
-        startContinuousAlarm();
+        startContinuousAlarm(selectedRingtone);
+        activeAlarmRingtoneRef.current = selectedRingtone;
       }
-    }, 1000);
+    } else {
+      // Stop the alarm if muted or no pending orders remain
+      if (activeAlarmRingtoneRef.current) {
+        stopContinuousAlarm();
+        activeAlarmRingtoneRef.current = null;
+      }
+    }
 
-    return () => clearInterval(interval);
-  }, [orders, isAdmin, businessSettings, soundEnabled]);
+    // 2. Real-time Browser Push Notifications & Instant transition sound for brand new orders
+    pendingOrders.forEach((o) => {
+      // Only notify if order was created after this session started (mountTimeRef)
+      const createdAtTime = new Date(o.createdAt).getTime();
+      if (createdAtTime >= mountTimeRef.current) {
+        if (!alarmedOrderIdsRef.current.has(o.id)) {
+          alarmedOrderIdsRef.current.add(o.id);
+
+          // Standard push Notification
+          try {
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              const typeText = o.tableOrDelivery === 'table' ? 'محلي (صالة)' : (o.tableOrDelivery === 'takeaway' ? 'استلام من الفرع' : 'توصيل');
+              new Notification(`طلب جديد وارد ومؤكد (${typeText})! 🍢`, {
+                body: `العميل: ${o.customerName}\nالإجمالي: ${o.total} ريال`,
+                tag: o.id
+              });
+            }
+          } catch (notificationError) {
+            console.warn('Notification execution is restricted or unsupported in this sandbox environment:', notificationError);
+          }
+
+          // Force play chime on first receipt even if continuous is running
+          if (soundEnabled) {
+            playOrderChime();
+          }
+
+          // Add to incoming alerts panel
+          setIncomingAlertOrders((prev) => {
+            if (prev.some((p) => p.id === o.id)) return prev;
+            return [...prev, o];
+          });
+        }
+      }
+    });
+
+  }, [orders, isAdmin, soundEnabled, businessSettings?.ringtoneType]);
 
   // Fetch drivers from Firestore or local simulated store
   useEffect(() => {
@@ -682,35 +773,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     return () => unsub();
   }, [isAdmin]);
-
-  // Continuous alarm checker for pending orders (triggers immediately to notify admin in real-time)
-  useEffect(() => {
-    if (!soundEnabled) {
-      stopContinuousAlarm();
-      return;
-    }
-
-    const checkAndTriggerAlarm = () => {
-      const needsAlarm = orders.some((ord) => {
-        // Trigger continuous alarm immediately for any new pending order
-        return ord.status === 'pending';
-      });
-
-      if (needsAlarm) {
-        startContinuousAlarm();
-      } else {
-        stopContinuousAlarm();
-      }
-    };
-
-    // Run the check immediately and then every 1 second
-    checkAndTriggerAlarm();
-    const interval = setInterval(checkAndTriggerAlarm, 1000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [orders, soundEnabled]);
 
   // Clean up alarm only when the AdminPanel component unmounts entirely
   useEffect(() => {
@@ -905,6 +967,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
     setOrders(optimisticOrders);
     setUpdatingId(orderId);
+
+    // Automatically remove from incoming alert orders popup to stop alarms instantly!
+    if (nextStatus !== 'pending') {
+      setIncomingAlertOrders((prev) => {
+        const updated = prev.filter((p) => p.id !== orderId);
+        if (updated.length === 0) {
+          stopContinuousAlarm();
+        }
+        return updated;
+      });
+    }
 
     // Send the WhatsApp notification to customer
     const orderToUpdate = orders.find(o => o.id === orderId);
@@ -1669,18 +1742,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const totalSalesVal = orders.filter((o) => o.status !== 'cancelled').reduce((sum, o) => sum + o.total, 0);
   const totalOrdersCount = orders.filter((o) => o.status !== 'cancelled').length;
 
+  // Filter orders based on selected period for stats tab
+  const getPeriodFilteredOrders = () => {
+    return orders.filter((o) => {
+      if (statsPeriod === 'all') return true;
+      const orderTime = new Date(o.createdAt).getTime();
+      const daysAgo = statsPeriod === '7days' ? 7 : 30;
+      const threshold = Date.now() - daysAgo * 24 * 60 * 60 * 1000;
+      return orderTime >= threshold;
+    });
+  };
+
+  const periodOrdersAll = getPeriodFilteredOrders();
+  const statsFilteredOrders = periodOrdersAll.filter((o) => o.status !== 'cancelled');
+  const periodCancelledCount = periodOrdersAll.filter((o) => o.status === 'cancelled').length;
+  
+  const periodSales = statsFilteredOrders.reduce((sum, o) => sum + o.total, 0);
+  const periodOrdersCount = statsFilteredOrders.length;
+  const periodAvgOrderValue = periodOrdersCount > 0 ? periodSales / periodOrdersCount : 0;
+  const periodTotalWithCancelled = periodOrdersCount + periodCancelledCount;
+  const cancellationRate = periodTotalWithCancelled > 0 ? (periodCancelledCount / periodTotalWithCancelled) * 100 : 0;
+
   // Recharts Chart Series Data
-  // 1. Sales by Categories
+  // 1. Sales by Categories for selected period
   const salesByCategoryData = CATEGORIES.map((cat) => {
-    const catOrders = orders.filter((o) => o.status !== 'cancelled');
     let categorySum = 0;
     
-    catOrders.forEach((ord) => {
-      ord.items.forEach((ordItem) => {
+    statsFilteredOrders.forEach((ord) => {
+      (ord.items || []).forEach((ordItem) => {
         // Map menu items category
         const itemObj = menuItems.find((m) => m.id === ordItem.id);
         if (itemObj && itemObj.category === cat.id) {
-          categorySum += ordItem.price * ordItem.quantity;
+          categorySum += (ordItem.price || 0) * (ordItem.quantity || 1);
         }
       });
     });
@@ -1691,13 +1784,100 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     };
   }).filter((c) => c.sales > 0);
 
-  // 2. Status Distribution Data
+  // 2. Status Distribution Data for selected period
   const statusPieData = [
-    { name: language === 'ar' ? 'قيد الانتظار' : 'Pending', value: orders.filter((o) => o.status === 'pending').length, color: '#F59E0B' },
-    { name: language === 'ar' ? 'جاري التحضير' : 'Preparing', value: orders.filter((o) => o.status === 'preparing').length, color: '#3B82F6' },
-    { name: language === 'ar' ? 'تم التوصيل' : 'Delivered', value: orders.filter((o) => o.status === 'delivered').length, color: '#10B981' },
-    { name: language === 'ar' ? 'ملغي' : 'Cancelled', value: orders.filter((o) => o.status === 'cancelled').length, color: '#EF4444' }
+    { name: language === 'ar' ? 'قيد الانتظار' : 'Pending', value: periodOrdersAll.filter((o) => o.status === 'pending').length, color: '#F59E0B' },
+    { name: language === 'ar' ? 'جاري التحضير' : 'Preparing', value: periodOrdersAll.filter((o) => o.status === 'preparing').length, color: '#3B82F6' },
+    { name: language === 'ar' ? 'تم التوصيل' : 'Delivered', value: periodOrdersAll.filter((o) => o.status === 'delivered').length, color: '#10B981' },
+    { name: language === 'ar' ? 'ملغي' : 'Cancelled', value: periodOrdersAll.filter((o) => o.status === 'cancelled').length, color: '#EF4444' }
   ].filter((v) => v.value > 0);
+
+  // 3. Daily Sales Chart Data
+  const getDailySalesData = () => {
+    const formatDateString = (date: Date) => {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const dailySalesMap: { [dateStr: string]: { date: string, sales: number, count: number } } = {};
+    
+    // Pre-populate with dates to avoid empty gaps in 7 / 30 day views
+    if (statsPeriod === '7days' || statsPeriod === '30days') {
+      const daysCount = statsPeriod === '7days' ? 7 : 30;
+      for (let i = daysCount - 1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = formatDateString(d);
+        dailySalesMap[dateStr] = {
+          date: dateStr,
+          sales: 0,
+          count: 0
+        };
+      }
+    }
+
+    statsFilteredOrders.forEach((o) => {
+      const dateStr = o.createdAt ? o.createdAt.substring(0, 10) : formatDateString(new Date());
+      if (!dailySalesMap[dateStr]) {
+        dailySalesMap[dateStr] = {
+          date: dateStr,
+          sales: 0,
+          count: 0
+        };
+      }
+      dailySalesMap[dateStr].sales += o.total || 0;
+      dailySalesMap[dateStr].count += 1;
+    });
+
+    return Object.values(dailySalesMap)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((item) => {
+        const d = new Date(item.date);
+        const label = d.toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'short', day: 'numeric' });
+        return {
+          ...item,
+          label
+        };
+      });
+  };
+
+  const dailySalesData = getDailySalesData();
+
+  // 4. Most Requested Items Data
+  const getMostOrderedItemsData = () => {
+    const itemSalesMap: { [itemId: string]: { id: string; name: string; nameAr: string; quantity: number; sales: number } } = {};
+    
+    statsFilteredOrders.forEach((o) => {
+      (o.items || []).forEach((item) => {
+        if (!item.id) return;
+        if (!itemSalesMap[item.id]) {
+          itemSalesMap[item.id] = {
+            id: item.id,
+            name: item.name || '',
+            nameAr: item.nameAr || item.name || '',
+            quantity: 0,
+            sales: 0
+          };
+        }
+        itemSalesMap[item.id].quantity += item.quantity || 1;
+        itemSalesMap[item.id].sales += (item.price || 0) * (item.quantity || 1);
+      });
+    });
+
+    return Object.values(itemSalesMap)
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 6)
+      .map((item) => ({
+        ...item,
+        displayName: language === 'ar' ? item.nameAr : item.name,
+        quantity: item.quantity,
+        sales: item.sales
+      }));
+  };
+
+  const mostOrderedItemsData = getMostOrderedItemsData();
 
   // Filters live orders list by status and search query (ID, Name, or Phone)
   const filteredOrders = orders.filter((ord) => {
@@ -1947,9 +2127,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div>
                           <strong>{language === 'ar' ? 'قائمة الأصناف:' : 'Items list:'}</strong>
                           <ul className="list-disc list-inside pl-1 mt-1 font-bold text-stone-800">
-                            {ord.items.map((it, idx) => (
+                            {(ord.items || []).map((it, idx) => (
                               <li key={idx}>
-                                {it.quantity}x {language === 'ar' ? it.nameAr : it.name}
+                                {it.quantity || 1}x {language === 'ar' ? (it.nameAr || it.name || '') : (it.name || '')}
                               </li>
                             ))}
                           </ul>
@@ -2027,7 +2207,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* Responsive Sidebar Hamburger Button */}
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="lg:hidden p-2.5 bg-stone-800 hover:bg-stone-700 text-amber-500 hover:text-amber-400 border border-stone-700/50 rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
+            className="xl:hidden p-2.5 bg-stone-800 hover:bg-stone-700 text-amber-500 hover:text-amber-400 border border-stone-700/50 rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
             title={language === 'ar' ? 'افتح القائمة الجانبية' : 'Open Sidebar'}
           >
             <Menu className="w-5 h-5" />
@@ -2092,8 +2272,55 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       </div>
 
+      {/* 📱 Dropdown navigation selector for active tabs on mobile & rotated tablets (Visible below xl) */}
+      <div className="xl:hidden w-full bg-stone-900 border border-stone-800 rounded-3xl p-4 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-amber-500/10">
+        <div className="flex-1 text-start">
+          <label className="block text-xs font-bold text-stone-400 mb-1.5 px-1">
+            {language === 'ar' ? '🗂️ التبديل السريع بين أقسام الإدارة:' : '🗂️ Quick Switch Admin Section:'}
+          </label>
+          <div className="relative">
+            <select
+              value={activeAdminTab}
+              onChange={(e) => setActiveAdminTab(e.target.value as any)}
+              className="w-full bg-stone-850 hover:bg-stone-800 text-amber-500 font-extrabold text-xs sm:text-[13px] py-3 px-4 rounded-xl border border-stone-700/50 focus:outline-none focus:border-amber-500/80 transition-all cursor-pointer appearance-none text-start shadow-inner"
+              style={{ direction: language === 'ar' ? 'rtl' : 'ltr' }}
+            >
+              {[
+                { id: 'orders', labelAr: '📋 الطلبات الحالية', labelEn: '📋 Active Orders' },
+                { id: 'stats', labelAr: '📊 التقارير والإحصائيات', labelEn: '📊 Reports & Stats' },
+                { id: 'menu', labelAr: '🍔 قائمة المأكولات', labelEn: '🍔 Menu Management' },
+                { id: 'promotions', labelAr: '🏷️ العروض والخصومات', labelEn: '🏷️ Promotions' },
+                { id: 'drivers', labelAr: '🚚 إدارة المندوبين', labelEn: '🚚 Drivers List' },
+                { id: 'settings', labelAr: '⚙️ إعدادات المطعم', labelEn: '⚙️ Restaurant Settings' },
+              ].map((tab) => (
+                <option key={tab.id} value={tab.id} className="bg-stone-900 text-stone-100 font-bold py-2">
+                  {language === 'ar' ? tab.labelAr : tab.labelEn}
+                </option>
+              ))}
+            </select>
+            {/* Custom styled absolute down indicator */}
+            <div className={`absolute inset-y-0 ${language === 'ar' ? 'left-4' : 'right-4'} flex items-center pointer-events-none text-amber-500`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Horizontal Quick Indicator buttons on landscape or larger tablet screens */}
+        <div className="flex gap-2 shrink-0 md:self-end">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="w-full md:w-auto bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white text-xs font-black py-3 px-4.5 rounded-xl transition-all cursor-pointer border border-stone-750 flex items-center justify-center gap-1.5 active:scale-95 shadow-sm"
+          >
+            <Menu className="w-4 h-4 text-amber-500" />
+            <span>{language === 'ar' ? 'عرض القائمة الجانبية كاملة' : 'Show Full Menu'}</span>
+          </button>
+        </div>
+      </div>
+
       {/* 2. Responsive Multi-Tab Grid Workspace */}
-      <div className="flex flex-col lg:flex-row gap-8 items-start w-full">
+      <div className="flex flex-col xl:flex-row gap-8 items-start w-full">
         {/* Mobile Drawer Backdrop */}
         <AnimatePresence>
           {isSidebarOpen && (
@@ -2102,7 +2329,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-xs"
+              className="fixed inset-0 bg-black/60 z-40 xl:hidden backdrop-blur-xs"
             />
           )}
         </AnimatePresence>
@@ -2110,10 +2337,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* Elegant Sidebar drawer */}
         <aside className={`
           fixed inset-y-0 start-0 z-50 w-72 bg-stone-900 text-stone-100 border-e border-stone-800 p-6 space-y-6 transform transition-transform duration-300 ease-in-out flex flex-col justify-between
-          lg:static lg:translate-x-0 lg:w-64 lg:h-[620px] lg:rounded-3xl lg:border lg:bg-stone-900 lg:p-5 lg:shrink-0
+          xl:static xl:translate-x-0 xl:w-64 xl:h-[620px] xl:rounded-3xl xl:border xl:bg-stone-900 xl:p-5 xl:shrink-0
           ${isSidebarOpen 
             ? 'translate-x-0' 
-            : (language === 'ar' ? 'translate-x-full lg:translate-x-0' : '-translate-x-full lg:translate-x-0')
+            : (language === 'ar' ? 'translate-x-full xl:translate-x-0' : '-translate-x-full xl:translate-x-0')
           }
         `}>
           <div className="space-y-6 flex-1 text-start">
@@ -2127,7 +2354,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
               <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="lg:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white"
+                className="xl:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2253,6 +2480,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       </div>
 
+      {/* Date Range Selector Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-3xl border border-slate-100 shadow-xs mb-6 text-start">
+        <div>
+          <h2 className="font-black text-slate-800 text-sm md:text-base flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-amber-500" />
+            {language === 'ar' ? 'لوحة التحكم والتحليلات البيانية' : 'Dashboard & Data Analytics'}
+          </h2>
+          <p className="text-[11px] font-semibold text-slate-400 mt-1">
+            {language === 'ar' 
+              ? 'مراقبة المبيعات وتفضيلات العملاء لاتخاذ قرارات تجارية ذكية' 
+              : 'Monitor real-time sales and customer trends for smart business decisions'}
+          </p>
+        </div>
+        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/50">
+          {[
+            { id: '7days', labelAr: 'آخر ٧ أيام', labelEn: '7 Days' },
+            { id: '30days', labelAr: 'آخر ٣٠ يوماً', labelEn: '30 Days' },
+            { id: 'all', labelAr: 'كل الأوقات', labelEn: 'All Time' },
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setStatsPeriod(p.id as any)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-150 cursor-pointer ${
+                statsPeriod === p.id
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-sm shadow-amber-500/10'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
+              }`}
+            >
+              {language === 'ar' ? p.labelAr : p.labelEn}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Analytics KPI dashboard row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1 */}
@@ -2261,8 +2522,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <DollarSign className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 block uppercase font-semibold">{t('totalSales')}</span>
-            <span className="text-lg md:text-xl font-black text-slate-800">{totalSalesVal.toFixed(1)} <span className="text-xs font-bold text-slate-400">{t('sar')}</span></span>
+            <span className="text-[10px] text-slate-400 block uppercase font-bold">{language === 'ar' ? 'مبيعات الفترة' : 'Period Sales'}</span>
+            <span className="text-lg md:text-xl font-black text-slate-800">{periodSales.toFixed(1)} <span className="text-xs font-bold text-slate-400">{t('sar')}</span></span>
           </div>
         </div>
 
@@ -2272,61 +2533,139 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <ShoppingBag className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 block uppercase font-semibold">{t('ordersCount')}</span>
-            <span className="text-lg md:text-xl font-black text-slate-800">{totalOrdersCount} <span className="text-xs font-medium text-slate-400">{language === 'ar' ? 'طلبات' : 'orders'}</span></span>
+            <span className="text-[10px] text-slate-400 block uppercase font-bold">{language === 'ar' ? 'طلبات الفترة' : 'Period Orders'}</span>
+            <span className="text-lg md:text-xl font-black text-slate-800">{periodOrdersCount} <span className="text-xs font-medium text-slate-400">{language === 'ar' ? 'طلبات' : 'orders'}</span></span>
           </div>
         </div>
 
         {/* KPI 3 */}
         <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-xs flex items-center gap-4 text-start">
           <div className="p-3 rounded-2xl bg-blue-50 text-blue-600">
-            <Clock className="w-6 h-6 stroke-[2.5]" />
+            <TrendingUp className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 block uppercase font-semibold">{language === 'ar' ? 'الطلبات النشطة' : 'Active Orders'}</span>
-            <span className="text-lg md:text-xl font-black text-slate-800">{activeOrders.length}</span>
+            <span className="text-[10px] text-slate-400 block uppercase font-bold">{language === 'ar' ? 'متوسط قيمة الطلب' : 'Average Ticket Size'}</span>
+            <span className="text-lg md:text-xl font-black text-slate-800">{periodAvgOrderValue.toFixed(1)} <span className="text-xs font-bold text-slate-400">{t('sar')}</span></span>
           </div>
         </div>
 
         {/* KPI 4 */}
         <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-xs flex items-center gap-4 text-start">
-          <div className="p-3 rounded-2xl bg-red-50 text-red-600">
+          <div className="p-3 rounded-2xl bg-rose-50 text-rose-600">
             <XCircle className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 block uppercase font-semibold">{language === 'ar' ? 'الطلبات الملغاة' : 'Cancelled'}</span>
-            <span className="text-lg md:text-xl font-black text-slate-800">{orders.filter((o) => o.status === 'cancelled').length}</span>
+            <span className="text-[10px] text-slate-400 block uppercase font-bold">{language === 'ar' ? 'معدل إلغاء الطلبات' : 'Cancellation Rate'}</span>
+            <span className="text-lg md:text-xl font-black text-slate-800">{cancellationRate.toFixed(1)}%</span>
           </div>
         </div>
       </div>
 
-      {/* Graphical Insights Bento block */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Sales Chart */}
-        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-xs lg:col-span-2">
-          <h3 className="font-bold text-slate-800 text-sm mb-4">{language === 'ar' ? 'توزيع المبيعات بحسب أقسام المنيو' : 'Sales Distribution per Categories'}</h3>
+      {/* Core Graphical Charts Bento Blocks */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Chart 1: Daily Sales Trend */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-xs text-start">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm">
+              {language === 'ar' ? '📈 اتجاه المبيعات اليومي' : '📈 Daily Sales Trend'}
+            </h3>
+            <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 font-bold rounded-lg uppercase">
+              {language === 'ar' ? 'النمو اليومي' : 'Daily Trend'}
+            </span>
+          </div>
           <div className="w-full h-64">
-            {salesByCategoryData.length > 0 ? (
+            {dailySalesData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={salesByCategoryData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" stroke="#64748B" fontSize={11} uuid="cat-x-axis" />
-                  <YAxis stroke="#64748B" fontSize={11} uuid="cat-y-axis" />
-                  <Tooltip formatter={(value) => [`${value} SAR`, 'Sales']} />
-                  <Bar dataKey="sales" fill="#D97706" radius={[8, 8, 0, 0]} barSize={40} />
-                </BarChart>
+                <AreaChart data={dailySalesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#F59E0B" stopOpacity={0.0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="label" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)' }} 
+                    formatter={(value) => [`${parseFloat(value as string).toFixed(1)} SAR`, language === 'ar' ? 'المبيعات' : 'Sales']}
+                  />
+                  <Area type="monotone" dataKey="sales" stroke="#D97706" strokeWidth={2.5} fillOpacity={1} fill="url(#colorSales)" />
+                </AreaChart>
               </ResponsiveContainer>
             ) : (
               <div className="h-full flex items-center justify-center text-slate-400 text-xs">
-                {language === 'ar' ? 'لا يوجد مبيعات مكتملة لعرض الإحصائيات بعد.' : 'Deliver some orders to see sales metrics graphics here!'}
+                {language === 'ar' ? 'لا توجد بيانات مبيعات مكتملة لهذه الفترة بعد.' : 'No completed sales data in this period yet.'}
               </div>
             )}
           </div>
         </div>
 
-        {/* Status distribution Pie */}
-        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-xs">
-          <h3 className="font-bold text-slate-800 text-sm mb-4">{language === 'ar' ? 'مؤشر حالات الطلب النشط والمنتهي' : 'Orders Status Breakdown'}</h3>
+        {/* Chart 2: Most Requested Items */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-xs text-start">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm">
+              {language === 'ar' ? '🔥 الأصناف الأكثر طلباً وتفضيلاً' : '🔥 Most Ordered & Popular Items'}
+            </h3>
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 font-bold rounded-lg uppercase">
+              {language === 'ar' ? 'الأكثر مبيعاً' : 'Top Sellers'}
+            </span>
+          </div>
+          <div className="w-full h-64">
+            {mostOrderedItemsData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={mostOrderedItemsData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
+                  <XAxis type="number" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis dataKey="displayName" type="category" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} width={80} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0' }}
+                    formatter={(value) => [`${value} ${language === 'ar' ? 'طلب' : 'qty'}`, language === 'ar' ? 'الكمية المطلوبة' : 'Quantity']}
+                  />
+                  <Bar dataKey="quantity" fill="#10B981" radius={[0, 6, 6, 0]} barSize={16} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+                {language === 'ar' ? 'لا توجد بيانات للأصناف المطلوبة بعد.' : 'No ordered items data yet.'}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Chart 3: Sales by categories */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-xs text-start">
+          <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm mb-4">
+            {language === 'ar' ? '🍗 المبيعات بحسب فئة المنيو' : '🍗 Revenue by Menu Categories'}
+          </h3>
+          <div className="w-full h-64">
+            {salesByCategoryData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={salesByCategoryData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="name" stroke="#64748B" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#64748B" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0' }}
+                    formatter={(value) => [`${value} SAR`, language === 'ar' ? 'المبيعات' : 'Sales']} 
+                  />
+                  <Bar dataKey="sales" fill="#D97706" radius={[6, 6, 0, 0]} barSize={32} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+                {language === 'ar' ? 'لا توجد مبيعات مكتملة لتصنيفها بعد.' : 'No completed sales categorizations yet.'}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Chart 4: Status Distribution Pie */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-xs text-start">
+          <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm mb-4">
+            {language === 'ar' ? '📋 مؤشر حالات جميع الطلبات' : '📋 Orders Status Tracking Distribution'}
+          </h3>
           <div className="w-full h-64 flex flex-col justify-between items-center">
             {statusPieData.length > 0 ? (
               <>
@@ -2337,8 +2676,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         data={statusPieData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={50}
-                        outerRadius={70}
+                        innerRadius={45}
+                        outerRadius={65}
                         paddingAngle={4}
                         dataKey="value"
                       >
@@ -2346,27 +2685,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0' }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                {/* Custom list description */}
-                <div className="flex flex-wrap gap-3 justify-center text-[10px] md:text-xs">
+                {/* Custom status legends */}
+                <div className="flex flex-wrap gap-2.5 justify-center text-[10px] md:text-xs">
                   {statusPieData.map((d) => (
-                    <div key={d.name} className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
-                      <span className="text-slate-600">{d.name} ({d.value})</span>
+                    <div key={d.name} className="flex items-center gap-1 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-xl">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                      <span className="text-slate-600 font-bold">{d.name} ({d.value})</span>
                     </div>
                   ))}
                 </div>
               </>
             ) : (
               <div className="h-full flex items-center justify-center text-slate-400 text-xs">
-                {language === 'ar' ? 'لا يوجد بيانات كافية لعرض نسب الحالات.' : 'No orders in system to show.'}
+                {language === 'ar' ? 'لا يوجد طلبات كافية لعرض نسب الحالات.' : 'No orders in selected period to display breakdown.'}
               </div>
             )}
           </div>
         </div>
+
       </div>
         </>
       )}
@@ -2447,9 +2789,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* Real-time Order lists container */}
         {loadingOrders ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 text-amber-600 animate-spin" />
-          </div>
+          <OrderSkeleton language={language} />
         ) : filteredOrders.length === 0 ? (
           <div className="py-12 text-center text-slate-400 text-xs">
             {t('noOrdersYet')}
@@ -2552,13 +2892,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           📋 {language === 'ar' ? 'الأصناف المطلوبة:' : 'Ordered Items:'}
                         </span>
                         <div className="space-y-1 divide-y divide-stone-100/60">
-                          {ord.items.map((it, idx) => (
+                          {(ord.items || []).map((it, idx) => (
                             <div key={idx} className="flex justify-between items-center py-1 font-semibold text-slate-700">
                               <span className="text-start">
-                                {it.quantity}x {language === 'ar' ? it.nameAr : it.name}
+                                {it.quantity || 1}x {language === 'ar' ? (it.nameAr || it.name || '') : (it.name || '')}
                               </span>
                               <span className="text-slate-400 font-mono text-[11px] shrink-0">
-                                {it.price * it.quantity} {language === 'ar' ? 'ريال' : 'SAR'}
+                                {((it.price || 0) * (it.quantity || 1))} {language === 'ar' ? 'ريال' : 'SAR'}
                               </span>
                             </div>
                           ))}
@@ -3147,6 +3487,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     className="w-16 text-center outline-none bg-transparent"
                   />
                   <span>{language === 'ar' ? 'ثانية' : 'sec'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Ringtone Selection Settings Section */}
+            <div className="md:col-span-2 pt-4 border-t border-slate-100 text-start">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Volume2 className="w-4 h-4 text-amber-500" />
+                {language === 'ar' ? 'نغمة رنين التنبيهات بالطلبات الجديدة' : 'New Order Alert Ringtone'}
+              </h4>
+              <div className="bg-slate-500/5 p-4 rounded-2xl border border-slate-500/10 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    {language === 'ar' ? 'اختر نوع نغمة التنبيه المستمر:' : 'Select Continuous Alarm Ringtone:'}
+                  </label>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    {language === 'ar' 
+                      ? 'يمكنك تغيير نغمة التنبيه التي تدق باستمرار عند وصول طلبات جديدة بانتظار التأكيد لتناسب ذوقك وصوت جهازك.' 
+                      : 'Customize the repeating alarm sound played when there are new pending orders waiting to be confirmed.'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <select
+                    value={setRingtoneType}
+                    onChange={(e) => {
+                      const selectedVal = e.target.value;
+                      setSetRingtoneType(selectedVal);
+                      // Instantly play selected sound for 1.2 seconds to let them test it!
+                      startContinuousAlarm(selectedVal);
+                      setTimeout(() => {
+                        stopContinuousAlarm();
+                      }, 1200);
+                    }}
+                    className="bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-semibold outline-none focus:border-amber-500 text-slate-800 shadow-xs cursor-pointer min-w-[160px]"
+                  >
+                    <option value="high-pitch">{language === 'ar' ? '🚨 إنذار حاد (افتراضى)' : '🚨 Urgent High-Pitch'}</option>
+                    <option value="classic-digital">{language === 'ar' ? '⏰ منبه رقمى كلاسيكى' : '⏰ Classic Digital'}</option>
+                    <option value="bell-chime">{language === 'ar' ? '🔔 رنين جرس هادئ مكرر' : '🔔 Gentle Repeating Chime'}</option>
+                    <option value="soft-synth">{language === 'ar' ? '🎵 نغمة سنثايزر لطيفة' : '🎵 Pleasant Synth Wave'}</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      startContinuousAlarm(setRingtoneType);
+                      setTimeout(() => {
+                        stopContinuousAlarm();
+                      }, 1200);
+                    }}
+                    className="p-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer active:scale-95"
+                    title={language === 'ar' ? 'تجربة الصوت الحالي' : 'Test Current Ringtone'}
+                  >
+                    🔊 {language === 'ar' ? 'تجربة' : 'Test'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -4760,65 +5154,91 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             {setShowCustomerReceiptOnPrint && (currentPrintSubMode === 'all' || currentPrintSubMode === 'customer') && (
               <div className="invoice-container space-y-4">
                 
-                {/* Logo / Branding */}
+                {/* Simplified Tax Invoice Header according to ZATCA standards */}
                 <div className="flex flex-col items-center text-center">
+                  <div className="border-2 border-black px-4 py-1.5 text-xs font-black uppercase tracking-wide rounded-lg mb-3">
+                    {language === 'ar' ? 'فاتورة ضريبية مبسطة' : 'SIMPLIFIED TAX INVOICE'}
+                  </div>
+
                   {setLogoUrl ? (
                     <img 
                       src={setLogoUrl} 
                       alt="Logo" 
-                      className="print-logo-box rounded-full object-cover border border-black/15 shadow-xs mb-2" 
+                      className="print-logo-box rounded-full object-cover border border-black/15 shadow-xs mb-1" 
                     />
                   ) : (
-                    <div className="print-logo-box rounded-full bg-black/5 flex items-center justify-center font-black text-sm uppercase mb-2">
+                    <div className="print-logo-box rounded-full bg-black/5 flex items-center justify-center font-black text-sm uppercase mb-1">
                       {language === 'ar' ? setRestaurantNameAr.charAt(0) : setRestaurantNameEn.charAt(0)}
                     </div>
                   )}
                   
-                  <h3 className="print-title leading-tight">
+                  <h3 className="print-title leading-tight font-extrabold text-[15px]">
                     {language === 'ar' ? setRestaurantNameAr : setRestaurantNameEn}
                   </h3>
-                  <p className="text-[10px] text-black/60 leading-tight">
+                  <p className="text-[10px] text-black font-semibold leading-tight">
                     {language === 'ar' ? setTaglineAr : setTaglineEn}
                   </p>
-                  <div className="mt-1 border border-black px-2 py-0.5 text-[9px] uppercase tracking-wider font-extrabold rounded-md">
-                    {language === 'ar' ? 'فاتورة ضريبية مبسطة' : 'Simplified Tax Invoice'}
-                  </div>
-                </div>
-
-                {/* Meta information */}
-                <div className="grid grid-cols-2 gap-y-1 text-[10px] font-mono border-b border-black pb-2 pt-1 border-dotted">
-                  <div>
-                    <span className="text-black/60 text-[9px] block uppercase">{language === 'ar' ? 'رقم الفاتورة' : 'Invoice ID'}</span>
-                    <span className="font-bold">{printingOrder.id}</span>
-                  </div>
-                  <div className="text-end">
-                    <span className="text-black/60 text-[9px] block uppercase">{language === 'ar' ? 'تاريخ الإصدار' : 'Issue Date'}</span>
-                    <span className="font-bold font-mono">
-                      {new Date(printingOrder.createdAt).toISOString().replace('T', ' ').substring(0, 19)}
-                    </span>
-                  </div>
-                  <div className="mt-1">
-                    <span className="text-black/60 text-[9px] block uppercase">{language === 'ar' ? 'نوع الطلب' : 'Order Type'}</span>
-                    <span className="font-bold">
-                      {printingOrder.tableOrDelivery === 'table' 
-                        ? (language === 'ar' ? 'محلي' : 'Dine-In')
-                        : (language === 'ar' ? 'استلام من الفرع' : 'Takeaway')}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-end">
-                    <span className="text-black/60 text-[9px] block uppercase">{language === 'ar' ? 'العميل' : 'Customer'}</span>
-                    <span className="font-bold">{printingOrder.customerName}</span>
-                  </div>
-                  {printingOrder.notes && (
-                    <div className="col-span-2 mt-1.5 pt-1.5 border-t border-dotted border-black/20 text-start text-[10px]">
-                      <span className="font-bold block text-black/70">📝 {language === 'ar' ? 'ملاحظات العميل:' : 'Customer Notes:'}</span>
-                      <span className="italic text-black/90 font-medium">{printingOrder.notes}</span>
+                  {isTaxActive && setVatNumber && (
+                    <div className="text-[10px] font-bold mt-1">
+                      <span>{language === 'ar' ? 'الرقم الضريبي:' : 'VAT ID:'} </span>
+                      <span className="font-mono">{setVatNumber}</span>
                     </div>
                   )}
-                  {isTaxActive && setVatNumber && (
-                    <div className="col-span-2 mt-1 pt-1 border-t border-dotted border-black/20">
-                      <span className="text-black/60 text-[9px] mr-1">{language === 'ar' ? 'الرقم الضريبي للبائع:' : 'Seller VAT Number:'}</span>
-                      <span className="font-bold font-mono">{setVatNumber}</span>
+                </div>
+
+                {/* Clean, beautifully structured Meta Information */}
+                <div className="space-y-1 text-[10px] border-b border-t border-black py-2.5 border-dashed">
+                  <div className="flex justify-between">
+                    <span className="text-black/75">{language === 'ar' ? 'رقم الطلب / الفاتورة:' : 'Order / Invoice ID:'}</span>
+                    <strong className="font-mono text-[11px]">{printingOrder.id}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-black/75">{language === 'ar' ? 'تاريخ ووقت الإصدار:' : 'Issue Date & Time:'}</span>
+                    <span className="font-bold font-mono">
+                      {new Date(printingOrder.createdAt).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-black/75">{language === 'ar' ? 'نوع الطلب:' : 'Order Type:'}</span>
+                    <strong className="font-extrabold">
+                      {printingOrder.tableOrDelivery === 'table' 
+                        ? (language === 'ar' ? `محلي (طاولة ${printingOrder.tableNumber || 'N/A'})` : `Dine-In (Table ${printingOrder.tableNumber || 'N/A'})`)
+                        : printingOrder.tableOrDelivery === 'takeaway'
+                        ? (language === 'ar' ? 'استلام من الفرع' : 'Takeaway')
+                        : (language === 'ar' ? `توصيل` : `Home Delivery`)}
+                    </strong>
+                  </div>
+                  
+                  {printingOrder.tableOrDelivery === 'delivery' && printingOrder.deliveryAddress && (
+                    <div className="flex justify-between text-start">
+                      <span className="text-black/75 shrink-0 ml-1">{language === 'ar' ? 'عنوان التوصيل:' : 'Delivery Address:'}</span>
+                      <strong className="font-bold text-end leading-tight">{printingOrder.deliveryAddress}</strong>
+                    </div>
+                  )}
+
+                  <div className="h-px bg-black/10 my-1 border-dotted" />
+
+                  <div className="flex justify-between">
+                    <span className="text-black/75">{language === 'ar' ? 'اسم العميل البطل:' : 'Customer Name:'}</span>
+                    <strong className="font-extrabold text-[11px]">{printingOrder.customerName}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-black/75">{language === 'ar' ? 'رقم جوال العميل:' : 'Customer Mobile:'}</span>
+                    <strong className="font-mono font-extrabold">{printingOrder.customerPhone || 'N/A'}</strong>
+                  </div>
+
+                  {printingOrder.notes && (
+                    <div className="mt-2 pt-1.5 border-t border-dotted border-black/15 text-start text-[9.5px]">
+                      <span className="font-extrabold block text-black/80">📝 {language === 'ar' ? 'ملاحظات العميل:' : 'Customer Notes:'}</span>
+                      <span className="italic font-bold text-black/90">{printingOrder.notes}</span>
                     </div>
                   )}
                 </div>
@@ -4832,11 +5252,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
 
                   <div className="space-y-2">
-                    {printingOrder.items.map((item) => (
+                    {(printingOrder.items || []).map((item) => (
                       <div key={item.id} className="flex justify-between items-start text-[10px] font-semibold">
-                        <span className="w-1/2 leading-snug">{language === 'ar' ? item.nameAr : item.name}</span>
+                        <span className="w-1/2 leading-snug">{language === 'ar' ? (item.nameAr || item.name || '') : (item.name || '')}</span>
                         <span className="w-1/6 text-center font-mono">{item.quantity}</span>
-                        <span className="w-1/3 text-end font-mono">{(item.price * item.quantity).toFixed(2)} {t('sar')}</span>
+                        <span className="w-1/3 text-end font-mono">{((item.price || 0) * (item.quantity || 1)).toFixed(2)} {t('sar')}</span>
                       </div>
                     ))}
                   </div>
@@ -4972,10 +5392,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 {/* Items List for chefs (highly stylized large text) */}
                 <div className="space-y-2 py-1 select-all">
-                  {printingOrder.items.map((item, index) => (
+                  {(printingOrder.items || []).map((item, index) => (
                     <div key={index} className="flex justify-between items-baseline py-1 border-b border-black/10 border-dotted last:border-none">
                       <span className="font-extrabold leading-snug">
-                        {item.quantity} × {language === 'ar' ? item.nameAr : item.name}
+                        {item.quantity} × {language === 'ar' ? (item.nameAr || item.name || '') : (item.name || '')}
                       </span>
                       <span className="text-[11px] font-bold">🛒</span>
                     </div>
