@@ -1264,7 +1264,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
               <div className="text-xs font-mono space-y-2 py-3 border-b border-dashed border-black/10 print:border-black/30 print:text-black">
                 <div className="flex justify-between">
                   <span className="text-dark/50 print:text-black">{language === 'ar' ? 'رقم الفاتورة:' : 'Invoice No:'}</span>
-                  <span className="font-bold text-dark print:text-black">#{order.id.slice(0, 8).toUpperCase()}</span>
+                  <span className="font-bold text-dark print:text-black">{order.id}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-dark/50 print:text-black">{language === 'ar' ? 'التاريخ والوقت:' : 'Date & Time:'}</span>
