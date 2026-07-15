@@ -6,9 +6,10 @@ import { motion, AnimatePresence } from 'motion/react';
 interface PrivacyPolicyModalProps {
   isOpen: boolean;
   onAccept: () => void;
+  gracePeriod?: number;
 }
 
-export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onAccept }) => {
+export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onAccept, gracePeriod = 30 }) => {
   const { language } = useLanguage();
   const [isChecked, setIsChecked] = useState(false);
 
@@ -66,10 +67,10 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
 
                 <div className="p-3 bg-neutral-50 rounded-xl space-y-2 border border-black/5">
                   <h4 className="font-bold text-dark text-xs flex items-center gap-1.5 justify-end">
-                    <span>تعديل وإلغاء الطلب (مهلة 60 ثانية)</span> ⏱️
+                    <span>تعديل وإلغاء الطلب (مهلة {gracePeriod} ثانية)</span> ⏱️
                   </h4>
                   <p className="text-dark/60 text-[11px]">
-                    احتراماً لوقتكم ووقت طاقم العمل، يمنحك النظام مهلة تبلغ <span className="font-bold text-amber-600">60 ثانية فقط</span> من لحظة إرسال طلبك للتمكن من تعديله أو إلغائه تلقائياً من شاشة التتبع. بمجرد انتهاء المهلة، يبدأ التنبيه المباشر في لوحة تحكم الفرع ولا يمكن التراجع دون موافقة الإدارة.
+                    احتراماً لوقتكم ووقت طاقم العمل، يمنحك النظام مهلة تبلغ <span className="font-bold text-amber-600">{gracePeriod} ثانية فقط</span> من لحظة إرسال طلبك للتمكن من تعديله أو إلغائه تلقائياً من شاشة التتبع. بمجرد انتهاء المهلة، يبدأ التنبيه المباشر في لوحة تحكم الفرع ولا يمكن التراجع دون موافقة الإدارة.
                   </p>
                 </div>
               </div>
@@ -98,10 +99,10 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
 
                 <div className="p-3 bg-neutral-50 rounded-xl space-y-2 border border-black/5">
                   <h4 className="font-bold text-dark text-xs flex items-center gap-1.5">
-                    ⏱️ <span>60-Second Order Adjustments</span>
+                    ⏱️ <span>{gracePeriod}-Second Order Adjustments</span>
                   </h4>
                   <p className="text-dark/60 text-[11px]">
-                    To optimize kitchen speed, you are allowed a strict <span className="font-bold text-amber-600">60-second window</span> to edit or cancel your order from the status screen. Once this window expires, the order signals the kitchen, and manual supervisor approval is required.
+                    To optimize kitchen speed, you are allowed a strict <span className="font-bold text-amber-600">{gracePeriod}-second window</span> to edit or cancel your order from the status screen. Once this window expires, the order signals the kitchen, and manual supervisor approval is required.
                   </p>
                 </div>
               </div>

@@ -735,6 +735,7 @@ function MenuAndOrdersApp() {
       {/* Mandatory Privacy Policy & Terms Modal */}
       <PrivacyPolicyModal
         isOpen={isPrivacyOpen}
+        gracePeriod={businessSettings?.gracePeriod}
         onAccept={() => {
           localStorage.setItem('rehla_privacy_accepted', 'true');
           setIsPrivacyOpen(false);
