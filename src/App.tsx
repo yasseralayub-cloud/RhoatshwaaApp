@@ -553,7 +553,7 @@ function MenuAndOrdersApp() {
   if (isStandaloneAdmin) {
     return (
       <div className="min-h-screen bg-[#F9F9FB] text-dark select-none py-6 px-4">
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-[1440px] w-full mx-auto px-2 sm:px-4 md:px-6">
           <AdminPanel 
             onMenuUpdate={handleMenuUpdate} 
             menuItems={menuItems} 
@@ -588,7 +588,7 @@ function MenuAndOrdersApp() {
         onWelcomeClick={handleInstallOrWelcomeClick}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-6 font-sans">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 md:px-6 py-6 font-sans">
         
         {activeTab === 'menu' && (
           <div className="space-y-6">

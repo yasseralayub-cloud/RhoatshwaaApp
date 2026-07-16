@@ -770,25 +770,61 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     };
   }, []);
 
-  const getNextStatus = (current: string, deliveryType: 'table' | 'takeaway' | 'delivery' | string) => {
-    if (current === 'pending') return 'received';
-    if (current === 'received') return deliveryType === 'delivery' ? 'searching_driver' : 'preparing';
-    if (current === 'searching_driver') return 'preparing';
-    if (current === 'preparing') {
-      return deliveryType === 'table' ? 'delivered' : 'ready';
+  const getNextStatus = (current: string, deliveryType: 'table' | 'takeaway' | 'delivery' | string, order?: any) => {
+    if (deliveryType === 'table') {
+      if (current === 'pending' || current === 'received') return 'preparing';
+      if (current === 'preparing') return 'delivered';
+      return null;
+    } else if (deliveryType === 'takeaway') {
+      if (current === 'pending' || current === 'received') return 'preparing';
+      if (current === 'preparing') return 'ready';
+      if (current === 'ready') return 'delivered';
+      return null;
+    } else {
+      // delivery
+      if (current === 'pending' || current === 'received') return 'preparing';
+      if (current === 'preparing') {
+        if (order?.driverId && order.driverId !== 'broadcast') {
+          return 'driver_assigned';
+        }
+        return 'searching_driver';
+      }
+      if (current === 'searching_driver') {
+        if (order?.driverId && order.driverId !== 'broadcast') {
+          return 'driver_assigned';
+        }
+        return 'driver_picked_up';
+      }
+      if (current === 'driver_assigned') return 'driver_picked_up';
+      if (current === 'driver_picked_up') return 'on_the_way';
+      if (current === 'on_the_way') return 'delivered';
+      return null;
     }
-    if (current === 'ready') return deliveryType === 'delivery' ? 'driver_picked_up' : 'delivered';
-    if (current === 'driver_picked_up') return 'on_the_way';
-    if (current === 'on_the_way') return 'delivered';
-    return null;
   };
 
-  const getNextStatusLabelAr = (next: string) => {
+  const getNextStatusLabelAr = (next: string, deliveryType: string) => {
+    if (deliveryType === 'table') {
+      if (next === 'preparing') return 'قبول وبدء التحضير للتقديم المحلي 🔥';
+      if (next === 'delivered') return 'تقديم الوجبة لطاولة العميل 🍽️';
+    } else if (deliveryType === 'takeaway') {
+      if (next === 'preparing') return 'قبول وبدء التحضير الفوري للطلب 🔥';
+      if (next === 'ready') return 'تجهيز الطلب وتنبيه العميل للاستلام 📦';
+      if (next === 'delivered') return 'تسليم الطلب للعميل يداً بيد 🤝';
+    } else {
+      // delivery
+      if (next === 'preparing') return 'قبول وبدء التحضير للطلب 🔥';
+      if (next === 'searching_driver') return 'جاهز وإرسال لجميع المناديب 📢';
+      if (next === 'driver_assigned') return 'جاهز وإرسال للمندوب المعين 👨‍✈️';
+      if (next === 'driver_picked_up') return 'تم تسليم الطلب للمندوب 🚴';
+      if (next === 'on_the_way') return 'بدء خطوة توصيل الطلب 📍';
+      if (next === 'delivered') return 'تأكيد تسليم الطلب للعميل 🎉';
+    }
     switch (next) {
       case 'received': return 'تأكيد واستلام الطلب ✅';
       case 'searching_driver': return 'البحث عن مندوب توصيل 🔍';
       case 'preparing': return 'بدء التحضير والطهي 🔥';
       case 'ready': return 'تجهيز الطلب للتسليم 📦';
+      case 'driver_assigned': return 'إسناد للمندوب 👨‍✈️';
       case 'driver_picked_up': return 'تم الاستلام بواسطة المندوب 🚴';
       case 'on_the_way': return 'بدء خطوة التوصيل 📍';
       case 'delivered': return 'تسليم الطلب للعميل 🎉';
@@ -796,12 +832,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const getNextStatusLabelEn = (next: string) => {
+  const getNextStatusLabelEn = (next: string, deliveryType: string) => {
+    if (deliveryType === 'table') {
+      if (next === 'preparing') return 'Accept & Start Cooking local 🔥';
+      if (next === 'delivered') return 'Serve to Table 🍽️';
+    } else if (deliveryType === 'takeaway') {
+      if (next === 'preparing') return 'Accept & Start Preparing 🔥';
+      if (next === 'ready') return 'Mark Ready for Pickup 📦';
+      if (next === 'delivered') return 'Handover to Customer 🤝';
+    } else {
+      // delivery
+      if (next === 'preparing') return 'Accept & Start Preparing 🔥';
+      if (next === 'searching_driver') return 'Ready & Broadcast to Drivers 📢';
+      if (next === 'driver_assigned') return 'Ready & Assign to Chosen Driver 👨‍✈️';
+      if (next === 'driver_picked_up') return 'Handed to Driver (Picked Up) 🚴';
+      if (next === 'on_the_way') return 'Confirm Driver is On the Way 📍';
+      if (next === 'delivered') return 'Confirm Delivered to Customer 🎉';
+    }
     switch (next) {
       case 'received': return 'Accept & Receive Order ✅';
       case 'searching_driver': return 'Search for Driver 🔍';
       case 'preparing': return 'Start Preparing / Cooking 🔥';
       case 'ready': return 'Mark Ready 📦';
+      case 'driver_assigned': return 'Assign to Driver 👨‍✈️';
       case 'driver_picked_up': return 'Mark Picked Up by Driver 🚴';
       case 'on_the_way': return 'Start Delivery 📍';
       case 'delivered': return 'Complete & Deliver 🎉';
@@ -2055,7 +2108,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-4 space-y-8 font-sans text-start pb-24">
+    <div className="max-w-[1440px] w-full mx-auto p-4 space-y-8 font-sans text-start pb-24">
       
       {/* 🍢 Giant Visual & Audible Alert Modal Popup on New Incoming Orders! */}
       {incomingAlertOrders.length > 0 && (
@@ -2197,7 +2250,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* Responsive Sidebar Hamburger Button */}
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="xl:hidden p-2.5 bg-stone-800 hover:bg-stone-700 text-amber-500 hover:text-amber-400 border border-stone-700/50 rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
+            className="lg:hidden p-2.5 bg-stone-800 hover:bg-stone-700 text-amber-500 hover:text-amber-400 border border-stone-700/50 rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
             title={language === 'ar' ? 'افتح القائمة الجانبية' : 'Open Sidebar'}
           >
             <Menu className="w-5 h-5" />
@@ -2262,8 +2315,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       </div>
 
-      {/* 📱 Dropdown navigation selector for active tabs on mobile & rotated tablets (Visible below xl) */}
-      <div className="xl:hidden w-full bg-stone-900 border border-stone-800 rounded-3xl p-4 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-amber-500/10">
+      {/* 📱 Dropdown navigation selector for active tabs on mobile & rotated tablets (Visible below lg) */}
+      <div className="lg:hidden w-full bg-stone-900 border border-stone-800 rounded-3xl p-4 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-amber-500/10">
         <div className="flex-1 text-start">
           <label className="block text-xs font-bold text-stone-400 mb-1.5 px-1">
             {language === 'ar' ? '🗂️ التبديل السريع بين أقسام الإدارة:' : '🗂️ Quick Switch Admin Section:'}
@@ -2310,7 +2363,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       </div>
 
       {/* 2. Responsive Multi-Tab Grid Workspace */}
-      <div className="flex flex-col xl:flex-row gap-8 items-start w-full">
+      <div className="flex flex-col lg:flex-row gap-8 items-start w-full">
         {/* Mobile Drawer Backdrop */}
         <AnimatePresence>
           {isSidebarOpen && (
@@ -2319,7 +2372,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 z-40 xl:hidden backdrop-blur-xs"
+              className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-xs"
             />
           )}
         </AnimatePresence>
@@ -2327,10 +2380,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* Elegant Sidebar drawer */}
         <aside className={`
           fixed inset-y-0 start-0 z-50 w-72 bg-stone-900 text-stone-100 border-e border-stone-800 p-6 space-y-6 transform transition-transform duration-300 ease-in-out flex flex-col justify-between
-          xl:static xl:translate-x-0 xl:w-64 xl:h-[620px] xl:rounded-3xl xl:border xl:bg-stone-900 xl:p-5 xl:shrink-0
+          lg:static lg:translate-x-0 lg:w-64 lg:h-[620px] lg:rounded-3xl lg:border lg:bg-stone-900 lg:p-5 lg:shrink-0
           ${isSidebarOpen 
             ? 'translate-x-0' 
-            : (language === 'ar' ? 'translate-x-full xl:translate-x-0' : '-translate-x-full xl:translate-x-0')
+            : (language === 'ar' ? 'translate-x-full lg:translate-x-0' : '-translate-x-full lg:translate-x-0')
           }
         `}>
           <div className="space-y-6 flex-1 text-start">
@@ -2344,7 +2397,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
               <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="xl:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white"
+                className="lg:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2967,7 +3020,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       {/* Transition triggers buttons row */}
                       <div className="space-y-1.5">
                         {(() => {
-                          const nextStatus = getNextStatus(ord.status, ord.tableOrDelivery);
+                          const nextStatus = getNextStatus(ord.status, ord.tableOrDelivery, ord);
                           if (!nextStatus) return null;
                           return (
                             <button
@@ -2978,7 +3031,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             >
                               <span>{language === 'ar' ? 'الخطوة التالية ➡️' : 'Next Step ➡️'}</span>
                               <span className="underline">
-                                {language === 'ar' ? getNextStatusLabelAr(nextStatus) : getNextStatusLabelEn(nextStatus)}
+                                {language === 'ar' ? getNextStatusLabelAr(nextStatus, ord.tableOrDelivery) : getNextStatusLabelEn(nextStatus, ord.tableOrDelivery)}
                               </span>
                             </button>
                           );
