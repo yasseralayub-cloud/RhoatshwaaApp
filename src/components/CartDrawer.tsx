@@ -272,6 +272,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       return;
     }
 
+    if (businessSettings?.workingHoursStart && businessSettings?.workingHoursEnd) {
+      if (!isRestaurantOpen(businessSettings.workingHoursStart, businessSettings.workingHoursEnd)) {
+        setErrorMsg(language === 'ar'
+          ? 'المطعم مغلق حاليا خارج أوقات الدوام الرسمي ويسعدنا استقبال طلباتك في أوقات الدوام الرسمية'
+          : 'The restaurant is currently closed outside of official working hours and we are happy to receive your orders during official working hours');
+        return;
+      }
+    }
+
     setLoading(true);
     setErrorMsg('');
 
@@ -478,7 +487,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           `*الأصناف المطلوبة:*\n${listArabic}\n\n` +
           `*الحساب الفرعي:* ${subtotal.toFixed(2)} ريال\n` +
           promoArabic +
-          (taxEnabled ? `*الضريبة (${taxPercent}%):* ${tax.toFixed(2)} ريال\n` : `*الضريبة:* معفى من الضريبة المضافة\n`) +
+          (taxEnabled ? `*الضريبة (${taxPercent}%):* ${tax.toFixed(2)} ريال\n` : '') +
           (deliveryFee > 0 ? `*رسوم التوصيل:* ${deliveryFee.toFixed(2)} ريال\n` : '') +
           `*الإجمالي النهائي:* *${finalTotal.toFixed(2)} ريال*\n` +
           `*طريقة الدفع:* ${payArabic}\n\n` +
@@ -492,7 +501,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           `*Items Ordered:*\n${listEnglish}\n\n` +
           `*Subtotal:* ${subtotal.toFixed(2)} SAR\n` +
           promoEnglish +
-          (taxEnabled ? `*Tax (${taxPercent}%):* ${tax.toFixed(2)} SAR\n` : `*Tax:* VAT Exempted\n`) +
+          (taxEnabled ? `*Tax (${taxPercent}%):* ${tax.toFixed(2)} SAR\n` : '') +
           (deliveryFee > 0 ? `*Delivery Fee:* ${deliveryFee.toFixed(2)} SAR\n` : '') +
           `*Estimated Total:* *${finalTotal.toFixed(2)} SAR*\n` +
           `*Payment:* ${payEnglish}\n\n` +
@@ -639,14 +648,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <span>- {promoDiscount.toFixed(1)} {t('sar')}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm text-dark/50">
-                  <span>
-                    {language === 'ar'
-                      ? `الضريبة (${taxEnabled ? taxPercent : 0}%)`
-                      : `VAT (${taxEnabled ? taxPercent : 0}%)`}
-                  </span>
-                  <span className="text-dark/80">{tax.toFixed(2)} {t('sar')}</span>
-                </div>
+                {taxEnabled && (
+                  <div className="flex justify-between text-sm text-dark/50">
+                    <span>
+                      {language === 'ar'
+                        ? `الضريبة (${taxPercent}%)`
+                        : `VAT (${taxPercent}%)`}
+                    </span>
+                    <span className="text-dark/80">{tax.toFixed(2)} {t('sar')}</span>
+                  </div>
+                )}
                 {tableOrDelivery === 'delivery' && (
                   <div className="flex justify-between text-sm text-amber-650 font-semibold bg-amber-50 rounded-lg px-2 py-1.5 border border-amber-500/10">
                     <span>{language === 'ar' ? 'رسوم التوصيل' : 'Delivery Fee'}</span>
@@ -1109,7 +1120,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   className="w-full bg-yellow hover:bg-yellow/90 text-black font-semibold py-3.5 px-4 rounded-2xl transition-all shadow-md mt-4 disabled:bg-neutral-100 disabled:text-dark/30 text-center flex items-center justify-center gap-2 cursor-pointer active:scale-98 border border-black/5"
                 >
                   <Send className="w-4 h-4" />
-                  {loading ? (language === 'ar' ? 'برجاء الانتظار...' : 'Processing...') : t('placeOrder')}
+                  {loading ? (
+                    language === 'ar' ? 'برجاء الانتظار...' : 'Processing...'
+                  ) : (
+                    (paymentMethod === 'mada' || paymentMethod === 'applepay')
+                      ? (language === 'ar' ? 'ادفع الآن' : 'Pay Now')
+                      : (language === 'ar' ? 'اطلب الآن' : 'Order Now')
+                  )}
                 </button>
               </form>
             </div>

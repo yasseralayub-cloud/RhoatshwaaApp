@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Order } from '../types';
 import { useLanguage } from './LanguageContext';
-import { Search, Loader2, ChefHat, CheckCircle2, Clock, Ban, User, Phone, MapPin, Clipboard, FileText, Printer, QrCode, Sparkles, Bell, X, Truck } from 'lucide-react';
+import { Search, Loader2, ChefHat, CheckCircle2, Clock, Ban, User, Phone, MapPin, Clipboard, FileText, Printer, QrCode, Sparkles, Bell, X, Truck, ShoppingBag } from 'lucide-react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -890,7 +890,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                 ] : [
                   { key: 'received', labelAr: 'تم استلام الطلب', labelEn: 'Received', icon: Clock },
                   { key: 'preparing', labelAr: 'جاري التحضير', labelEn: 'Preparing', icon: ChefHat },
-                  { key: 'ready', labelAr: 'جاهز للاستلام', labelEn: 'Ready for Pickup', icon: Sparkles },
+                  { key: 'ready', labelAr: 'جاهز للاستلام', labelEn: 'Ready for Pickup', icon: ShoppingBag },
                   { key: 'delivered', labelAr: 'تم التسليم 🎉', labelEn: 'Delivered 🎉', icon: CheckCircle2 }
                 ]).map((st, idx) => {
                   const IconComp = st.icon;
@@ -1362,7 +1362,12 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
 
                 <div className="h-px bg-black/5 print:bg-black/30 my-2" />
                 <div className="flex justify-between text-dark font-black text-sm print:text-black print:font-extrabold border-b border-dashed border-black/10 pb-2">
-                  <span className="text-sm">{language === 'ar' ? 'إجمالي الدفع شامل الضريبة:' : 'Total (VAT Inclusive):'}</span>
+                  <span className="text-sm">
+                    {language === 'ar'
+                      ? (businessSettings?.taxEnabled ? 'إجمالي الدفع شامل الضريبة:' : 'إجمالي الدفع النهائي:')
+                      : (businessSettings?.taxEnabled ? 'Total (VAT Inclusive):' : 'Final Total Payment:')
+                    }
+                  </span>
                   <span className="text-dark print:text-black font-black text-base">{(order.total).toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
                 </div>
 
@@ -1418,28 +1423,14 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
             </div>
 
             {/* Modal Bottom Actions Row (Hidden in Print) */}
-            <div className="p-4 bg-neutral-50 border-t border-black/5 flex flex-col sm:flex-row gap-3 print:hidden">
+            <div className="p-4 bg-neutral-50 border-t border-black/5 flex print:hidden">
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-zinc-100 hover:bg-zinc-200 text-dark rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all border border-black/5"
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-zinc-100 hover:bg-zinc-200 text-dark rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all border border-black/5"
               >
                 <Printer className="w-4 h-4 text-dark" />
                 <span>{language === 'ar' ? 'طباعة / حفظ PDF' : 'Print / Save PDF'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveAsImage}
-                disabled={isSavingImage}
-                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-amber-500 hover:bg-amber-600 text-black rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all border border-black/5 disabled:opacity-55"
-              >
-                {isSavingImage ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-black" />
-                ) : (
-                  <Clipboard className="w-4 h-4 text-black" />
-                )}
-                <span>{language === 'ar' ? (isSavingImage ? 'جاري الحفظ...' : 'حفظ الفاتورة كصورة 📸') : (isSavingImage ? 'Saving...' : 'Save as Image 📸')}</span>
               </button>
             </div>
 
@@ -1463,7 +1454,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
             }`}
           >
             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-              <Sparkles className="w-5 h-5 text-yellow-300 animate-bounce" />
+              <Bell className="w-5 h-5 text-yellow-300 animate-bounce" />
             </div>
             <div className="flex-1 min-w-0 pr-2">
               <h4 className="font-bold text-sm leading-tight flex items-center gap-1.5">

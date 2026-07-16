@@ -5271,7 +5271,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   )}
 
-                  {isTaxActive ? (
+                  {isTaxActive && (
                     <div className="flex justify-between">
                       <span>
                         {language === 'ar' 
@@ -5280,17 +5280,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </span>
                       <span>{printTax.toFixed(2)} {t('sar')}</span>
                     </div>
-                  ) : (
-                    <div className="flex justify-between text-black/50 italic text-[9px] font-sans">
-                      <span>{language === 'ar' ? 'حالة الضريبة:' : 'VAT Status:'}</span>
-                      <span>{language === 'ar' ? 'معفى من الضريبة (موقفة)' : 'Tax Exempt / Disabled'}</span>
-                    </div>
                   )}
 
                   <div className="h-px bg-black my-1 border-dotted" />
                   
                   <div className="flex justify-between font-extrabold text-[12px] pt-1 border-t border-black border-dashed">
-                    <span>{language === 'ar' ? 'المجموع شامل الضريبة' : 'GRAND TOTAL'}</span>
+                    <span>
+                      {isTaxActive 
+                        ? (language === 'ar' ? 'المجموع شامل الضريبة' : 'GRAND TOTAL (VAT INC.)') 
+                        : (language === 'ar' ? 'المجموع النهائي' : 'GRAND TOTAL')
+                      }
+                    </span>
                     <span className="font-extrabold">{printTotal.toFixed(2)} {t('sar')}</span>
                   </div>
                   

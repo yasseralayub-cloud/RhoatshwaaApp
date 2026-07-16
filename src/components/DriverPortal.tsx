@@ -965,7 +965,12 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
                               </span>
                             </div>
                             <div className="text-end">
-                              <span className="text-dark/40 text-[9px] block font-bold leading-none uppercase">{isAr ? 'المجموع شامل الضريبة' : 'TOTAL (VAT INCL.)'}</span>
+                              <span className="text-dark/40 text-[9px] block font-bold leading-none uppercase">
+                                {isAr 
+                                  ? (businessSettings?.taxEnabled ? 'المجموع شامل الضريبة' : 'المجموع النهائي للطلب') 
+                                  : (businessSettings?.taxEnabled ? 'TOTAL (VAT INCL.)' : 'FINAL TOTAL')
+                                }
+                              </span>
                               <span className="font-black text-dark mt-1 block text-sm">
                                 {order.total.toFixed(2)} SAR
                               </span>
