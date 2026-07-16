@@ -2108,7 +2108,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }
 
   return (
-    <div className="max-w-[1440px] w-full mx-auto p-4 space-y-8 font-sans text-start pb-24">
+    <div className="max-w-full w-full mx-auto p-2 md:p-4 space-y-8 font-sans text-start pb-24">
       
       {/* 🍢 Giant Visual & Audible Alert Modal Popup on New Incoming Orders! */}
       {incomingAlertOrders.length > 0 && (
@@ -2250,7 +2250,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* Responsive Sidebar Hamburger Button */}
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="lg:hidden p-2.5 bg-stone-800 hover:bg-stone-700 text-amber-500 hover:text-amber-400 border border-stone-700/50 rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
+            className="xl:hidden p-2.5 bg-stone-800 hover:bg-stone-700 text-amber-500 hover:text-amber-400 border border-stone-700/50 rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
             title={language === 'ar' ? 'افتح القائمة الجانبية' : 'Open Sidebar'}
           >
             <Menu className="w-5 h-5" />
@@ -2315,8 +2315,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       </div>
 
-      {/* 📱 Dropdown navigation selector for active tabs on mobile & rotated tablets (Visible below lg) */}
-      <div className="lg:hidden w-full bg-stone-900 border border-stone-800 rounded-3xl p-4 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-amber-500/10">
+      {/* 📱 Dropdown navigation selector for active tabs on mobile & rotated tablets (Visible below xl) */}
+      <div className="xl:hidden w-full bg-stone-900 border border-stone-800 rounded-3xl p-4 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-amber-500/10">
         <div className="flex-1 text-start">
           <label className="block text-xs font-bold text-stone-400 mb-1.5 px-1">
             {language === 'ar' ? '🗂️ التبديل السريع بين أقسام الإدارة:' : '🗂️ Quick Switch Admin Section:'}
@@ -2363,7 +2363,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       </div>
 
       {/* 2. Responsive Multi-Tab Grid Workspace */}
-      <div className="flex flex-col lg:flex-row gap-8 items-start w-full">
+      <div className="flex flex-col xl:flex-row gap-8 items-start w-full">
         {/* Mobile Drawer Backdrop */}
         <AnimatePresence>
           {isSidebarOpen && (
@@ -2372,7 +2372,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-xs"
+              className="fixed inset-0 bg-black/60 z-40 xl:hidden backdrop-blur-xs"
             />
           )}
         </AnimatePresence>
@@ -2380,10 +2380,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* Elegant Sidebar drawer */}
         <aside className={`
           fixed inset-y-0 start-0 z-50 w-72 bg-stone-900 text-stone-100 border-e border-stone-800 p-6 space-y-6 transform transition-transform duration-300 ease-in-out flex flex-col justify-between
-          lg:static lg:translate-x-0 lg:w-64 lg:h-[620px] lg:rounded-3xl lg:border lg:bg-stone-900 lg:p-5 lg:shrink-0
+          xl:static xl:translate-x-0 xl:w-64 xl:h-[620px] xl:rounded-3xl xl:border xl:bg-stone-900 xl:p-5 xl:shrink-0
           ${isSidebarOpen 
             ? 'translate-x-0' 
-            : (language === 'ar' ? 'translate-x-full lg:translate-x-0' : '-translate-x-full lg:translate-x-0')
+            : (language === 'ar' ? 'translate-x-full xl:translate-x-0' : '-translate-x-full xl:translate-x-0')
           }
         `}>
           <div className="space-y-6 flex-1 text-start">
@@ -2397,7 +2397,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
               <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="lg:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white"
+                className="xl:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>

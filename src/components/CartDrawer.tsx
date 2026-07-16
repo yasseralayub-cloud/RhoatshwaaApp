@@ -275,8 +275,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     if (businessSettings?.workingHoursStart && businessSettings?.workingHoursEnd) {
       if (!isRestaurantOpen(businessSettings.workingHoursStart, businessSettings.workingHoursEnd)) {
         setErrorMsg(language === 'ar'
-          ? 'المطعم مغلق حاليا خارج أوقات الدوام الرسمي ويسعدنا استقبال طلباتك في أوقات الدوام الرسمية'
-          : 'The restaurant is currently closed outside of official working hours and we are happy to receive your orders during official working hours');
+          ? 'المطعم خارج اوقات الدوام ونسعد باستقبال طلباتك في اوقات الدوام الرسمية'
+          : 'The restaurant is currently closed outside of working hours and we are pleased to receive your orders during official working hours');
         return;
       }
     }
@@ -897,23 +897,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         <span className="text-[11px] font-bold whitespace-nowrap">{language === 'ar' ? 'تحويل بنكي' : 'Bank Transfer'}</span>
                       </button>
 
-                      {/* APPLE PAY (SOON) */}
+                      {/* MADA / CARD / NETWORK */}
                       <button
                         type="button"
-                        onClick={() => {
-                          alert(
-                            language === 'ar' 
-                              ? ' خدمة الدفع عبر Apple Pay سوف تتوفر قريباً جداً في الموقع لتجربة دفع أكثر سهولة وأماناً!' 
-                              : ' Apple Pay will be available very soon! Please use Bank Transfer or Cash payment methods in the meantime.'
-                          );
-                        }}
-                        className="p-3 rounded-2xl border border-black/5 bg-neutral-50 text-dark/35 relative text-center flex flex-col items-center justify-center gap-1.5 cursor-pointer opacity-70 hover:opacity-90 transition-all"
+                        onClick={() => setPaymentMethod('mada')}
+                        className={`p-3 rounded-2xl border text-center flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          paymentMethod === 'mada'
+                            ? 'border-yellow bg-yellow/10 text-yellow-900 font-extrabold shadow-xs'
+                            : 'border-black/5 bg-neutral-50 text-dark/60 hover:border-black/15 hover:text-dark'
+                        }`}
                       >
-                        <span className="absolute -top-1.5 -right-1.5 bg-yellow text-[8px] font-black px-1.5 py-0.5 rounded-full text-black shadow-xs border border-white">
-                          {language === 'ar' ? 'قريباً' : 'Soon'}
-                        </span>
-                        <CreditCard className="w-5 h-5 text-dark/30" />
-                        <span className="text-[11px] font-bold whitespace-nowrap">Apple Pay</span>
+                        <CreditCard className="w-5 h-5 text-yellow-750" />
+                        <span className="text-[11px] font-bold whitespace-nowrap">{language === 'ar' ? 'شبكة / مدى' : 'Mada / Card'}</span>
                       </button>
                     </div>
                   </div>
@@ -1091,20 +1086,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 {/* Operating Hours Alert */}
                 {businessSettings?.workingHoursStart && businessSettings?.workingHoursEnd && 
                  !isRestaurantOpen(businessSettings.workingHoursStart, businessSettings.workingHoursEnd) && (
-                  <div className="mt-3 p-3 bg-amber-50 border border-amber-250/20 rounded-xl text-start flex gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-[11px] font-bold text-amber-800">
-                        {language === 'ar' 
-                          ? 'تنبيه: المطعم مغلق حالياً خارج أوقات العمل الرسمية' 
-                          : 'Notice: Closed Outside Official Hours'}
-                      </p>
-                      <p className="text-[10px] text-amber-700/80 mt-0.5 leading-relaxed">
-                        {language === 'ar'
-                          ? `أوقات العمل الرسمية كل يوم من الساعة ${formatTime12h(businessSettings.workingHoursStart, 'ar')} إلى الساعة ${formatTime12h(businessSettings.workingHoursEnd, 'ar')}. يمكنك تقديم طلبك وسوف نقوم باستلامه وتجهيزه فور بدء ساعات العمل.`
-                          : `Official operating hours are daily from ${formatTime12h(businessSettings.workingHoursStart, 'en')} to ${formatTime12h(businessSettings.workingHoursEnd, 'en')}. You may place your order, and we will process it as soon as we open.`}
-                      </p>
-                    </div>
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-start">
+                    <p className="text-[11px] font-bold text-red-800">
+                      {language === 'ar' 
+                        ? 'المطعم خارج اوقات الدوام ونسعد باستقبال طلباتك في اوقات الدوام الرسمية' 
+                        : 'The restaurant is currently closed outside of working hours and we are pleased to receive your orders during official working hours'}
+                    </p>
                   </div>
                 )}
 

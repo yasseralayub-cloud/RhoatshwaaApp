@@ -5,7 +5,6 @@ import { Search, Loader2, ChefHat, CheckCircle2, Clock, Ban, User, Phone, MapPin
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
-import html2canvas from 'html2canvas';
 
 interface OrderTrackerProps {
   initialOrderId?: string;
@@ -29,7 +28,6 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
-  const [isSavingImage, setIsSavingImage] = useState(false);
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   // Directly trigger print system for thermal receipt printer layout
@@ -38,189 +36,6 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
     setTimeout(() => {
       window.print();
     }, 250);
-  };
-
-  const handleSaveAsImage = async () => {
-    if (!printAreaRef.current) return;
-    setIsSavingImage(true);
-    
-    // Backup original window.getComputedStyle to bypass any oklab/oklch parser issues in html2canvas
-    const originalGetComputedStyle = window.getComputedStyle;
-    
-    try {
-      const element = printAreaRef.current;
-      const originalStyle = element.style.cssText;
-      
-      element.style.overflowY = 'visible';
-      element.style.maxHeight = 'none';
-      element.style.backgroundColor = '#ffffff';
-
-      // Simple OKLab/OKLch to RGB conversion helper
-      const oklabToRgb = (oklabStr: string): string => {
-        const str = oklabStr.toLowerCase().trim();
-        if (!str.startsWith('oklab') && !str.startsWith('oklch')) {
-          return oklabStr;
-        }
-        
-        const isOklch = str.startsWith('oklch');
-        const match = str.match(/(?:oklab|oklch)\(([^)]+)\)/);
-        if (!match) return oklabStr;
-        
-        const content = match[1].trim();
-        const parts = content.split(/[\s/]+/);
-        if (parts.length < 3) return oklabStr;
-        
-        const L = parseFloat(parts[0]);
-        const val2 = parseFloat(parts[1]); // a for oklab, c for oklch
-        const val3 = parseFloat(parts[2]); // b for oklab, h for oklch
-        const alpha = parts.length >= 4 ? parseFloat(parts[3]) : 1;
-        
-        let l = L;
-        let a = 0;
-        let b = 0;
-        
-        if (isOklch) {
-          const c = val2;
-          const hDeg = val3;
-          const hRad = (hDeg * Math.PI) / 180;
-          a = c * Math.cos(hRad);
-          b = c * Math.sin(hRad);
-        } else {
-          a = val2;
-          b = val3;
-        }
-        
-        // Inverse OKLab transform to LMS
-        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
-        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
-        const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
-        
-        // LMS to linear sRGB
-        const l3 = l_ * l_ * l_;
-        const m3 = m_ * m_ * m_;
-        const s3 = s_ * s_ * s_;
-        
-        const rLinear = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
-        const gLinear = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
-        const bLinear = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
-        
-        const gamma = (c: number) => {
-          return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-        };
-        
-        let r = Math.round(Math.max(0, Math.min(1, gamma(rLinear))) * 255);
-        let g = Math.round(Math.max(0, Math.min(1, gamma(gLinear))) * 255);
-        let b_val = Math.round(Math.max(0, Math.min(1, gamma(bLinear))) * 255);
-        
-        if (isNaN(r)) r = 0;
-        if (isNaN(g)) g = 0;
-        if (isNaN(b_val)) b_val = 0;
-        
-        if (alpha === 1) {
-          return `rgb(${r}, ${g}, ${b_val})`;
-        } else {
-          return `rgba(${r}, ${g}, ${b_val}, ${alpha})`;
-        }
-      };
-
-      const colorProperties = [
-        'color',
-        'backgroundColor',
-        'borderColor',
-        'borderTopColor',
-        'borderBottomColor',
-        'borderLeftColor',
-        'borderRightColor',
-        'outlineColor',
-        'fill',
-        'stroke'
-      ];
-
-      // Temporary override window.getComputedStyle
-      window.getComputedStyle = function(elt, pseudoElt) {
-        const style = originalGetComputedStyle(elt, pseudoElt);
-        
-        return new Proxy(style, {
-          get(target, prop, receiver) {
-            const val = Reflect.get(target, prop, receiver);
-            
-            if (typeof prop === 'string' && typeof val === 'string') {
-              const lowerProp = prop.toLowerCase();
-              const isColorProp = colorProperties.includes(prop) || 
-                                  lowerProp.includes('color') || 
-                                  lowerProp === 'fill' || 
-                                  lowerProp === 'stroke';
-              
-              if (isColorProp && (val.includes('oklab') || val.includes('oklch'))) {
-                try {
-                  return oklabToRgb(val);
-                } catch (e) {
-                  return val;
-                }
-              }
-            }
-            
-            if (typeof val === 'function') {
-              return function(...args: any[]) {
-                const res = val.apply(target, args);
-                if (typeof res === 'string' && (res.includes('oklab') || res.includes('oklch'))) {
-                  try {
-                    return oklabToRgb(res);
-                  } catch (e) {
-                    return res;
-                  }
-                }
-                return res;
-              };
-            }
-            
-            return val;
-          }
-        });
-      };
-      
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false
-      });
-      
-      element.style.cssText = originalStyle;
-
-      const imgData = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = `Fatoora-${order?.id || 'Receipt'}.png`;
-      link.href = imgData;
-      link.click();
-      
-      setToast({
-        show: true,
-        orderId: order?.id || '',
-        customerName: order?.customerName || '',
-        titleAr: 'تم الحفظ بنجاح! 📸',
-        titleEn: 'Saved Successfully! 📸',
-        messageAr: 'تم حفظ الفاتورة كصورة بنجاح في جهازك كملف PNG.',
-        messageEn: 'The invoice has been saved as a PNG image on your device.',
-        type: 'success'
-      });
-    } catch (err) {
-      console.error('Failed to capture receipt canvas:', err);
-      setToast({
-        show: true,
-        orderId: order?.id || '',
-        customerName: order?.customerName || '',
-        titleAr: 'فشل الحفظ ❌',
-        titleEn: 'Saving Failed ❌',
-        messageAr: 'حدث خطأ أثناء حفظ الفاتورة كصورة. يرجى تكرار المحاولة.',
-        messageEn: 'An error occurred while saving the invoice. Please try again.',
-        type: 'alert'
-      });
-    } finally {
-      // Restore getComputedStyle!
-      window.getComputedStyle = originalGetComputedStyle;
-      setIsSavingImage(false);
-    }
   };
 
   // States & Refs for Visual Toast Notifications
@@ -1186,9 +1001,9 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
           </div>
         </motion.div>
       ) : (
-        <div className="h-44 flex flex-col items-center justify-center text-center text-zinc-500 border border-dashed border-zinc-850 rounded-3xl bg-zinc-950/15 p-6">
-          <Clock className="w-10 h-10 text-zinc-700 stroke-[1.5] mb-2" />
-          <p className="font-bold text-xs text-zinc-400">{language === 'ar' ? 'أدخل رمز الطلب بالأعلى لعرض التحديثات المباشرة' : 'Input your code to begin live meal tracking'}</p>
+        <div className="h-44 flex flex-col items-center justify-center text-center text-zinc-500 border border-dashed border-zinc-200 rounded-3xl bg-neutral-50 p-6">
+          <Clock className="w-10 h-10 text-zinc-400 stroke-[1.5] mb-2" />
+          <p className="font-bold text-xs text-zinc-500">{language === 'ar' ? 'أدخل رمز الطلب بالأعلى لعرض التحديثات المباشرة' : 'Input your code to begin live meal tracking'}</p>
         </div>
       )}
 
@@ -1234,7 +1049,10 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                 </p>
 
                 <div className="bg-yellow/15 border border-yellow/25 text-yellow-700 font-bold px-3 py-1 rounded-full text-[10px] inline-block uppercase tracking-wider print:bg-gray-150 print:border-gray-300 print:text-black mt-1">
-                  {language === 'ar' ? 'فاتورة ضريبية مبسطة' : 'Simplified Tax Invoice'}
+                  {language === 'ar' 
+                    ? (businessSettings.taxEnabled ? 'فاتورة ضريبية مبسطة' : 'فاتورة مبيعات') 
+                    : (businessSettings.taxEnabled ? 'Simplified Tax Invoice' : 'Sales Receipt')
+                  }
                 </div>
 
                 <p className="text-xs text-dark/60 print:text-zinc-700 font-mono mt-3">
@@ -1243,10 +1061,12 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                     {language === 'ar' ? businessSettings.restaurantNameAr : businessSettings.restaurantNameEn}
                   </span>
                 </p>
-                <p className="text-xs text-dark/60 print:text-zinc-700 font-mono">
-                  {language === 'ar' ? 'الرقم الضريبي للبائع: ' : 'Seller VAT Registration No: '}
-                  <span className="font-bold text-dark print:text-black font-mono">{businessSettings.vatNumber || '310123456700003'}</span>
-                </p>
+                {businessSettings.taxEnabled && (
+                  <p className="text-xs text-dark/60 print:text-zinc-700 font-mono">
+                    {language === 'ar' ? 'الرقم الضريبي للبائع: ' : 'Seller VAT Registration No: '}
+                    <span className="font-bold text-dark print:text-black font-mono">{businessSettings.vatNumber || '310123456700003'}</span>
+                  </p>
+                )}
                 <p className="text-[10px] text-dark/40 print:text-zinc-700 font-bold">
                   {language === 'ar' ? businessSettings.addressAr : businessSettings.addressEn}
                 </p>
