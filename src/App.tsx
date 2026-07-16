@@ -20,6 +20,7 @@ import { PrivacyPolicyModal } from './components/PrivacyPolicyModal';
 
 function MenuAndOrdersApp() {
   const { language, t, isRtl } = useLanguage();
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   // Selected State variables
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(() => {
@@ -223,11 +224,14 @@ function MenuAndOrdersApp() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let changed = false;
+    let is_admin = false;
+    let is_driver = false;
 
     if (params.get('admin') === 'true') {
       setShowAdminTab(true);
       localStorage.setItem('show_admin_tab', 'true');
       changed = true;
+      is_admin = true;
     }
 
     if (params.get('driver') === 'true') {
@@ -235,6 +239,7 @@ function MenuAndOrdersApp() {
       localStorage.setItem('show_driver_tab', 'true');
       setActiveTab('driver');
       changed = true;
+      is_driver = true;
     }
 
     if (changed) {
@@ -243,8 +248,17 @@ function MenuAndOrdersApp() {
       cleanParams.delete('admin');
       cleanParams.delete('driver');
       const suffix = cleanParams.toString();
-      const newUrl = window.location.pathname + (suffix ? `?${suffix}` : '');
+      
+      let newPath = window.location.pathname;
+      if (is_admin) {
+        newPath = '/admin';
+      } else if (is_driver) {
+        newPath = '/driver';
+      }
+      
+      const newUrl = newPath + (suffix ? `?${suffix}` : '');
       window.history.replaceState({}, document.title, newUrl);
+      setCurrentPath(newPath);
     }
   }, []);
 
@@ -523,8 +537,8 @@ function MenuAndOrdersApp() {
   const cartTotalItemsCount = cart.reduce((sum, c) => sum + c.quantity, 0);
 
   // Check if we are on standalone sub-pages
-  const isStandaloneDriver = window.location.pathname === '/driver' || window.location.pathname.startsWith('/driver/') || window.location.search.includes('driver=true') || window.location.search.includes('mode=driver');
-  const isStandaloneAdmin = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/') || window.location.search.includes('admin=true');
+  const isStandaloneDriver = currentPath === '/driver' || currentPath.startsWith('/driver/') || window.location.search.includes('driver=true') || window.location.search.includes('mode=driver');
+  const isStandaloneAdmin = currentPath === '/admin' || currentPath.startsWith('/admin/') || window.location.search.includes('admin=true');
 
   if (isStandaloneDriver) {
     return (
