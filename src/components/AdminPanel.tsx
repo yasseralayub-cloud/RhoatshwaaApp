@@ -270,6 +270,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [setDeliveryFee, setSetDeliveryFee] = useState(15);
   const [setGracePeriod, setSetGracePeriod] = useState(30);
   const [setRingtoneType, setSetRingtoneType] = useState('high-pitch');
+  const [setWebsiteUrl, setSetWebsiteUrl] = useState('https://rhoatshwaa-app.vercel.app');
 
   // Bank transfer state variables
   const [bankNameAr, setBankNameAr] = useState('مصرف الراجحي');
@@ -407,6 +408,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSetDeliveryFee(businessSettings.deliveryFee ?? 15);
       setSetGracePeriod(businessSettings.gracePeriod ?? 30);
       setSetRingtoneType(businessSettings.ringtoneType || 'high-pitch');
+      setSetWebsiteUrl(businessSettings.websiteUrl || 'https://rhoatshwaa-app.vercel.app');
       setSetReceiptWidth(businessSettings.receiptWidth || '80mm');
       
       // Sync bank settings
@@ -486,7 +488,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       printRoutingMode: printRoutingMode,
       deliveryFee: Number(setDeliveryFee),
       gracePeriod: Number(setGracePeriod || 30),
-      ringtoneType: setRingtoneType || 'high-pitch'
+      ringtoneType: setRingtoneType || 'high-pitch',
+      websiteUrl: setWebsiteUrl
     };
 
     if (onSettingsUpdate) {
@@ -975,7 +978,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         cleanPhone = "966" + cleanPhone;
       }
 
-      const trackingLink = `${window.location.origin}/?orderId=${orderId}`;
+      const baseDomain = (businessSettings?.websiteUrl || 'https://rhoatshwaa-app.vercel.app').replace(/\/+$/, '');
+      const trackingLink = `${baseDomain}/?orderId=${orderId}`;
       let welcome = `يا هلا والله بـ ${orderToUpdate.customerName} 👋`;
       let body = "";
 
@@ -985,14 +989,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           const transferNote = orderToUpdate.paymentMethod === 'transfer'
             ? `\n\n🌸 لطفاً ومحبة، بما أنك اخترت الدفع عبر التحويل البنكي، يسعدنا جداً لو ترسل لنا صورة إيصال التحويل هنا في الواتساب لتأكيد طلبك وتجهيزه فوراً! ❤️`
             : '';
-          body = `طلبك رقم (#${orderId}) صار مؤكد وبدأنا بالتحضير الفوري. خلك ريلاكس وتابع طلبك خطوة بخطوة من هنا:\n${trackingLink}&transferNote\n\nشكراً لاختيارك لنا يا غالي! ❤️`;
+          body = `طلبك رقم (#${orderId}) صار مؤكد وبدأنا بالتحضير الفوري. خلك ريلاكس وتابع طلبك خطوة بخطوة من هنا:\n${trackingLink}${transferNote}\n\nشكراً لاختيارك لنا يا غالي! ❤️`;
           break;
         case 'preparing':
           welcome = `يا هلا يا ${orderToUpdate.customerName} 🔥`;
           const preparingTransferNote = orderToUpdate.paymentMethod === 'transfer'
             ? `\n\n🌸 تذكير لطيف: إذا لم تقم بإرسال إيصال التحويل بعد، يرجى مشاركته معنا هنا في الواتساب لتأكيد الدفع. شكراً لك! ❤️`
             : '';
-          body = `طلبك رقم (#${orderId}) الحين على الجمر وبدأ يستوي على كيف كيفك! 🍢🥤\nتابع حالته مباشرة من هنا:\ndots${trackingLink}dots${preparingTransferNote}`;
+          body = `طلبك رقم (#${orderId}) الحين على الجمر وبدأ يستوي على كيف كيفك! 🍢🥤\nتابع حالته مباشرة من هنا:\n${trackingLink}${preparingTransferNote}`;
           break;
         case 'ready':
           if (orderToUpdate.tableOrDelivery === 'delivery') {
@@ -3110,16 +3114,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   break;
                               }
 
+                              const baseDomain = (businessSettings?.websiteUrl || 'https://rhoatshwaa-app.vercel.app').replace(/\/+$/, '');
                               const msg = language === 'ar'
                                 ? `أهلاً بك يا ${ord.customerName} 👋\n\n*تحديث مهم لطلبك من مطعم ${rNameAr}* 🍢🥤\n\n` +
                                   `*رقم الطلب:* \`${ord.id}\`\n` +
                                   `*حالة الطلب الحالية:* ${statusTextAr}\n\n` +
-                                  `يمكنك تتبع حالة الطلب الفورية بضغطة واحدة وعرض الفاتورة عبر الرابط التالي:\n${window.location.origin}/?orderId=${ord.id}\n\n` +
+                                  `يمكنك تتبع حالة الطلب الفورية بضغطة واحدة وعرض الفاتورة عبر الرابط التالي:\n${baseDomain}/?orderId=${ord.id}\n\n` +
                                   `_نشكرك لاختيارك مطعمنا ونسعد بخدمتك دائماً!_`
                                 : `Hello ${ord.customerName} 👋\n\n*Important order update from ${rNameEn}* 🍢🥤\n\n` +
                                   `*Order Code:* \`${ord.id}\`\n` +
                                   `*Current Status:* ${statusTextEn}\n\n` +
-                                  `You can track your live order status anytime here:\n${window.location.origin}/?orderId=${ord.id}\n\n` +
+                                  `You can track your live order status anytime here:\n${baseDomain}/?orderId=${ord.id}\n\n` +
                                   `_Thank you for choosing us, looking forward to serving you!_`;
                               
                               window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`, '_blank');
@@ -3276,6 +3281,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 value={setWhatsappNumber}
                 onChange={(e) => setSetWhatsappNumber(e.target.value)}
                 placeholder="9665..."
+                className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                {language === 'ar' ? 'رابط الموقع المعتمد في الواتساب (رابط Vercel أو الدومين)' : 'Website URL for WhatsApp links (Vercel or custom domain)'}
+              </label>
+              <input
+                type="text"
+                value={setWebsiteUrl}
+                onChange={(e) => setSetWebsiteUrl(e.target.value)}
+                placeholder="https://rhoatshwaa-app.vercel.app"
                 className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
               />
             </div>
@@ -4496,13 +4513,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <input
                   type="text"
                   readOnly
-                  value={window.location.origin + '/driver'}
+                  value={(businessSettings?.websiteUrl || window.location.origin).replace(/\/+$/, '') + '/driver'}
                   className="flex-1 text-[10px] bg-white border border-yellow-200 rounded-lg p-2 font-mono outline-none text-slate-700 select-all"
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(window.location.origin + '/driver');
+                    navigator.clipboard.writeText((businessSettings?.websiteUrl || window.location.origin).replace(/\/+$/, '') + '/driver');
                     alert(language === 'ar' ? 'تم نسخ الرابط بنجاح! 📋' : 'Link copied successfully! 📋');
                   }}
                   className="bg-yellow hover:bg-yellow-500 text-black text-[10px] font-black px-3 py-2 rounded-lg cursor-pointer transition-all shrink-0"

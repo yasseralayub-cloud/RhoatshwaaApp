@@ -125,6 +125,7 @@ export interface BusinessSettings {
   deliveryFee?: number;
   gracePeriod?: number;
   ringtoneType?: string;
+  websiteUrl?: string;
 }
 
 export interface Category {
