@@ -626,5 +626,9 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   bankIban: "SA8380000432608010007890",
   bankQrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=432608010007890",
   bankEnabled: true,
-  deliveryFee: 15
+  deliveryFee: 15,
+  onlinePaymentEnabled: true,
+  onlinePaymentGateway: 'sandbox',
+  onlinePaymentApiKey: 'sk_test_mock_key',
+  onlinePaymentMerchantId: 'merchant.sa.rehla'
 };

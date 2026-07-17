@@ -5,22 +5,57 @@
 export function isRestaurantOpen(start?: string, end?: string): boolean {
   if (!start || !end) return true; // default to open if not set
   
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  
-  // Parse hours and minutes
-  const [startHour, startMin] = start.split(':').map(Number);
-  const [endHour, endMin] = end.split(':').map(Number);
-  
-  const startMinutes = startHour * 60 + startMin;
-  const endMinutes = endHour * 60 + endMin;
-  
-  if (startMinutes < endMinutes) {
-    // Standard range on same calendar day (e.g., 08:00 to 16:00)
-    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
-  } else {
-    // Overnight range spanning past midnight (e.g., 17:00 to 02:00)
-    return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+  try {
+    // Get KSA time components directly using Intl.DateTimeFormat
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: 'Asia/Riyadh',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    };
+    const formatter = new Intl.DateTimeFormat('en-US', options);
+    const formatted = formatter.format(new Date()); // e.g., "19:31" or "02:15"
+    
+    // In some systems, 24-hour format can return "24:15" instead of "00:15"
+    const parts = formatted.split(':');
+    let ksaHour = parseInt(parts[0], 10);
+    const ksaMin = parseInt(parts[1], 10);
+    
+    if (ksaHour === 24) ksaHour = 0;
+    
+    const currentMinutes = ksaHour * 60 + ksaMin;
+    
+    // Parse hours and minutes
+    const [startHour, startMin] = start.split(':').map(Number);
+    const [endHour, endMin] = end.split(':').map(Number);
+    
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+    
+    if (startMinutes < endMinutes) {
+      // Standard range on same calendar day (e.g., 08:00 to 16:00)
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    } else {
+      // Overnight range spanning past midnight (e.g., 17:00 to 02:00)
+      return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+    }
+  } catch (err) {
+    console.error('Error parsing Riyadh timezone in isRestaurantOpen:', err);
+    // Fallback to local browser time if Intl fails
+    const localNow = new Date();
+    const currentMinutes = localNow.getHours() * 60 + localNow.getMinutes();
+    
+    const [startHour, startMin] = start.split(':').map(Number);
+    const [endHour, endMin] = end.split(':').map(Number);
+    
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+    
+    if (startMinutes < endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    } else {
+      return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+    }
   }
 }
 

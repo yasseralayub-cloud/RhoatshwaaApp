@@ -900,15 +900,27 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       {/* MADA / CARD / NETWORK */}
                       <button
                         type="button"
-                        onClick={() => setPaymentMethod('mada')}
-                        className={`p-3 rounded-2xl border text-center flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                          paymentMethod === 'mada'
-                            ? 'border-yellow bg-yellow/10 text-yellow-900 font-extrabold shadow-xs'
-                            : 'border-black/5 bg-neutral-50 text-dark/60 hover:border-black/15 hover:text-dark'
+                        disabled={businessSettings?.onlinePaymentEnabled === false}
+                        onClick={() => {
+                          if (businessSettings?.onlinePaymentEnabled !== false) {
+                            setPaymentMethod('mada');
+                          }
+                        }}
+                        className={`p-3 rounded-2xl border text-center flex flex-col items-center justify-center gap-1 transition-all ${
+                          businessSettings?.onlinePaymentEnabled === false
+                            ? 'border-dashed border-slate-300 bg-slate-100/50 text-slate-450 opacity-80 cursor-not-allowed'
+                            : paymentMethod === 'mada'
+                              ? 'border-yellow bg-yellow/10 text-yellow-900 font-extrabold shadow-xs cursor-pointer'
+                              : 'border-black/5 bg-neutral-50 text-dark/60 hover:border-black/15 hover:text-dark cursor-pointer'
                         }`}
                       >
-                        <CreditCard className="w-5 h-5 text-yellow-750" />
+                        <CreditCard className={`w-5 h-5 ${businessSettings?.onlinePaymentEnabled === false ? 'text-slate-400' : 'text-yellow-750'}`} />
                         <span className="text-[11px] font-bold whitespace-nowrap">{language === 'ar' ? 'شبكة / مدى' : 'Mada / Card'}</span>
+                        {businessSettings?.onlinePaymentEnabled === false && (
+                          <span className="text-[8px] font-black text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-200">
+                            {language === 'ar' ? 'قريباً لراحتكم' : 'Soon'}
+                          </span>
+                        )}
                       </button>
                     </div>
                   </div>

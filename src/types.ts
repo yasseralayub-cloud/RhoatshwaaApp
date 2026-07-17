@@ -126,6 +126,10 @@ export interface BusinessSettings {
   gracePeriod?: number;
   ringtoneType?: string;
   websiteUrl?: string;
+  onlinePaymentEnabled?: boolean;
+  onlinePaymentGateway?: 'stripe' | 'hyperpay' | 'paytabs' | 'moyasar' | 'sandbox';
+  onlinePaymentApiKey?: string;
+  onlinePaymentMerchantId?: string;
 }
 
 export interface Category {

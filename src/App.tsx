@@ -17,6 +17,7 @@ import { PromotionCountdown } from './components/PromotionCountdown';
 import { WelcomePortalModal } from './components/WelcomePortalModal';
 import { SandwichCustomizationModal, isSandwichItem, isFriesItem } from './components/SandwichCustomizationModal';
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal';
+import { ChatBot } from './components/ChatBot';
 
 function MenuAndOrdersApp() {
   const { language, t, isRtl } = useLanguage();
@@ -841,6 +842,11 @@ function MenuAndOrdersApp() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Interactive ChatBot Smart Assistant */}
+      {!isCartOpen && (
+        <ChatBot menuItems={menuItems} businessSettings={businessSettings} language={language} />
+      )}
 
     </div>
   );

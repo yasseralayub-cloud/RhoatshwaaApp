@@ -59,7 +59,8 @@ import {
   Mail,
   Copy,
   ExternalLink,
-  Bell
+  Bell,
+  CreditCard
 } from 'lucide-react';
 import {
   BarChart,
@@ -272,6 +273,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [setRingtoneType, setSetRingtoneType] = useState('high-pitch');
   const [setWebsiteUrl, setSetWebsiteUrl] = useState('https://rhoatshwaa-app.vercel.app');
 
+  // Online Payment control state variables
+  const [onlinePaymentEnabled, setOnlinePaymentEnabled] = useState(true);
+  const [onlinePaymentGateway, setOnlinePaymentGateway] = useState<'stripe' | 'hyperpay' | 'paytabs' | 'moyasar' | 'sandbox'>('sandbox');
+  const [onlinePaymentApiKey, setOnlinePaymentApiKey] = useState('');
+  const [onlinePaymentMerchantId, setOnlinePaymentMerchantId] = useState('');
+
   // Bank transfer state variables
   const [bankNameAr, setBankNameAr] = useState('مصرف الراجحي');
   const [bankNameEn, setBankNameEn] = useState('Al Rajhi Bank');
@@ -410,6 +417,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSetRingtoneType(businessSettings.ringtoneType || 'high-pitch');
       setSetWebsiteUrl(businessSettings.websiteUrl || 'https://rhoatshwaa-app.vercel.app');
       setSetReceiptWidth(businessSettings.receiptWidth || '80mm');
+      setOnlinePaymentEnabled(businessSettings.onlinePaymentEnabled ?? true);
+      setOnlinePaymentGateway(businessSettings.onlinePaymentGateway || 'sandbox');
+      setOnlinePaymentApiKey(businessSettings.onlinePaymentApiKey || '');
+      setOnlinePaymentMerchantId(businessSettings.onlinePaymentMerchantId || '');
       
       // Sync bank settings
       setBankNameAr(businessSettings.bankNameAr || 'مصرف الراجحي');
@@ -489,7 +500,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       deliveryFee: Number(setDeliveryFee),
       gracePeriod: Number(setGracePeriod || 30),
       ringtoneType: setRingtoneType || 'high-pitch',
-      websiteUrl: setWebsiteUrl
+      websiteUrl: setWebsiteUrl,
+      onlinePaymentEnabled: onlinePaymentEnabled,
+      onlinePaymentGateway: onlinePaymentGateway,
+      onlinePaymentApiKey: onlinePaymentApiKey,
+      onlinePaymentMerchantId: onlinePaymentMerchantId
     };
 
     if (onSettingsUpdate) {
@@ -2249,6 +2264,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <div className="z-10 flex items-center gap-3">
           {/* Responsive Sidebar Hamburger Button */}
           <button
+            id="sidebar-hamburger"
             onClick={() => setIsSidebarOpen(true)}
             className="xl:hidden p-2.5 bg-stone-800 hover:bg-stone-700 text-amber-500 hover:text-amber-400 border border-stone-700/50 rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
             title={language === 'ar' ? 'افتح القائمة الجانبية' : 'Open Sidebar'}
@@ -2316,7 +2332,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       </div>
 
       {/* 📱 Dropdown navigation selector for active tabs on mobile & rotated tablets (Visible below xl) */}
-      <div className="xl:hidden w-full bg-stone-900 border border-stone-800 rounded-3xl p-4 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-amber-500/10">
+      <div 
+        id="tablet-landscape-dropdown"
+        className="xl:hidden w-full bg-stone-900 border border-stone-800 rounded-3xl p-4 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-amber-500/10"
+      >
         <div className="flex-1 text-start">
           <label className="block text-xs font-bold text-stone-400 mb-1.5 px-1">
             {language === 'ar' ? '🗂️ التبديل السريع بين أقسام الإدارة:' : '🗂️ Quick Switch Admin Section:'}
@@ -2363,11 +2382,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       </div>
 
       {/* 2. Responsive Multi-Tab Grid Workspace */}
-      <div className="flex flex-col xl:flex-row gap-8 items-start w-full">
+      <div id="admin-main-grid" className="flex flex-col xl:flex-row gap-8 items-start w-full">
         {/* Mobile Drawer Backdrop */}
         <AnimatePresence>
           {isSidebarOpen && (
             <motion.div
+              id="sidebar-backdrop"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -2378,14 +2398,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </AnimatePresence>
 
         {/* Elegant Sidebar drawer */}
-        <aside className={`
-          fixed inset-y-0 start-0 z-50 w-72 bg-stone-900 text-stone-100 border-e border-stone-800 p-6 space-y-6 transform transition-transform duration-300 ease-in-out flex flex-col justify-between
-          xl:static xl:translate-x-0 xl:w-64 xl:h-[620px] xl:rounded-3xl xl:border xl:bg-stone-900 xl:p-5 xl:shrink-0
-          ${isSidebarOpen 
-            ? 'translate-x-0' 
-            : (language === 'ar' ? 'translate-x-full xl:translate-x-0' : '-translate-x-full xl:translate-x-0')
-          }
-        `}>
+        <aside 
+          id="admin-sidebar"
+          data-lang={language}
+          className={`
+            fixed inset-y-0 start-0 z-50 w-72 bg-stone-900 text-stone-100 border-e border-stone-800 p-6 space-y-6 transform transition-transform duration-300 ease-in-out flex flex-col justify-between
+            xl:static xl:translate-x-0 xl:w-64 xl:h-[620px] xl:rounded-3xl xl:border xl:bg-stone-900 xl:p-5 xl:shrink-0
+            ${isSidebarOpen 
+              ? 'translate-x-0 sidebar-open' 
+              : (language === 'ar' ? 'translate-x-full xl:translate-x-0' : '-translate-x-full xl:translate-x-0')
+            }
+          `}
+        >
           <div className="space-y-6 flex-1 text-start">
             <div className="flex items-center justify-between border-b border-stone-850 pb-4">
               <div className="flex items-center gap-2">
@@ -3597,6 +3621,95 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   >
                     🔊 {language === 'ar' ? 'تجربة' : 'Test'}
                   </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Online Payment Settings Section */}
+            <div className="md:col-span-2 pt-6 border-t border-slate-100 text-start animate-none">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <CreditCard className="w-4 h-4 text-amber-500" />
+                {language === 'ar' ? 'التحكم في بوابة الدفع الإلكتروني' : 'Online Electronic Payment Gateway Control'}
+              </h4>
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200/50 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700">
+                      {language === 'ar' ? 'تفعيل بوابات الدفع الإلكتروني للعملاء:' : 'Enable Online Electronic Payment for Customers:'}
+                    </label>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {language === 'ar' 
+                        ? 'عند إيقاف هذا الخيار، سيظل زر الدفع الإلكتروني ظاهراً للعملاء مكتوباً عليه "قريباً لراحتكم".' 
+                        : 'When turned off, the online payment option remains visible but disabled with a "Coming Soon" badge.'}
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={onlinePaymentEnabled} 
+                        onChange={(e) => setOnlinePaymentEnabled(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                      <span className="mr-3 text-xs font-bold text-slate-600 font-mono select-none">
+                        {onlinePaymentEnabled 
+                          ? (language === 'ar' ? 'نشط ✅' : 'Active ✅') 
+                          : (language === 'ar' ? 'موقف ❌' : 'Stopped ❌')}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Gateway config inputs (only visible or interactive based on toggle) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-200/60">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {language === 'ar' ? 'بوابة الدفع الإلكتروني (طريقة الربط):' : 'Payment Gateway (Linking Method):'}
+                    </label>
+                    <select
+                      value={onlinePaymentGateway}
+                      onChange={(e) => setOnlinePaymentGateway(e.target.value as any)}
+                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-semibold cursor-pointer"
+                    >
+                      <option value="sandbox">🛠️ {language === 'ar' ? 'بيئة الاختبار التجريبية (Sandbox)' : 'Interactive Sandbox Demo'}</option>
+                      <option value="stripe">💳 Stripe Gateway</option>
+                      <option value="moyasar">🇸🇦 Moyasar (ميسر لبطاقات مدى المحلي)</option>
+                      <option value="paytabs">🇸🇦 PayTabs (بي تابس)</option>
+                      <option value="hyperpay">💳 HyperPay / CopyandPay</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {language === 'ar' ? 'معرف التاجر / Merchant Account ID:' : 'Merchant ID / Account ID:'}
+                    </label>
+                    <input
+                      type="text"
+                      value={onlinePaymentMerchantId || ''}
+                      onChange={(e) => setOnlinePaymentMerchantId(e.target.value)}
+                      placeholder="e.g. merchant.sa.rehlabbq"
+                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {language === 'ar' ? 'مفتاح الربط السري (API Secret Key / Public Token):' : 'Gateway Private API Key / Public Token:'}
+                    </label>
+                    <input
+                      type="password"
+                      value={onlinePaymentApiKey || ''}
+                      onChange={(e) => setOnlinePaymentApiKey(e.target.value)}
+                      placeholder="pk_live_... or sk_live_..."
+                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      {language === 'ar'
+                        ? 'تنبيه: يتم حفظ وتشفير مفاتيح الربط في قاعدة بيانات السحاب آمنة ولا يتم كشفها للعميل في واجهة المتصفح.'
+                        : 'Security Note: API credentials are saved securely inside Firestore rules and never exposed in browser frontend logs.'}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -5176,6 +5289,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             border-top: 2px dashed #000 !important;
             margin-top: 10px !important;
             padding-top: 15px !important;
+          }
+        }
+
+        /* 📱 Hide sidebar in landscape orientation on tablets (devices with max-width 1366px in landscape) */
+        @media (max-width: 1366px) and (orientation: landscape) {
+          #admin-sidebar {
+            position: fixed !important;
+            inset-block: 0 !important;
+            inset-inline-start: 0 !important;
+            z-index: 50 !important;
+            width: 18rem !important;
+            height: 100vh !important;
+            border-radius: 0 !important;
+            border: none !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+          }
+          
+          #admin-sidebar[data-lang="ar"] {
+            transform: translateX(100%) !important;
+          }
+          #admin-sidebar[data-lang="en"] {
+            transform: translateX(-100%) !important;
+          }
+          
+          #admin-sidebar.sidebar-open {
+            transform: translateX(0) !important;
+          }
+          
+          #sidebar-backdrop {
+            display: block !important;
+          }
+          
+          #admin-main-grid {
+            flex-direction: column !important;
+          }
+          
+          #tablet-landscape-dropdown {
+            display: flex !important;
+          }
+          
+          #sidebar-hamburger {
+            display: flex !important;
           }
         }
       `}</style>
