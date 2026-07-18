@@ -1233,6 +1233,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         name: pending.name,
         phone: pending.phone,
         status: 'available',
+        profileImg: pending.profileImg || '',
+        nationalIdImg: pending.nationalIdImg || '',
+        licenseImg: pending.licenseImg || '',
+        carRegistrationImg: pending.carRegistrationImg || '',
+        bankName: pending.bankName || 'Al Rajhi',
+        iban: pending.iban || '',
         createdAt: new Date().toISOString()
       };
       
@@ -1251,13 +1257,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Reject pending driver registration
-  const handleRejectPendingDriver = async (pendingId: string) => {
+  // Reject pending driver registration with WhatsApp reason
+  const handleRejectPendingDriver = async (pending: PendingDriver) => {
     if (!isAdmin) return;
-    setUpdatingDriverId(pendingId);
+    
+    const reasonPrompt = window.prompt(
+      language === 'ar' 
+        ? `الرجاء كتابة سبب الرفض لإرساله إلى المندوب ${pending.name}:` 
+        : `Please write the rejection reason to send to driver ${pending.name}:`
+    );
+    
+    if (reasonPrompt === null) return; // User cancelled
+    
+    const reason = reasonPrompt.trim() || (language === 'ar' ? 'عدم استيفاء الشروط المطلوبة' : 'Does not meet required criteria');
+    
+    setUpdatingDriverId(pending.id);
     try {
-      await deleteDoc(doc(db, 'pending_drivers', pendingId));
-      showNotification(language === 'ar' ? 'تم رفض طلب التسجيل وحذفه ❌' : 'Registration request rejected and removed ❌', 'success');
+      // 1. Delete from Firestore pending_drivers
+      await deleteDoc(doc(db, 'pending_drivers', pending.id));
+      
+      // 2. Open WhatsApp rejection notification
+      const cleanedPhone = pending.phone.replace(/[\s+]/g, '');
+      const waMsg = language === 'ar'
+        ? `السلام عليكم كابتن *${pending.name}* 🌸 نأسف لإبلاغك بأنه تم رفض طلب انضمامك ككابتن توصيل في *رحلة شواء*. \n\n🔴 *سبب الرفض:* ${reason}\n\nنتمنى لك التوفيق في المرات القادمة!`
+        : `Hello Captain *${pending.name}* 🌸 We regret to inform you that your driver registration request has been rejected. \n\n🔴 *Reason for Rejection:* ${reason}`;
+      
+      const waLink = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(waMsg)}`;
+      window.open(waLink, '_blank');
+      
+      showNotification(language === 'ar' ? 'تم رفض طلب التسجيل وإرسال السبب عبر الواتساب ❌' : 'Registration request rejected & reason sent via WhatsApp ❌', 'success');
     } catch (err) {
       console.error("Failed to reject driver registration:", err);
       showNotification(language === 'ar' ? 'فشل رفض المندوب' : 'Failed to reject driver', 'error');
@@ -4786,53 +4814,117 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               ) : (
                 <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
                   {pendingDrivers.map((pending) => (
-                    <div key={pending.id} className="bg-amber-50/20 border border-amber-100 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                      <div className="flex items-center gap-3">
-                        {pending.carRegistrationImg ? (
-                          <img
-                            src={pending.carRegistrationImg}
-                            alt="Car registration"
-                            className="w-12 h-12 rounded-xl object-cover border border-amber-200 cursor-zoom-in hover:scale-105 transition-transform shrink-0"
-                            onClick={() => setSelectedDocPreview(pending.carRegistrationImg)}
-                            title={language === 'ar' ? 'اضغط لتكبير الصورة' : 'Click to enlarge'}
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
-                            📄
+                    <div key={pending.id} className="bg-amber-50/20 border border-amber-100 p-4 rounded-2xl flex flex-col gap-3 shadow-xs">
+                      <div className="flex flex-col gap-3 w-full text-start">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-amber-100/40">
+                          <div>
+                            <p className="text-sm font-extrabold text-slate-800">{pending.name}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <a href={`tel:${pending.phone}`} className="text-xs font-mono font-bold text-blue-600 hover:underline">
+                                📞 {pending.phone}
+                              </a>
+                              <span className="text-[10px] text-slate-400">
+                                • {new Date(pending.createdAt).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-US')}
+                              </span>
+                            </div>
                           </div>
-                        )}
-                        <div className="text-start">
-                          <p className="text-xs font-bold text-slate-800">{pending.name}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <a href={`tel:${pending.phone}`} className="text-[11px] font-mono font-bold text-blue-600 hover:underline">
-                              📞 {pending.phone}
-                            </a>
-                            <span className="text-[10px] text-slate-400">
-                              • {new Date(pending.createdAt).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-US')}
-                            </span>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => handleApprovePendingDriver(pending)}
+                              disabled={updatingDriverId === pending.id}
+                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-xs active:scale-95"
+                            >
+                              {updatingDriverId === pending.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <span>{language === 'ar' ? 'قبول واعتماد ✅' : 'Approve ✅'}</span>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleRejectPendingDriver(pending)}
+                              disabled={updatingDriverId === pending.id}
+                              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-[10px] font-black rounded-lg transition-colors flex items-center gap-1 cursor-pointer active:scale-95"
+                            >
+                              <span>{language === 'ar' ? 'رفض ❌' : 'Reject ❌'}</span>
+                            </button>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                        <button
-                          onClick={() => handleApprovePendingDriver(pending)}
-                          disabled={updatingDriverId === pending.id}
-                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-xs active:scale-95"
-                        >
-                          {updatingDriverId === pending.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <span>{language === 'ar' ? 'قبول واعتماد ✅' : 'Approve ✅'}</span>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => handleRejectPendingDriver(pending.id)}
-                          disabled={updatingDriverId === pending.id}
-                          className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-[10px] font-black rounded-lg transition-colors flex items-center gap-1 cursor-pointer active:scale-95"
-                        >
-                          <span>{language === 'ar' ? 'رفض ❌' : 'Reject ❌'}</span>
-                        </button>
+                        {/* Documents Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                          {/* Profile Img */}
+                          <div className="space-y-1 text-center">
+                            <span className="text-[9.5px] font-bold text-slate-500 uppercase block">{language === 'ar' ? 'الصورة الشخصية' : 'Profile Pic'}</span>
+                            {pending.profileImg ? (
+                              <img
+                                src={pending.profileImg}
+                                alt="Profile"
+                                className="w-full h-16 rounded-xl object-cover border border-amber-200 cursor-zoom-in hover:brightness-95 transition-all"
+                                onClick={() => setSelectedDocPreview(pending.profileImg)}
+                              />
+                            ) : (
+                              <div className="h-16 rounded-xl bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">⚠️ {language === 'ar' ? 'غير متوفر' : 'N/A'}</div>
+                            )}
+                          </div>
+
+                          {/* National ID */}
+                          <div className="space-y-1 text-center">
+                            <span className="text-[9.5px] font-bold text-slate-500 uppercase block">{language === 'ar' ? 'الهوية / الإقامة' : 'ID / Iqama'}</span>
+                            {pending.nationalIdImg ? (
+                              <img
+                                src={pending.nationalIdImg}
+                                alt="National ID"
+                                className="w-full h-16 rounded-xl object-cover border border-amber-200 cursor-zoom-in hover:brightness-95 transition-all"
+                                onClick={() => setSelectedDocPreview(pending.nationalIdImg)}
+                              />
+                            ) : (
+                              <div className="h-16 rounded-xl bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">⚠️ {language === 'ar' ? 'غير متوفر' : 'N/A'}</div>
+                            )}
+                          </div>
+
+                          {/* License */}
+                          <div className="space-y-1 text-center">
+                            <span className="text-[9.5px] font-bold text-slate-500 uppercase block">{language === 'ar' ? 'الرخصة' : 'License'}</span>
+                            {pending.licenseImg ? (
+                              <img
+                                src={pending.licenseImg}
+                                alt="License"
+                                className="w-full h-16 rounded-xl object-cover border border-amber-200 cursor-zoom-in hover:brightness-95 transition-all"
+                                onClick={() => setSelectedDocPreview(pending.licenseImg)}
+                              />
+                            ) : (
+                              <div className="h-16 rounded-xl bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">⚠️ {language === 'ar' ? 'غير متوفر' : 'N/A'}</div>
+                            )}
+                          </div>
+
+                          {/* Registration */}
+                          <div className="space-y-1 text-center">
+                            <span className="text-[9.5px] font-bold text-slate-500 uppercase block">{language === 'ar' ? 'الاستمارة' : 'Registration'}</span>
+                            {pending.carRegistrationImg ? (
+                              <img
+                                src={pending.carRegistrationImg}
+                                alt="Registration"
+                                className="w-full h-16 rounded-xl object-cover border border-amber-200 cursor-zoom-in hover:brightness-95 transition-all"
+                                onClick={() => setSelectedDocPreview(pending.carRegistrationImg)}
+                              />
+                            ) : (
+                              <div className="h-16 rounded-xl bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">⚠️ {language === 'ar' ? 'غير متوفر' : 'N/A'}</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bank Details section */}
+                        <div className="bg-white/60 rounded-xl p-2.5 border border-slate-150/40 text-xs font-mono flex flex-wrap justify-between items-center gap-2 mt-1">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block font-sans font-bold leading-none">{language === 'ar' ? 'البنك المختار' : 'CHOSEN BANK'}</span>
+                            <span className="font-extrabold text-slate-700 block mt-1">🏦 {pending.bankName === 'STC Bank' ? 'stc bank' : 'مصرف الراجحي'}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block font-sans font-bold leading-none">IBAN</span>
+                            <span className="font-bold text-slate-800 block mt-1">{pending.iban || '—'}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}

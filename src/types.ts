@@ -69,6 +69,15 @@ export interface Driver {
   suspendedUntil?: string;
   completedCount?: number;
   totalEarnings?: number;
+  profileImg?: string;
+  nationalIdImg?: string;
+  licenseImg?: string;
+  carRegistrationImg?: string;
+  bankName?: string;
+  iban?: string;
+  latitude?: number;
+  longitude?: number;
+  lastActive?: string;
 }
 
 export interface Promotion {
@@ -146,4 +155,9 @@ export interface PendingDriver {
   carRegistrationImg: string; // base64 representation of registration
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
+  profileImg?: string;
+  nationalIdImg?: string;
+  licenseImg?: string;
+  bankName?: string;
+  iban?: string;
 }
