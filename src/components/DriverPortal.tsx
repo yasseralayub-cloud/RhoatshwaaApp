@@ -97,6 +97,55 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
     setTimeout(() => setCopiedText(false), 2000);
   };
 
+  // Edit Bank details state
+  const [isEditingBank, setIsEditingBank] = useState(false);
+  const [editBankName, setEditBankName] = useState('Al Rajhi');
+  const [editBankAccountName, setEditBankAccountName] = useState('');
+  const [editIban, setEditIban] = useState('');
+  const [isSavingBank, setIsSavingBank] = useState(false);
+  const [showPressurePool, setShowPressurePool] = useState(false);
+
+  useEffect(() => {
+    if (selectedDriver) {
+      setEditBankName(selectedDriver.bankName || 'Al Rajhi');
+      setEditBankAccountName(selectedDriver.bankAccountName || selectedDriver.name || '');
+      setEditIban(selectedDriver.iban || '');
+    }
+  }, [selectedDriver?.id, selectedDriver?.bankName, selectedDriver?.bankAccountName, selectedDriver?.iban]);
+
+  const handleSaveBankDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDriver) return;
+    
+    setIsSavingBank(true);
+    try {
+      const driverRef = doc(db, 'drivers', selectedDriver.id);
+      const updatedFields = {
+        bankName: editBankName,
+        bankAccountName: editBankAccountName,
+        iban: editIban
+      };
+      
+      await updateDoc(driverRef, updatedFields);
+      
+      // Update selectedDriver locally as well for immediate feedback
+      const freshProfile = {
+        ...selectedDriver,
+        ...updatedFields
+      };
+      setSelectedDriver(freshProfile);
+      localStorage.setItem('active_driver_profile', JSON.stringify(freshProfile));
+      
+      setIsEditingBank(false);
+      alert(isAr ? 'تم حفظ بياناتك البنكيه بنجاح! ✅' : 'Bank details saved successfully! ✅');
+    } catch (err) {
+      console.error('Failed to update bank details:', err);
+      alert(isAr ? 'تعذر حفظ البيانات البنكية، يرجى المحاولة مرة أخرى.' : 'Failed to save bank details, please try again.');
+    } finally {
+      setIsSavingBank(false);
+    }
+  };
+
   const isDriverSuspended = (drv: Driver | null) => {
     if (!drv) return false;
     if (drv.status === 'suspended') {
@@ -155,6 +204,11 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
 
   // Continuous sound alerts effect: alert driver if they have pending orders in unassigned pool
   useEffect(() => {
+    // If the driver has any active deliveries, completely mute and stop all sounds/alerts!
+    if (activeDeliveries.length > 0) {
+      return;
+    }
+
     if (!selectedDriver || selectedDriver.status !== 'available' || unassignedDeliveries.length === 0 || isDriverSuspended(selectedDriver)) {
       return;
     }
@@ -168,7 +222,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [selectedDriver?.id, unassignedDeliveries.length, selectedDriver?.status, selectedDriver?.suspendedUntil]);
+  }, [selectedDriver?.id, unassignedDeliveries.length, selectedDriver?.status, selectedDriver?.suspendedUntil, activeDeliveries.length]);
 
   // Live background geolocation & permission watcher
   useEffect(() => {
@@ -496,6 +550,13 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
   const handleAcceptOrder = async (orderId: string) => {
     if (!selectedDriver) return;
 
+    if (activeDeliveries.length >= 2) {
+      alert(isAr 
+        ? 'عذراً، لقد استوفيت الحد الأقصى للطلبات النشطة في نفس الوقت (طلبين كحد أقصى)! يرجى تسليم طلبياتك الحالية أولاً.' 
+        : 'Sorry, you have reached the maximum limit of active orders at the same time (2 orders max)! Please deliver your current orders first.');
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'orders', orderId), {
         driverId: selectedDriver.id,
@@ -633,7 +694,17 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
 
   // Helper to generate WhatsApp link
   const getWhatsAppLink = (order: Order, customStatus?: string) => {
-    const cleanedPhone = order.customerPhone.replace(/[\s+]/g, '');
+    let cleanedPhone = order.customerPhone.replace(/\D/g, ''); // Keep only digits
+    if (cleanedPhone.startsWith('05') && cleanedPhone.length === 10) {
+      cleanedPhone = '966' + cleanedPhone.substring(1);
+    } else if (cleanedPhone.startsWith('5') && cleanedPhone.length === 9) {
+      cleanedPhone = '966' + cleanedPhone;
+    } else if (cleanedPhone.startsWith('00966')) {
+      cleanedPhone = cleanedPhone.substring(2);
+    } else if (cleanedPhone.length === 9 && cleanedPhone.startsWith('5')) {
+      cleanedPhone = '966' + cleanedPhone;
+    }
+
     const activeStatus = customStatus || order.status;
     const driverName = selectedDriver?.name || order.driverName || 'المندوب';
     const restNameAr = businessSettings?.restaurantNameAr || 'رحلة شواء';
@@ -1602,76 +1673,192 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
 
                         {/* Right claiming dispatcher pool column */}
                         <div className="lg:col-span-4 space-y-4">
-                          <div className="text-start border-b border-black/5 pb-2">
-                            <h3 className="font-bold text-sm flex items-center gap-1.5 uppercase tracking-wide">
-                              <MapPin className="w-4 h-4 text-yellow" />
-                              {isAr ? 'طلبات بانتظار مندوب 📢' : 'Unassigned Dispatch Pool'}
-                            </h3>
-                            <p className="text-[10px] text-dark/40 font-mono mt-0.5">
-                              {unassignedDeliveries.length} {isAr ? 'طلبيات توصيل متاحة للاستلام' : 'open delivery requests available'}
-                            </p>
-                          </div>
+                          {activeDeliveries.length >= 2 ? (
+                            <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 text-center text-slate-500 text-xs shadow-xs space-y-3">
+                              <span className="text-3xl block">🚴🚴</span>
+                              <p className="font-extrabold text-slate-850">
+                                {isAr ? 'أنت تقوم بتوصيل طلبين حالياً (الحد الأقصى)' : 'You are currently delivering 2 orders (Maximum)'}
+                              </p>
+                              <p className="text-[10px] text-slate-500 leading-normal font-sans">
+                                {isAr 
+                                  ? 'يرجى إنهاء وتسليم الطلبيات النشطة الموكلة إليك أولاً لتتمكن من استقبال أو تصفح طلبيات توصيل جديدة.' 
+                                  : 'Please complete and deliver your current assigned orders first before you can browse or accept new delivery routes.'}
+                              </p>
+                            </div>
+                          ) : activeDeliveries.length === 1 ? (
+                            <div className="space-y-4">
+                              <div className="bg-amber-50/80 border border-amber-200/60 rounded-2xl p-4 text-center text-xs shadow-2xs space-y-2">
+                                <span className="text-2xl block animate-bounce">🔕</span>
+                                <p className="font-extrabold text-amber-900 font-sans">
+                                  {isAr ? 'تم إيقاف التنبيهات الصوتية مؤقتاً 🔕' : 'Sound Alerts Silenced Temporarily 🔕'}
+                                </p>
+                                <p className="text-[10px] text-amber-800 leading-normal font-sans">
+                                  {isAr 
+                                    ? 'تم كتم الصوت للتنبيهات لتتمكن من التركيز على تسليم طلبك الحالي براحة وبشكل سريع.' 
+                                    : 'Sound chimes are muted so you can focus on delivering your active order safely and quickly.'}
+                                </p>
+                                
+                                <button
+                                  onClick={() => setShowPressurePool(!showPressurePool)}
+                                  className="w-full mt-2 py-2 px-3 bg-white hover:bg-amber-100/50 text-amber-900 border border-amber-200/80 font-black text-[10px] rounded-xl transition-all cursor-pointer shadow-3xs"
+                                >
+                                  {showPressurePool 
+                                    ? (isAr ? '▲ إخفاء طابور الطلبات المفتوحة' : '▲ Hide Open Deliveries List')
+                                    : (isAr ? '▼ إظهار الطلبات المتاحة (في حالات ضغط العمل) 📢' : '▼ View Open Deliveries (Under High Load Pressure) 📢')
+                                  }
+                                </button>
+                              </div>
 
-                          {unassignedDeliveries.length === 0 ? (
-                            <div className="bg-neutral-50 border border-dashed border-black/10 rounded-3xl p-5 text-center text-dark/40 text-[11px] py-10">
-                              <Clock className="w-8 h-8 text-dark/20 mx-auto mb-2 animate-pulse" />
-                              <span>{isAr ? 'لا توجد طلبات توصيل غير مسندة حالياً.' : 'No open deliveries at this moment.'}</span>
+                              {showPressurePool && (
+                                <div className="space-y-4">
+                                  <div className="text-start border-b border-black/5 pb-2">
+                                    <h3 className="font-bold text-sm flex items-center gap-1.5 uppercase tracking-wide">
+                                      <MapPin className="w-4 h-4 text-yellow" />
+                                      {isAr ? 'طلب إضافي ثانٍ لضغط العمل 📢' : 'Pressure Workload Additional Order 📢'}
+                                    </h3>
+                                    <p className="text-[10px] text-dark/40 font-mono mt-0.5">
+                                      {unassignedDeliveries.length} {isAr ? 'طلبيات توصيل متاحة للاستلام' : 'open delivery requests available'}
+                                    </p>
+                                  </div>
+
+                                  {unassignedDeliveries.length === 0 ? (
+                                    <div className="bg-neutral-50 border border-dashed border-black/10 rounded-3xl p-5 text-center text-dark/40 text-[11px] py-10">
+                                      <Clock className="w-8 h-8 text-dark/20 mx-auto mb-2 animate-pulse" />
+                                      <span>{isAr ? 'لا توجد طلبات توصيل غير مسندة حالياً.' : 'No open deliveries at this moment.'}</span>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-3">
+                                      <AnimatePresence mode="popLayout">
+                                        {unassignedDeliveries.map((order) => {
+                                          const qty = order.items.reduce((sum, i) => sum + i.quantity, 0);
+                                          return (
+                                            <motion.div
+                                              key={order.id}
+                                              initial={{ opacity: 0, y: 10 }}
+                                              animate={{ opacity: 1, y: 0 }}
+                                              exit={{ opacity: 0, y: 10 }}
+                                              className="bg-white border border-black/5 rounded-2xl p-4 text-start shadow-2xs space-y-3 relative"
+                                            >
+                                              <div className="flex justify-between items-start gap-2 border-b border-black/5 pb-2">
+                                                <div className="space-y-0.5">
+                                                  <span className="text-[8px] text-dark/40 block font-mono font-bold uppercase"># {order.id}</span>
+                                                  <span className="font-extrabold text-xs text-dark">{order.customerName}</span>
+                                                </div>
+                                                <span className="bg-yellow/15 text-yellow-800 text-[9px] font-black px-2 py-0.5 rounded-full">
+                                                  {qty} {isAr ? 'قطع' : 'pcs'}
+                                                </span>
+                                              </div>
+
+                                              <div className="space-y-1 font-mono text-[10px] text-dark/70">
+                                                <p className="line-clamp-2">
+                                                  📍 <span className="font-bold text-dark">{isAr ? 'العنوان:' : 'Addr:'}</span> {order.deliveryAddress || (isAr ? 'غير محدد' : 'Not specified')}
+                                                </p>
+                                                <p className="flex justify-between">
+                                                  <span>💰 {isAr ? 'القيمة:' : 'Value:'} <span className="font-bold text-dark">{order.total.toFixed(2)} SAR</span></span>
+                                                  <span>🚴 {isAr ? 'التوصيل:' : 'Fee:'} <span className="font-bold text-emerald-600">{order.deliveryFee || 15} SAR</span></span>
+                                                </p>
+                                              </div>
+
+                                              <div className="flex gap-2 pt-1">
+                                                <button
+                                                  onClick={() => handleAcceptOrder(order.id)}
+                                                  className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1 shadow-xs"
+                                                >
+                                                  <span>🚴</span>
+                                                  <span>{isAr ? 'قبول الطلب الثاني' : 'Accept 2nd Order'}</span>
+                                                </button>
+                                                <button
+                                                  onClick={() => handleRejectOrder(order.id)}
+                                                  className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/50 font-extrabold text-[11px] rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1"
+                                                  title={isAr ? 'رفض الطلب (سيتم إيقاف حسابك 24 ساعة)' : 'Reject order (24h ban)'}
+                                                >
+                                                  <span>✕</span>
+                                                  <span>{isAr ? 'رفض' : 'Reject'}</span>
+                                                </button>
+                                              </div>
+                                            </motion.div>
+                                          );
+                                        })}
+                                      </AnimatePresence>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            <div className="space-y-3">
-                              <AnimatePresence mode="popLayout">
-                                {unassignedDeliveries.map((order) => {
-                                  const qty = order.items.reduce((sum, i) => sum + i.quantity, 0);
-                                  return (
-                                    <motion.div
-                                      key={order.id}
-                                      initial={{ opacity: 0, y: 10 }}
-                                      animate={{ opacity: 1, y: 0 }}
-                                      exit={{ opacity: 0, y: 10 }}
-                                      className="bg-white border border-black/5 rounded-2xl p-4 text-start shadow-2xs space-y-3 relative"
-                                    >
-                                      <div className="flex justify-between items-start gap-2 border-b border-black/5 pb-2">
-                                        <div className="space-y-0.5">
-                                          <span className="text-[8px] text-dark/40 block font-mono font-bold uppercase"># {order.id}</span>
-                                          <span className="font-extrabold text-xs text-dark">{order.customerName}</span>
-                                        </div>
-                                        <span className="bg-yellow/15 text-yellow-800 text-[9px] font-black px-2 py-0.5 rounded-full">
-                                          {qty} {isAr ? 'قطع' : 'pcs'}
-                                        </span>
-                                      </div>
+                            <>
+                              <div className="text-start border-b border-black/5 pb-2">
+                                <h3 className="font-bold text-sm flex items-center gap-1.5 uppercase tracking-wide">
+                                  <MapPin className="w-4 h-4 text-yellow" />
+                                  {isAr ? 'طلبات بانتظار مندوب 📢' : 'Unassigned Dispatch Pool'}
+                                </h3>
+                                <p className="text-[10px] text-dark/40 font-mono mt-0.5">
+                                  {unassignedDeliveries.length} {isAr ? 'طلبيات توصيل متاحة للاستلام' : 'open delivery requests available'}
+                                </p>
+                              </div>
 
-                                      <div className="space-y-1 font-mono text-[10px] text-dark/70">
-                                        <p className="line-clamp-2">
-                                          📍 <span className="font-bold text-dark">{isAr ? 'العنوان:' : 'Addr:'}</span> {order.deliveryAddress || (isAr ? 'غير محدد' : 'Not specified')}
-                                        </p>
-                                        <p className="flex justify-between">
-                                          <span>💰 {isAr ? 'القيمة:' : 'Value:'} <span className="font-bold text-dark">{order.total.toFixed(2)} SAR</span></span>
-                                          <span>🚴 {isAr ? 'التوصيل:' : 'Fee:'} <span className="font-bold text-emerald-600">{order.deliveryFee || 15} SAR</span></span>
-                                        </p>
-                                      </div>
+                              {unassignedDeliveries.length === 0 ? (
+                                <div className="bg-neutral-50 border border-dashed border-black/10 rounded-3xl p-5 text-center text-dark/40 text-[11px] py-10">
+                                  <Clock className="w-8 h-8 text-dark/20 mx-auto mb-2 animate-pulse" />
+                                  <span>{isAr ? 'لا توجد طلبات توصيل غير مسندة حالياً.' : 'No open deliveries at this moment.'}</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  <AnimatePresence mode="popLayout">
+                                    {unassignedDeliveries.map((order) => {
+                                      const qty = order.items.reduce((sum, i) => sum + i.quantity, 0);
+                                      return (
+                                        <motion.div
+                                          key={order.id}
+                                          initial={{ opacity: 0, y: 10 }}
+                                          animate={{ opacity: 1, y: 0 }}
+                                          exit={{ opacity: 0, y: 10 }}
+                                          className="bg-white border border-black/5 rounded-2xl p-4 text-start shadow-2xs space-y-3 relative"
+                                        >
+                                          <div className="flex justify-between items-start gap-2 border-b border-black/5 pb-2">
+                                            <div className="space-y-0.5">
+                                              <span className="text-[8px] text-dark/40 block font-mono font-bold uppercase"># {order.id}</span>
+                                              <span className="font-extrabold text-xs text-dark">{order.customerName}</span>
+                                            </div>
+                                            <span className="bg-yellow/15 text-yellow-800 text-[9px] font-black px-2 py-0.5 rounded-full">
+                                              {qty} {isAr ? 'قطع' : 'pcs'}
+                                            </span>
+                                          </div>
 
-                                      <div className="flex gap-2 pt-1">
-                                        <button
-                                          onClick={() => handleAcceptOrder(order.id)}
-                                          className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1 shadow-xs"
-                                        >
-                                          <span>🚴</span>
-                                          <span>{isAr ? 'قبول الطلب' : 'Accept'}</span>
-                                        </button>
-                                        <button
-                                          onClick={() => handleRejectOrder(order.id)}
-                                          className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/50 font-extrabold text-[11px] rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1"
-                                          title={isAr ? 'رفض الطلب (سيتم إيقاف حسابك 24 ساعة)' : 'Reject order (24h ban)'}
-                                        >
-                                          <span>✕</span>
-                                          <span>{isAr ? 'رفض' : 'Reject'}</span>
-                                        </button>
-                                      </div>
-                                    </motion.div>
-                                  );
-                                })}
-                              </AnimatePresence>
-                            </div>
+                                          <div className="space-y-1 font-mono text-[10px] text-dark/70">
+                                            <p className="line-clamp-2">
+                                              📍 <span className="font-bold text-dark">{isAr ? 'العنوان:' : 'Addr:'}</span> {order.deliveryAddress || (isAr ? 'غير محدد' : 'Not specified')}
+                                            </p>
+                                            <p className="flex justify-between">
+                                              <span>💰 {isAr ? 'القيمة:' : 'Value:'} <span className="font-bold text-dark">{order.total.toFixed(2)} SAR</span></span>
+                                              <span>🚴 {isAr ? 'التوصيل:' : 'Fee:'} <span className="font-bold text-emerald-600">{order.deliveryFee || 15} SAR</span></span>
+                                            </p>
+                                          </div>
+
+                                          <div className="flex gap-2 pt-1">
+                                            <button
+                                              onClick={() => handleAcceptOrder(order.id)}
+                                              className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1 shadow-xs"
+                                            >
+                                              <span>🚴</span>
+                                              <span>{isAr ? 'قبول الطلب' : 'Accept'}</span>
+                                            </button>
+                                            <button
+                                              onClick={() => handleRejectOrder(order.id)}
+                                              className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/50 font-extrabold text-[11px] rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1"
+                                              title={isAr ? 'رفض الطلب (سيتم إيقاف حسابك 24 ساعة)' : 'Reject order (24h ban)'}
+                                            >
+                                              <span>✕</span>
+                                              <span>{isAr ? 'رفض' : 'Reject'}</span>
+                                            </button>
+                                          </div>
+                                        </motion.div>
+                                      );
+                                    })}
+                                  </AnimatePresence>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
 

@@ -1277,7 +1277,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await deleteDoc(doc(db, 'pending_drivers', pending.id));
       
       // 2. Open WhatsApp rejection notification
-      const cleanedPhone = pending.phone.replace(/[\s+]/g, '');
+      let cleanedPhone = pending.phone.replace(/\D/g, "");
+      if (cleanedPhone.startsWith("05") && cleanedPhone.length === 10) {
+        cleanedPhone = "966" + cleanedPhone.substring(1);
+      } else if (cleanedPhone.startsWith("5") && cleanedPhone.length === 9) {
+        cleanedPhone = "966" + cleanedPhone;
+      }
       const waMsg = language === 'ar'
         ? `السلام عليكم كابتن *${pending.name}* 🌸 نأسف لإبلاغك بأنه تم رفض طلب انضمامك ككابتن توصيل في *رحلة شواء*. \n\n🔴 *سبب الرفض:* ${reason}\n\nنتمنى لك التوفيق في المرات القادمة!`
         : `Hello Captain *${pending.name}* 🌸 We regret to inform you that your driver registration request has been rejected. \n\n🔴 *Reason for Rejection:* ${reason}`;
@@ -4743,50 +4748,75 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-1">
                   {drivers.map((drv) => (
-                    <div key={drv.id} className="bg-white border border-slate-150 p-3 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
-                      <div className="text-start">
-                        <p className="text-xs font-bold text-slate-800">{drv.name}</p>
-                        <a href={`tel:${drv.phone}`} className="text-[11px] font-mono font-semibold text-blue-600 hover:underline">
-                          📞 {drv.phone}
-                        </a>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {/* Availability status badge & toggle */}
-                        <button
-                          onClick={() => handleToggleDriverStatus(drv.id, drv.status)}
-                          disabled={updatingDriverId === drv.id}
-                          className={`text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg border transition-colors cursor-pointer active:scale-95 flex items-center gap-1 ${
-                            drv.status === 'available'
-                              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                              : 'bg-rose-50 border-rose-200 text-rose-700'
-                          }`}
-                        >
-                          {updatingDriverId === drv.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <span>
-                              {drv.status === 'available' 
-                                ? (language === 'ar' ? '● متاح' : '● Available') 
-                                : (language === 'ar' ? '● مشغول' : '● Busy')}
-                            </span>
-                          )}
-                        </button>
+                    <div key={drv.id} className="bg-white border border-slate-150 p-4 rounded-2xl flex flex-col gap-3 shadow-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-start">
+                          <p className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                            <span className="inline-block w-2 h-2 rounded-full bg-slate-400"></span>
+                            {drv.name}
+                          </p>
+                          <a href={`tel:${drv.phone}`} className="text-[11px] font-mono font-bold text-blue-600 hover:underline block mt-0.5">
+                            📞 {drv.phone}
+                          </a>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Availability status badge & toggle */}
+                          <button
+                            onClick={() => handleToggleDriverStatus(drv.id, drv.status)}
+                            disabled={updatingDriverId === drv.id}
+                            className={`text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg border transition-colors cursor-pointer active:scale-95 flex items-center gap-1 ${
+                              drv.status === 'available'
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : 'bg-rose-50 border-rose-200 text-rose-700'
+                            }`}
+                          >
+                            {updatingDriverId === drv.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <span>
+                                {drv.status === 'available' 
+                                  ? (language === 'ar' ? '● متاح' : '● Available') 
+                                  : (language === 'ar' ? '● مشغول' : '● Busy')}
+                              </span>
+                            )}
+                          </button>
 
-                        {/* Delete Button */}
-                        <button
-                          onClick={() => {
-                            if (confirm(language === 'ar' ? `هل أنت متأكد من حذف المندوب ${drv.name}؟` : `Are you sure you want to delete driver ${drv.name}?`)) {
-                              handleDeleteDriver(drv.id);
-                            }
-                          }}
-                          disabled={updatingDriverId === drv.id}
-                          className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                          title={language === 'ar' ? 'حذف المندوب' : 'Delete Driver'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                          {/* Delete Button */}
+                          <button
+                            onClick={() => {
+                              if (confirm(language === 'ar' ? `هل أنت متأكد من حذف المندوب ${drv.name}؟` : `Are you sure you want to delete driver ${drv.name}?`)) {
+                                handleDeleteDriver(drv.id);
+                              }
+                            }}
+                            disabled={updatingDriverId === drv.id}
+                            className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                            title={language === 'ar' ? 'حذف المندوب' : 'Delete Driver'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Display Driver Bank details */}
+                      <div className="bg-slate-50/70 border border-slate-100 p-2.5 rounded-xl text-[10px] space-y-1">
+                        <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
+                          <span className="text-slate-500 font-bold">{language === 'ar' ? '🏦 البنك:' : '🏦 Bank:'}</span>
+                          <span className="font-extrabold text-slate-700">
+                            {drv.bankName === 'STC Bank' ? 'STC Bank' : (drv.bankName || (language === 'ar' ? 'مصرف الراجحي' : 'Al Rajhi'))}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
+                          <span className="text-slate-500 font-bold">{language === 'ar' ? '👤 اسم الحساب كاملاً:' : '👤 Full Account Name:'}</span>
+                          <span className="font-extrabold text-slate-700">{drv.bankAccountName || drv.name}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 font-bold">{language === 'ar' ? '💳 الآيبان:' : '💳 IBAN:'}</span>
+                          <span className="font-mono font-bold text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-100 select-all">
+                            {drv.iban || (language === 'ar' ? 'غير مسجل بعد' : 'Not Registered Yet')}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}

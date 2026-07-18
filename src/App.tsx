@@ -263,6 +263,27 @@ function MenuAndOrdersApp() {
     }
   }, []);
 
+  // Dynamic Manifest Link Updater based on path for co-existing installable PWAs
+  useEffect(() => {
+    const path = window.location.pathname;
+    let manifestUrl = '/manifest.json';
+    if (path === '/driver' || path.startsWith('/driver/')) {
+      manifestUrl = '/manifest.json?type=driver';
+    } else if (path === '/admin' || path.startsWith('/admin/')) {
+      manifestUrl = '/manifest.json?type=admin';
+    }
+    
+    let link = document.querySelector('link[rel="manifest"]');
+    if (link) {
+      link.setAttribute('href', manifestUrl);
+    } else {
+      link = document.createElement('link');
+      link.setAttribute('rel', 'manifest');
+      link.setAttribute('href', manifestUrl);
+      document.head.appendChild(link);
+    }
+  }, [currentPath]);
+
   // 1.95 Check if PWA installer / welcome wizard should show automatically on first visit
   useEffect(() => {
     const hasSeenWelcome = localStorage.getItem('has_seen_welcome_wizard_rehlabbq_v2');

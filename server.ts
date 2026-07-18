@@ -483,6 +483,92 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
     }
   });
 
+  // Dynamic manifest.json endpoint to allow installing separate PWAs for customers, drivers, and admin panel on the same domain
+  app.get("/manifest.json", (req, res) => {
+    const type = req.query.type || "";
+    const referer = req.headers.referer || "";
+    
+    if (type === "driver" || referer.includes("/driver")) {
+      return res.json({
+        "id": "/driver",
+        "short_name": "بوابة الكابتن",
+        "name": "بوابة كابتن التوصيل - رحلة شواء",
+        "description": "بوابة تتبع وتوصيل طلبات مطعم رحلة شواء",
+        "icons": [
+          {
+            "src": "/pwa-icon.jpg",
+            "type": "image/jpeg",
+            "sizes": "192x192",
+            "purpose": "any maskable"
+          },
+          {
+            "src": "/pwa-icon.jpg",
+            "type": "image/jpeg",
+            "sizes": "512x512",
+            "purpose": "any maskable"
+          }
+        ],
+        "start_url": "/driver?mode=driver",
+        "background_color": "#0f172a",
+        "theme_color": "#0f172a",
+        "display": "standalone",
+        "orientation": "portrait"
+      });
+    } else if (type === "admin" || referer.includes("/admin")) {
+      return res.json({
+        "id": "/admin",
+        "short_name": "لوحة التحكم",
+        "name": "لوحة تحكم مطعم رحلة شواء",
+        "description": "لوحة تحكم وإدارة طلبات ومناديب مطعم رحلة شواء",
+        "icons": [
+          {
+            "src": "/pwa-icon.jpg",
+            "type": "image/jpeg",
+            "sizes": "192x192",
+            "purpose": "any maskable"
+          },
+          {
+            "src": "/pwa-icon.jpg",
+            "type": "image/jpeg",
+            "sizes": "512x512",
+            "purpose": "any maskable"
+          }
+        ],
+        "start_url": "/admin",
+        "background_color": "#0f172a",
+        "theme_color": "#0f172a",
+        "display": "standalone",
+        "orientation": "portrait"
+      });
+    } else {
+      return res.json({
+        "id": "/",
+        "short_name": "رحلة شواء",
+        "name": "مطعم رحلة شواء - منيو وتتبع الطلبات",
+        "description": "منيو مطعم رحلة شواء - اطلب ألذ المشويات الفاخرة وتابع طلبك خطوة بخطوة",
+        "icons": [
+          {
+            "src": "/pwa-icon.jpg",
+            "type": "image/jpeg",
+            "sizes": "192x192",
+            "purpose": "any maskable"
+          },
+          {
+            "src": "/pwa-icon.jpg",
+            "type": "image/jpeg",
+            "sizes": "512x512",
+            "purpose": "any maskable"
+          }
+        ],
+        "start_url": "/",
+        "background_color": "#0f172a",
+        "theme_color": "#0f172a",
+        "display": "standalone",
+        "orientation": "portrait"
+      });
+    }
+  });
+
   // Vite development vs production asset static handling
   async function startViteAndListen() {
     if (process.env.NODE_ENV !== "production") {
