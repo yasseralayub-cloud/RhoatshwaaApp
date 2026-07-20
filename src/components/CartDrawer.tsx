@@ -865,6 +865,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
+    <>
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
@@ -1756,5 +1757,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         </div>
       </div>
     </div>
+    </>
   );
 };
