@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Order } from '../types';
 import { useLanguage } from './LanguageContext';
 import { Search, Loader2, ChefHat, CheckCircle2, Clock, Ban, User, Phone, MapPin, Clipboard, FileText, Printer, QrCode, Sparkles, Bell, X, Truck, ShoppingBag } from 'lucide-react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -21,8 +21,39 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   onModifyOrder
 }) => {
   const { language, t } = useLanguage();
+  const [activeUserOrders, setActiveUserOrders] = useState<Order[]>([]);
+  const [activeOrdersLoaded, setActiveOrdersLoaded] = useState(false);
+
+  // User Profile state for checking if logged in
+  const [userProfile, setUserProfile] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('rehla_user_profile');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  // Keep user profile in sync in real-time
+  useEffect(() => {
+    const syncProfile = () => {
+      try {
+        const saved = localStorage.getItem('rehla_user_profile');
+        setUserProfile(saved ? JSON.parse(saved) : null);
+      } catch (e) {
+        setUserProfile(null);
+      }
+    };
+    window.addEventListener('storage', syncProfile);
+    window.addEventListener('user-profile-updated', syncProfile);
+    return () => {
+      window.removeEventListener('storage', syncProfile);
+      window.removeEventListener('user-profile-updated', syncProfile);
+    };
+  }, []);
+
   const [searchId, setSearchId] = useState(() => {
-    return initialOrderId || localStorage.getItem('last_order_id') || '';
+    return initialOrderId || '';
   });
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,6 +95,39 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const activeCleanupRef = useRef<(() => void) | null>(null);
 
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Subscribe to real-time driver coordinates from Firestore if order has an assigned driver and is in transit
+  useEffect(() => {
+    if (!order || !order.driverId || order.driverId === 'broadcast' || order.tableOrDelivery !== 'delivery') {
+      setDriverCoords(null);
+      return;
+    }
+
+    // Live tracking is active for preparing, ready, driver_assigned, driver_picked_up, and on_the_way statuses
+    const activeStatuses = ['preparing', 'ready', 'driver_assigned', 'driver_picked_up', 'on_the_way'];
+    if (!activeStatuses.includes(order.status)) {
+      setDriverCoords(null);
+      return;
+    }
+
+    const unsubDriver = onSnapshot(
+      doc(db, 'drivers', order.driverId),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+            setDriverCoords({ lat: data.latitude, lng: data.longitude });
+          }
+        }
+      },
+      (error) => {
+        console.warn('Could not subscribe to driver location updates:', error);
+      }
+    );
+
+    return () => unsubDriver();
+  }, [order?.driverId, order?.status, order?.tableOrDelivery]);
 
   // Active ticking countdown effect to maintain accuracy of grace period
   useEffect(() => {
@@ -198,7 +262,20 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
           `_This order has been submitted into the active restaurant system._`;
 
       const encodedMessage = encodeURIComponent(waMessage);
-      const cleanPhone = (businessSettings?.whatsappNumber || '966501234567').replace(/\D/g, '');
+      let cleanPhone = (businessSettings?.whatsappNumber || '966501234567').replace(/\D/g, '');
+      if (cleanPhone.startsWith('00966')) {
+        cleanPhone = cleanPhone.substring(2);
+      }
+      if (cleanPhone.startsWith('96605')) {
+        cleanPhone = '966' + cleanPhone.substring(4);
+      }
+      if (cleanPhone.startsWith('05') && cleanPhone.length === 10) {
+        cleanPhone = '966' + cleanPhone.substring(1);
+      } else if (cleanPhone.startsWith('5') && cleanPhone.length === 9) {
+        cleanPhone = '966' + cleanPhone;
+      } else if (cleanPhone.startsWith('005') && cleanPhone.length === 11) {
+        cleanPhone = '966' + cleanPhone.substring(2);
+      }
       return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMessage}`;
     } catch(e) {
       return '';
@@ -392,12 +469,130 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
     return () => unsub();
   }, [passedSettings]);
 
-  // Automatically track on mount if we have an ID
+  // Subscribe to the customer's active/ongoing orders
   useEffect(() => {
-    if (searchId) {
-      handleTrack(searchId);
+    let unsubFirestore: (() => void) | null = null;
+    let phone = '';
+    try {
+      const saved = localStorage.getItem('rehla_user_profile');
+      if (saved) {
+        const u = JSON.parse(saved);
+        phone = u.phone || '';
+      }
+    } catch (e) {}
+
+    const loadActiveOrders = (firestoreOrders: Order[] = []) => {
+      let localOrders: Order[] = [];
+      try {
+        const stored = localStorage.getItem('simulated_orders');
+        if (stored) {
+          localOrders = JSON.parse(stored);
+        }
+      } catch (e) {}
+
+      // Synchronize fresh Firestore order statuses back to local storage
+      if (firestoreOrders.length > 0 && localOrders.length > 0) {
+        let localChanged = false;
+        const updatedLocal = localOrders.map(lo => {
+          const matchingFO = firestoreOrders.find(fo => fo.id === lo.id);
+          if (matchingFO && matchingFO.status !== lo.status) {
+            localChanged = true;
+            return { ...lo, status: matchingFO.status };
+          }
+          return lo;
+        });
+        if (localChanged) {
+          try {
+            localStorage.setItem('simulated_orders', JSON.stringify(updatedLocal));
+            localOrders = updatedLocal;
+          } catch (e) {}
+        }
+      }
+
+      // Combine both sources, letting Firestore state override local simulation storage
+      const combined = [...localOrders, ...firestoreOrders];
+      const uniqueMap = new Map<string, Order>();
+      combined.forEach(o => {
+        if (o && o.id) {
+          uniqueMap.set(o.id, o);
+        }
+      });
+
+      // Filter only active orders (status is not delivered or cancelled)
+      const activeList = Array.from(uniqueMap.values()).filter(o => 
+        o.status !== 'delivered' && o.status !== 'cancelled'
+      );
+
+      // Sort by createdAt descending
+      activeList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      setActiveUserOrders(activeList);
+      setActiveOrdersLoaded(true);
+    };
+
+    if (phone) {
+      try {
+        const q = query(collection(db, 'orders'), where('customerPhone', '==', phone));
+        unsubFirestore = onSnapshot(q, (snapshot) => {
+          const fOrders: Order[] = [];
+          snapshot.forEach(docSnap => {
+            fOrders.push({ id: docSnap.id, ...docSnap.data() } as Order);
+          });
+          loadActiveOrders(fOrders);
+        }, (err) => {
+          console.warn("Tracker active orders Firestore fetch failed:", err);
+          loadActiveOrders([]);
+        });
+      } catch (err) {
+        console.warn(err);
+        loadActiveOrders([]);
+      }
+    } else {
+      loadActiveOrders([]);
     }
-  }, [initialOrderId]);
+
+    return () => {
+      if (unsubFirestore) {
+        unsubFirestore();
+      }
+    };
+  }, []);
+
+  // Handle automatic tracking of active orders on mount
+  useEffect(() => {
+    if (!activeOrdersLoaded) return;
+
+    if (initialOrderId) {
+      // If initialOrderId is passed, check if it's active.
+      const isActive = activeUserOrders.some(o => o.id === initialOrderId);
+      if (isActive) {
+        setSearchId(initialOrderId);
+        handleTrack(initialOrderId);
+      } else {
+        // If initialOrderId is completed, but we have other active orders, track the first active one!
+        if (activeUserOrders.length > 0) {
+          const firstActive = activeUserOrders[0];
+          setSearchId(firstActive.id);
+          handleTrack(firstActive.id);
+        } else {
+          // No active orders at all!
+          setSearchId('');
+          setOrder(null);
+          setErrorMsg('');
+        }
+      }
+    } else if (activeUserOrders.length > 0) {
+      // No initialOrderId, but we have active orders
+      const firstActive = activeUserOrders[0];
+      setSearchId(firstActive.id);
+      handleTrack(firstActive.id);
+    } else {
+      // No initialOrderId and no active orders
+      setSearchId('');
+      setOrder(null);
+      setErrorMsg('');
+    }
+  }, [initialOrderId, activeOrdersLoaded]);
 
   const findLocalOrder = (orderIdToFind: string): Order | null => {
     try {
@@ -602,6 +797,33 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
         </p>
       </div>
 
+      {!userProfile ? (
+        <div className="max-w-lg mx-auto bg-white rounded-3xl border border-black/5 p-8 text-center space-y-6 shadow-xs animate-fade-in my-8">
+          <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-dark/30 border border-black/5">
+            <User className="w-8 h-8 text-yellow" />
+          </div>
+          <div className="space-y-2">
+            <h3 className="font-bold text-dark text-base">
+              {language === 'ar' ? '🔐 تتبع الطلبات النشطة محمي ومؤمن' : '🔐 Secure Active Order Tracking'}
+            </h3>
+            <p className="text-xs text-dark/60 leading-relaxed max-w-sm mx-auto">
+              {language === 'ar' 
+                ? 'حفاظاً على خصوصية طلباتك وسريتها، يرجى تسجيل الدخول برقم الجوال لتتمكن من تتبع حالة ومسار وجباتك النشطة مباشرة.' 
+                : 'To protect the privacy and confidentiality of your orders, please log in with your mobile number to view and track your active orders live.'}
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('navigate-tab', { detail: 'account' }));
+            }}
+            className="w-full bg-yellow text-black hover:bg-yellow/95 font-bold text-xs py-3.5 rounded-2xl transition-all shadow-sm cursor-pointer active:scale-98"
+          >
+            {language === 'ar' ? 'تسجيل الدخول برقم الجوال الآن' : 'Log In with Mobile Number Now'}
+          </button>
+        </div>
+      ) : (
+        <>
+
       {/* Tracker search pane */}
       <div className="flex gap-2.5 max-w-lg mx-auto bg-white p-2 rounded-2xl border border-black/5 shadow-xs">
         <div className="flex-1 relative">
@@ -623,6 +845,41 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
           <span>{t('trackBtn')}</span>
         </button>
       </div>
+
+      {/* Multiple Active Orders Bar */}
+      {activeUserOrders.length > 0 && (
+        <div className="max-w-lg mx-auto bg-neutral-50/50 rounded-2xl p-3 border border-black/5 space-y-2">
+          <span className="text-[10px] font-black text-dark/40 uppercase tracking-wider block px-1 text-center sm:text-start">
+            {language === 'ar' ? '🔄 الطلبات النشطة حالياً (اختر للمتابعة):' : '🔄 Active orders (choose one to track):'}
+          </span>
+          <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+            {activeUserOrders.map((actOrder) => (
+              <button
+                key={actOrder.id}
+                onClick={() => {
+                  setSearchId(actOrder.id);
+                  handleTrack(actOrder.id);
+                }}
+                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 ${
+                  order?.id === actOrder.id
+                    ? 'bg-yellow text-black border-yellow shadow-xs'
+                    : 'bg-white text-dark/70 border-black/5 hover:bg-neutral-50'
+                }`}
+              >
+                <span className="font-mono text-[11px] font-bold">#{actOrder.id.substring(0, 8)}...</span>
+                <span className="text-[10px] bg-black/5 px-1.5 py-0.5 rounded-md font-medium">
+                  {actOrder.tableOrDelivery === 'delivery' 
+                    ? (language === 'ar' ? 'توصيل' : 'Delivery') 
+                    : actOrder.tableOrDelivery === 'takeaway'
+                      ? (language === 'ar' ? 'استلام' : 'Pick up')
+                      : (language === 'ar' ? 'محلي' : 'Dine-In')
+                  }
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Interactive Web Notification Authorization Request Banner */}
       {notifPermission === 'default' && (
@@ -658,6 +915,22 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
       ) : errorMsg ? (
         <div className="bg-red-50 border border-red-200 text-red-650 p-4 rounded-2xl text-center text-sm font-semibold max-w-lg mx-auto">
           {errorMsg}
+        </div>
+      ) : !order && activeOrdersLoaded && activeUserOrders.length === 0 ? (
+        <div className="bg-white rounded-3xl border border-black/5 p-8 text-center max-w-lg mx-auto space-y-4">
+          <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-dark/30">
+            <Clock className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="font-bold text-dark text-sm">
+              {language === 'ar' ? 'لا توجد طلبات قائمة حالياً لمتابعتها 🍳' : 'No active orders currently tracking 🍳'}
+            </h3>
+            <p className="text-xs text-dark/50 leading-relaxed max-w-xs mx-auto">
+              {language === 'ar' 
+                ? 'عند قيامك بطلب وجبة طازجة من قائمة الطعام، ستظهر لك خطوات تحضيرها والطهي هنا مباشرة.' 
+                : 'When you place a fresh order from our menu, you can track its preparation and cooking progress here in real-time.'}
+            </p>
+          </div>
         </div>
       ) : order ? (
         <motion.div
@@ -880,6 +1153,35 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                     </a>
                   )}
                 </div>
+
+                {/* Driver Live Tracking Map */}
+                {driverCoords && (
+                  <div className="space-y-2 pt-3 border-t border-black/5">
+                    <span className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block">
+                      {language === 'ar' ? '📍 موقع المندوب المباشر (تتبع حي):' : '📍 Live Driver Position (Real-Time Tracking):'}
+                    </span>
+                    <div className="relative aspect-video w-full rounded-2xl overflow-hidden border border-black/5 shadow-xs bg-neutral-100">
+                      <iframe
+                        title="Driver Live Tracking"
+                        width="100%"
+                        height="100%"
+                        style={{ border: 0 }}
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${driverCoords.lng - 0.008}%2C${driverCoords.lat - 0.008}%2C${driverCoords.lng + 0.008}%2C${driverCoords.lat + 0.008}&layer=mapnik&marker=${driverCoords.lat}%2C${driverCoords.lng}`}
+                      />
+                    </div>
+                    <div className="text-[10px] text-emerald-600 font-bold flex items-center gap-1.5 bg-emerald-500/5 p-2 rounded-xl border border-emerald-500/10 justify-center">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                      </span>
+                      <span>
+                        {language === 'ar' 
+                          ? 'يتلقى التطبيق الآن إحداثيات المندوب مباشرة كل 10 ثوانٍ' 
+                          : 'Receiving live driver coordinates from GPS every 10 seconds'}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1256,6 +1558,9 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
 
           </div>
         </div>
+      )}
+
+        </>
       )}
 
       {/* Visual Toast Notification Overlay */}

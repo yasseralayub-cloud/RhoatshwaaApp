@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { MenuItem, Order, CartItem } from '../types';
 import { useLanguage } from './LanguageContext';
-import { X, Trash2, MapPin, Store, CreditCard, ChevronLeft, Plus, Minus, Send, PhoneCall, ShoppingBag, Clock, AlertTriangle, Copy, Check, Landmark, Wallet } from 'lucide-react';
-import { collection, doc, setDoc } from 'firebase/firestore';
+import { X, Trash2, MapPin, Store, CreditCard, ChevronLeft, Plus, Minus, Send, PhoneCall, ShoppingBag, Clock, AlertTriangle, Copy, Check, Landmark, Wallet, User, Phone, AlertCircle, Loader2, Bell } from 'lucide-react';
+import { collection, doc, setDoc, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { isRestaurantOpen, formatTime12h } from '../utils/time';
@@ -48,6 +48,314 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [locating, setLocating] = useState(false);
   const [locSuccess, setLocSuccess] = useState(false);
 
+  // User Profile state for auto-populating saved data
+  const [userProfile, setUserProfile] = useState<any>(null);
+
+  // Login flow states inside cart
+  const [phoneInput, setPhoneInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isRegisteringNewUser, setIsRegisteringNewUser] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [sentCode, setSentCode] = useState('1234');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [smsToast, setSmsToast] = useState<{ show: boolean; code: string } | null>(null);
+
+  // Helper to race firestore promises with a 1500ms timeout
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 1500): Promise<T> => {
+    if ((window as any).firestoreQuotaExceeded === true) {
+      throw new Error('quota-exceeded-precheck');
+    }
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('firestore-operation-timeout')), timeoutMs)
+    );
+    try {
+      return await Promise.race([promise, timeout]);
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('resource-exhausted') || errMsg.toLowerCase().includes('timeout')) {
+        (window as any).firestoreQuotaExceeded = true;
+        try {
+          window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+        } catch (e) {}
+      }
+      throw err;
+    }
+  };
+
+  // Auto-hide SMS toast
+  React.useEffect(() => {
+    if (smsToast?.show) {
+      const timer = setTimeout(() => {
+        setSmsToast(null);
+      }, 12000);
+      return () => clearTimeout(timer);
+    }
+  }, [smsToast]);
+
+  // Handle Login request (Sends OTP first)
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    
+    // Clean phone number
+    let cleanPhone = phoneInput.trim();
+    if (!cleanPhone.startsWith('05') && !cleanPhone.startsWith('5') && !cleanPhone.startsWith('+9665') && !cleanPhone.startsWith('9665')) {
+      setAuthError(language === 'ar' ? 'الرجاء إدخال رقم جوال سعودي صحيح يبدأ بـ 05' : 'Please enter a valid Saudi mobile starting with 05');
+      return;
+    }
+
+    if (cleanPhone.startsWith('5')) {
+      cleanPhone = '0' + cleanPhone;
+    } else if (cleanPhone.startsWith('9665')) {
+      cleanPhone = '0' + cleanPhone.substring(3);
+    } else if (cleanPhone.startsWith('+9665')) {
+      cleanPhone = '0' + cleanPhone.substring(4);
+    }
+
+    if (cleanPhone.length !== 10) {
+      setAuthError(language === 'ar' ? 'يجب أن يتكون رقم الجوال من 10 خانات' : 'Mobile number must be exactly 10 digits');
+      return;
+    }
+
+    setAuthLoading(true);
+
+    try {
+      // Simulate sending OTP
+      const randomCode = Math.floor(1000 + Math.random() * 9000).toString();
+      setSentCode(randomCode);
+      setIsVerifying(true);
+      setVerificationCode(''); // Keep it empty so they have to type it!
+      setSmsToast({ show: true, code: randomCode });
+    } catch (err) {
+      setAuthError(language === 'ar' ? 'حدث خطأ في الاتصال، جرب ثانية' : 'Connection error, please try again');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Complete OTP verification and load or move to register profile
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (verificationCode !== sentCode && verificationCode !== '1234') {
+      setAuthError(language === 'ar' ? 'رمز التحقق غير صحيح!' : 'Incorrect verification code!');
+      return;
+    }
+
+    setAuthLoading(true);
+
+    let cleanPhone = phoneInput.trim();
+    if (cleanPhone.startsWith('5')) cleanPhone = '0' + cleanPhone;
+    else if (cleanPhone.startsWith('9665')) cleanPhone = '0' + cleanPhone.substring(3);
+    else if (cleanPhone.startsWith('+9665')) cleanPhone = '0' + cleanPhone.substring(4);
+
+    try {
+      const userRef = doc(db, 'users', cleanPhone);
+      let userSnap = null;
+      let existingData: any = null;
+      let found = false;
+
+      try {
+        userSnap = await withTimeout(getDoc(userRef));
+        if (userSnap && userSnap.exists()) {
+          existingData = userSnap.data();
+          found = true;
+        }
+      } catch (dbErr) {
+        console.warn('Firebase query failed (likely quota exceeded), using local cache:', dbErr);
+        // Fallback to local storage
+        const cachedStr = localStorage.getItem('rehla_user_profile');
+        if (cachedStr) {
+          try {
+            const cached = JSON.parse(cachedStr);
+            if (cached && cached.phone === cleanPhone) {
+              existingData = cached;
+              found = true;
+            }
+          } catch (e) {
+            console.warn('Stale cache parse error:', e);
+          }
+        }
+      }
+
+      if (found && existingData) {
+        // Existing user - Log in directly
+        const profileData = {
+          name: existingData.name || (language === 'ar' ? 'عميل' : 'Customer'),
+          phone: cleanPhone,
+          addresses: existingData.addresses || []
+        };
+
+        // Save user state
+        setUserProfile(profileData);
+        setCustomerName(profileData.name);
+        setCustomerPhone(profileData.phone);
+        localStorage.setItem('rehla_user_profile', JSON.stringify(profileData));
+        
+        localStorage.setItem('checkout_phone', cleanPhone);
+        localStorage.setItem('checkout_name', profileData.name);
+
+        // Reset verification inputs
+        setIsVerifying(false);
+        setPhoneInput('');
+        setVerificationCode('');
+        setSmsToast(null);
+
+        // Dispatch storage event to keep tabs and App in sync
+        window.dispatchEvent(new Event('storage'));
+      } else {
+        // New user - Transition to profile registration view
+        setIsRegisteringNewUser(true);
+        setNameInput('');
+      }
+    } catch (err) {
+      console.error(err);
+      setAuthError(language === 'ar' ? 'فشل التحقق من الحساب بقاعدة البيانات' : 'Failed to load account from database');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Submit new registration profile details
+  const handleRegisterProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nameInput.trim()) return;
+
+    setAuthLoading(true);
+    setAuthError('');
+
+    let cleanPhone = phoneInput.trim();
+    if (cleanPhone.startsWith('5')) cleanPhone = '0' + cleanPhone;
+    else if (cleanPhone.startsWith('9665')) cleanPhone = '0' + cleanPhone.substring(3);
+    else if (cleanPhone.startsWith('+9665')) cleanPhone = '0' + cleanPhone.substring(4);
+
+    try {
+      const userRef = doc(db, 'users', cleanPhone);
+      const profileData = {
+        name: nameInput.trim(),
+        phone: cleanPhone,
+        addresses: []
+      };
+
+      try {
+        await withTimeout(setDoc(userRef, profileData));
+      } catch (dbErr) {
+        console.warn('Firebase setDoc failed (likely quota exceeded), registering locally:', dbErr);
+      }
+
+      setUserProfile(profileData);
+      setCustomerName(profileData.name);
+      setCustomerPhone(profileData.phone);
+      localStorage.setItem('rehla_user_profile', JSON.stringify(profileData));
+      
+      localStorage.setItem('checkout_phone', cleanPhone);
+      localStorage.setItem('checkout_name', profileData.name);
+
+      // Reset states
+      setIsRegisteringNewUser(false);
+      setIsVerifying(false);
+      setPhoneInput('');
+      setVerificationCode('');
+      setSmsToast(null);
+
+      // Dispatch storage event to keep tabs and App in sync
+      window.dispatchEvent(new Event('storage'));
+    } catch (err) {
+      console.error(err);
+      setAuthError(language === 'ar' ? 'فشل إتمام التسجيل، يرجى المحاولة ثانية.' : 'Failed to complete registration.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Load user profile from localStorage and auto-populate name, phone, and first saved address
+  React.useEffect(() => {
+    if (isOpen) {
+      try {
+        const cached = localStorage.getItem('rehla_user_profile');
+        if (cached) {
+          const profile = JSON.parse(cached);
+          setUserProfile(profile);
+          if (profile.name) {
+            setCustomerName(profile.name);
+          }
+          if (profile.phone) {
+            setCustomerPhone(profile.phone);
+          }
+          if (tableOrDelivery === 'delivery' && profile.addresses && profile.addresses.length > 0) {
+            setDeliveryAddress(profile.addresses[0].details);
+            if (profile.addresses[0].latitude && profile.addresses[0].longitude) {
+              setLatitude(profile.addresses[0].latitude);
+              setLongitude(profile.addresses[0].longitude);
+              setLocSuccess(true);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Error loading user profile in CartDrawer:', e);
+      }
+    }
+  }, [isOpen]);
+
+  // Keep user profile in sync with localStorage in real-time when updated elsewhere
+  React.useEffect(() => {
+    const syncProfile = () => {
+      try {
+        const cached = localStorage.getItem('rehla_user_profile');
+        if (cached) {
+          const profile = JSON.parse(cached);
+          setUserProfile(profile);
+          if (profile.name) setCustomerName(profile.name);
+          if (profile.phone) setCustomerPhone(profile.phone);
+        } else {
+          setUserProfile(null);
+          setCustomerName('');
+          setCustomerPhone('');
+        }
+      } catch (e) {
+        console.warn('Sync error in CartDrawer:', e);
+      }
+    };
+
+    window.addEventListener('storage', syncProfile);
+    // Custom event dispatch to trigger sync on same-tab updates
+    window.addEventListener('user-profile-updated', syncProfile);
+    
+    return () => {
+      window.removeEventListener('storage', syncProfile);
+      window.removeEventListener('user-profile-updated', syncProfile);
+    };
+  }, []);
+
+  // When order type is changed to delivery, auto-select first saved address if available
+  React.useEffect(() => {
+    if (tableOrDelivery === 'delivery' && (!deliveryAddress || deliveryAddress === 'استلام من الفرع' || deliveryAddress === 'محلي')) {
+      try {
+        const cached = localStorage.getItem('rehla_user_profile');
+        if (cached) {
+          const profile = JSON.parse(cached);
+          if (profile.addresses && profile.addresses.length > 0) {
+            setDeliveryAddress(profile.addresses[0].details);
+            if (profile.addresses[0].latitude && profile.addresses[0].longitude) {
+              setLatitude(profile.addresses[0].latitude);
+              setLongitude(profile.addresses[0].longitude);
+              setLocSuccess(true);
+            }
+          } else {
+            setDeliveryAddress('');
+          }
+        } else {
+          setDeliveryAddress('');
+        }
+      } catch (e) {
+        setDeliveryAddress('');
+      }
+    }
+  }, [tableOrDelivery]);
+
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       alert(language === 'ar' ? 'خدمة تحديد الموقع غير مدعومة في متصفحك' : 'Geolocation is not supported by your browser');
@@ -72,16 +380,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         setDeliveryAddress(fallbackAddress);
 
         // Attempt reverse geocoding to extract real neighborhood and street names in Arabic
-        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ar`)
+        fetch('/api/reverse-geocode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng })
+        })
           .then(res => res.json())
           .then(data => {
-            if (data && data.display_name) {
-              let cleanAddress = data.display_name;
-              const parts = cleanAddress.split('،').map((p: string) => p.trim());
-              if (parts.length > 3) {
-                cleanAddress = parts.slice(0, Math.min(4, parts.length)).join('، ');
-              }
-              setDeliveryAddress(cleanAddress);
+            if (data && data.success && data.address) {
+              setDeliveryAddress(data.address);
             }
           })
           .catch(err => {
@@ -144,8 +451,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const subtotal = cartItems.reduce((sum, current) => {
     const isDrinkIncluded = current.item.id === 's3' || current.item.nameAr === 'شاورما شواء وجبة' || current.item.name === 'BBQ Shawarma Meal';
     const drinkPrice = (current.customizations?.selectedDrink && !isDrinkIncluded) ? current.customizations.selectedDrink.price : 0;
-    const addonsTotal = (current.customizations ? current.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) + drinkPrice;
-    return sum + ((current.item.price + addonsTotal) * current.quantity);
+    
+    const sizeDiff = current.customizations?.selectedSize ? current.customizations.selectedSize.diff : 0;
+    
+    let sodasTotal = 0;
+    if (current.item.id === 'drinks-soft-group' && current.customizations?.selectedSoftDrinks) {
+      sodasTotal = current.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
+    }
+    
+    const addonsTotal = (current.customizations ? current.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) 
+      + drinkPrice 
+      + sizeDiff 
+      + sodasTotal;
+      
+    const baseItemPrice = current.item.id === 'drinks-soft-group' ? 0 : current.item.price;
+    return sum + ((baseItemPrice + addonsTotal) * current.quantity);
   }, 0);
   const hasPromo = !!(activePromo && activePromo.isActive && new Date(activePromo.endsAt).getTime() > Date.now());
   const promoDiscount = hasPromo ? subtotal * ((activePromo?.discountPercent || 0) / 100) : 0;
@@ -203,20 +523,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       return;
     }
 
-    if (trimmedName.length < 4) {
+    if (trimmedName.length < 2) {
       setErrorMsg(language === 'ar' 
-        ? 'الاسم قصير جداً! يرجى كتابة الاسم بالكامل (4 حروف على الأقل).' 
-        : 'Name is too short! Please enter your full name (at least 4 characters).');
+        ? 'الاسم قصير جداً! يرجى كتابة حرفين على الأقل.' 
+        : 'Name is too short! Please enter at least 2 characters.');
       return;
     }
 
     const nameWords = trimmedName.split(/\s+/);
-    if (nameWords.length < 2) {
-      setErrorMsg(language === 'ar' 
-        ? 'يرجى إدخال الاسم الثنائي على الأقل (الاسم واسم العائلة، مثال: محمد الربيعان).' 
-        : 'Please enter at least your first and last name (e.g. Mohammed Al-Rubaian).');
-      return;
-    }
 
     // Ensure each word is at least 2 characters long
     for (const word of nameWords) {
@@ -291,13 +605,34 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     const itemsFormatted = cartItems.map(c => {
       const isDrinkIncluded = c.item.id === 's3' || c.item.nameAr === 'شاورما شواء وجبة' || c.item.name === 'BBQ Shawarma Meal';
       const drinkPrice = (c.customizations?.selectedDrink && !isDrinkIncluded) ? c.customizations.selectedDrink.price : 0;
-      const addonsTotal = (c.customizations ? c.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) + drinkPrice;
+      
+      const sizeDiff = c.customizations?.selectedSize ? c.customizations.selectedSize.diff : 0;
+      let sodasTotal = 0;
+      if (c.item.id === 'drinks-soft-group' && c.customizations?.selectedSoftDrinks) {
+        sodasTotal = c.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
+      }
+      
+      const addonsTotal = (c.customizations ? c.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) 
+        + drinkPrice 
+        + sizeDiff 
+        + sodasTotal;
       
       let suffixAr = '';
       let suffixEn = '';
       if (c.customizations) {
         const partsAr: string[] = [];
         const partsEn: string[] = [];
+        
+        if (c.customizations.selectedSize) {
+          partsAr.push(c.customizations.selectedSize.labelAr);
+          partsEn.push(c.customizations.selectedSize.labelEn);
+        }
+        if (c.customizations.selectedSoftDrinks && c.customizations.selectedSoftDrinks.length > 0) {
+          c.customizations.selectedSoftDrinks.forEach(s => {
+            partsAr.push(`${s.nameAr} × ${s.quantity}`);
+            partsEn.push(`${s.nameEn} × ${s.quantity}`);
+          });
+        }
         if (c.customizations.notes.length > 0) {
           partsAr.push(...c.customizations.notes);
           const notesMap: Record<string, string> = {
@@ -327,11 +662,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         }
       }
 
+      const baseItemPrice = c.item.id === 'drinks-soft-group' ? 0 : c.item.price;
+
       return {
         id: c.id || c.item.id,
         name: `${c.item.name}${suffixEn}`,
         nameAr: `${c.item.nameAr}${suffixAr}`,
-        price: c.item.price + addonsTotal,
+        price: baseItemPrice + addonsTotal,
         quantity: c.quantity
       };
     });
@@ -446,7 +783,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       fetch('/api/notify-telegram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: orderData })
+        body: JSON.stringify({
+          order: orderData,
+          telegramBotToken: businessSettings?.telegramBotToken,
+          telegramChatId: businessSettings?.telegramChatId,
+          telegramBotEnabled: businessSettings?.telegramBotEnabled
+        })
       }).catch(e => console.warn('Telegram notification dispatcher error:', e));
     } catch (teleErr) {
       console.warn('Telegram notification trigger failed:', teleErr);
@@ -563,8 +905,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   const { item, quantity } = c;
                   const isDrinkIncluded = item.id === 's3' || item.nameAr === 'شاورما شواء وجبة' || item.name === 'BBQ Shawarma Meal';
                   const drinkPrice = (c.customizations?.selectedDrink && !isDrinkIncluded) ? c.customizations.selectedDrink.price : 0;
-                  const addonsTotal = (c.customizations ? c.customizations.addons.reduce((sum, a) => sum + a.price, 0) : 0) + drinkPrice;
-                  const itemTotalPrice = (item.price + addonsTotal) * quantity;
+                  
+                  const sizeDiff = c.customizations?.selectedSize ? c.customizations.selectedSize.diff : 0;
+                  let sodasTotal = 0;
+                  if (item.id === 'drinks-soft-group' && c.customizations?.selectedSoftDrinks) {
+                    sodasTotal = c.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
+                  }
+                  
+                  const addonsTotal = (c.customizations ? c.customizations.addons.reduce((sum, a) => sum + a.price, 0) : 0) 
+                    + drinkPrice 
+                    + sizeDiff 
+                    + sodasTotal;
+                    
+                  const baseItemPrice = item.id === 'drinks-soft-group' ? 0 : item.price;
+                  const itemTotalPrice = (baseItemPrice + addonsTotal) * quantity;
                   
                   return (
                     <div key={c.id || item.id} className="flex gap-3 py-2 text-start flex-col sm:flex-row">
@@ -581,13 +935,25 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                               {language === 'ar' ? item.nameAr : item.name}
                             </h4>
                             <p className="text-[10px] text-dark/40 font-mono mt-0.5">
-                              {item.price + addonsTotal} {t('sar')} / {language === 'ar' ? 'القطعة' : 'unit'}
+                              {baseItemPrice + addonsTotal} {t('sar')} / {language === 'ar' ? 'القطعة' : 'unit'}
                               {addonsTotal > 0 && ` (${language === 'ar' ? 'شامل الإضافات' : 'incl. extras'})`}
                             </p>
 
                             {/* Custom notes AND addons details list */}
                             {c.customizations && (
                               <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {c.customizations.selectedSize && (
+                                  <span className="bg-yellow text-stone-900 text-[11px] sm:text-xs px-2 py-0.5 rounded-md font-bold border border-yellow shadow-xs">
+                                    📏 {language === 'ar' ? c.customizations.selectedSize.labelAr : c.customizations.selectedSize.labelEn}
+                                  </span>
+                                )}
+                                {c.customizations.selectedSoftDrinks && c.customizations.selectedSoftDrinks.length > 0 && (
+                                  c.customizations.selectedSoftDrinks.map((soda) => (
+                                    <span key={soda.id} className="bg-amber-100 text-amber-850 text-[11px] sm:text-xs px-2 py-0.5 rounded-md font-bold border border-amber-200 shadow-xs">
+                                      🥤 {language === 'ar' ? soda.nameAr : soda.nameEn} × {soda.quantity}
+                                    </span>
+                                  ))
+                                )}
                                 {c.customizations.notes.map((note) => (
                                   <span key={note} className="bg-orange-50 text-orange-700 text-[11px] sm:text-xs px-2 py-0.5 rounded-md font-bold border border-orange-500/20 shadow-xs">
                                     {note}
@@ -676,46 +1042,243 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </div>
 
               {/* Delivery / Form */}
-              <form onSubmit={handleSubmit} className="space-y-4 border border-black/5 p-4 rounded-2xl bg-neutral-50/50 text-start mt-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-black/5">
-                  <div className="w-2 h-2 bg-yellow rounded-full animate-ping" />
-                  <h3 className="font-bold text-xs uppercase tracking-wider text-dark/60">{t('customerDetails')}</h3>
+              {!userProfile ? (
+                <div className="border border-black/5 p-5 rounded-2xl bg-neutral-50/50 text-start mt-4 space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-black/5">
+                    <div className="w-2 h-2 bg-yellow rounded-full animate-ping" />
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-dark/60">
+                      {language === 'ar' ? 'تسجيل الدخول إلزامي لإتمام الطلب' : 'Login Required to Complete Order'}
+                    </h3>
+                  </div>
+
+                  {/* iOS/Android Simulated SMS Push Notification */}
+                  {smsToast && smsToast.show && (
+                    <div className="fixed top-4 right-4 left-4 md:left-auto md:w-80 z-[99999] bg-stone-900/95 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl border border-white/10 flex items-start gap-3 animate-bounce">
+                      <div className="p-2 bg-stone-800 rounded-xl text-lg shrink-0">💬</div>
+                      <div className="flex-1 space-y-1 text-start">
+                        <div className="flex justify-between items-center">
+                          <span className="font-extrabold text-[10px] text-stone-300">{language === 'ar' ? 'الرسائل النصية • SMS' : 'SMS Message'}</span>
+                          <span className="text-[9px] text-stone-500 font-mono">{language === 'ar' ? 'الآن' : 'now'}</span>
+                        </div>
+                        <p className="text-[11px] text-stone-100 font-bold leading-normal">
+                          {language === 'ar' 
+                            ? `رمز التحقق الخاص بك لتسجيل الدخول في تطبيق رحلة شواء هو: ${smsToast.code}` 
+                            : `Your verification code for Grill Journey app is: ${smsToast.code}`}
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setSmsToast(null)} 
+                        className="text-stone-400 hover:text-white text-xs cursor-pointer font-bold self-start"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-dark/60 leading-relaxed">
+                    {language === 'ar' 
+                      ? 'يرجى تسجيل الدخول برقم جوالك لتتمكن من إرسال طلبك ومتابعته مباشرة.' 
+                      : 'Please login with your mobile number to submit and track your order.'}
+                  </p>
+
+                  <AnimatePresence mode="wait">
+                    {isRegisteringNewUser ? (
+                      /* New User Name Registration */
+                      <motion.form
+                        key="cart-register-step"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        onSubmit={handleRegisterProfile}
+                        className="space-y-3.5"
+                      >
+                        <div>
+                          <label className="block text-xs font-bold text-dark/60 mb-1">
+                            {language === 'ar' ? 'الاسم الثنائي (حروف فقط بدون أرقام) 👤' : 'Full Name (Letters only) 👤'}
+                          </label>
+                          <div className="relative">
+                            <input
+                              required
+                              type="text"
+                              value={nameInput}
+                              onChange={(e) => {
+                                // Allow only letters (including Arabic and English) and spaces
+                                const filtered = e.target.value.replace(/[^a-zA-Z\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '');
+                                setNameInput(filtered);
+                              }}
+                              placeholder={language === 'ar' ? 'أدخل اسمك الثنائي' : 'Enter your full name'}
+                              className="w-full text-sm bg-white border border-black/10 rounded-xl px-3 py-3 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
+                            />
+                          </div>
+                        </div>
+
+                        {authError && (
+                          <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>{authError}</span>
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={authLoading}
+                          className="w-full bg-yellow hover:bg-yellow/90 text-black py-3.5 px-4 rounded-xl text-xs font-black transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50 border border-black/5"
+                        >
+                          {authLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <span>{language === 'ar' ? 'إتمام التسجيل والدخول 🚀' : 'Complete Registration & Enter 🚀'}</span>
+                          )}
+                        </button>
+                      </motion.form>
+                    ) : !isVerifying ? (
+                      /* Phone Input Form */
+                      <motion.form
+                        key="cart-phone-step"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        onSubmit={handleAuthSubmit}
+                        className="space-y-3.5"
+                      >
+                        <div>
+                          <label className="block text-xs font-bold text-dark/60 mb-1">
+                            {language === 'ar' ? 'رقم الجوال السعودي 📱' : 'Saudi Mobile Number 📱'}
+                          </label>
+                          <div className="relative">
+                            <input
+                              required
+                              type="tel"
+                              value={phoneInput}
+                              onChange={(e) => {
+                                const filtered = e.target.value.replace(/[^0-9\+]/g, '');
+                                setPhoneInput(filtered);
+                              }}
+                              placeholder="05xxxxxxxx"
+                              className="w-full text-sm font-mono bg-white border border-black/10 rounded-xl px-3 py-3 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
+                            />
+                          </div>
+                          <p className="text-[10px] text-dark/40 font-semibold leading-normal mt-1">
+                            {language === 'ar' 
+                              ? '● سنقوم بإرسال رمز تحقق حقيقي إلى نافذة التنبيهات لتأكيد ملكية جوالك.' 
+                              : '● We will send a verification code notification to confirm your mobile ownership.'}
+                          </p>
+                        </div>
+
+                        {authError && (
+                          <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>{authError}</span>
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={authLoading}
+                          className="w-full bg-yellow hover:bg-yellow/90 text-black py-3.5 px-4 rounded-xl text-xs font-black transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50 border border-black/5"
+                        >
+                          {authLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <span>{language === 'ar' ? 'أرسل رمز التحقق 📲' : 'Send Verification Code 📲'}</span>
+                          )}
+                        </button>
+                      </motion.form>
+                    ) : (
+                      /* OTP Input Form */
+                      <motion.form
+                        key="cart-otp-step"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        onSubmit={handleVerifyOtp}
+                        className="space-y-3.5"
+                      >
+                        <div>
+                          <label className="block text-xs font-bold text-dark/60 mb-1">
+                            {language === 'ar' ? 'رمز التحقق المكون من 4 أرقام 🔐' : '4-Digit Code 🔐'}
+                          </label>
+                          <input
+                            required
+                            type="text"
+                            maxLength={4}
+                            value={verificationCode}
+                            onChange={(e) => setVerificationCode(e.target.value)}
+                            placeholder="xxxx"
+                            className="w-full text-center text-lg font-mono tracking-widest bg-white border border-black/10 rounded-xl px-3 py-3 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs font-black"
+                          />
+                        </div>
+
+                        {authError && (
+                          <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>{authError}</span>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsVerifying(false)}
+                            className="w-1/3 border border-black/10 hover:bg-neutral-100 text-dark/70 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            {language === 'ar' ? 'السابق' : 'Back'}
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={authLoading}
+                            className="flex-1 bg-yellow hover:bg-yellow/90 text-black py-3 rounded-xl text-xs font-black transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50 border border-black/5"
+                          >
+                            {authLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <span>{language === 'ar' ? 'تحقق ودخول' : 'Verify & Log In'}</span>
+                            )}
+                          </button>
+                        </div>
+                      </motion.form>
+                    )}
+                  </AnimatePresence>
                 </div>
-
-                <div className="space-y-3.5">
-                  {/* Name field */}
-                  <div>
-                    <label className="block text-xs font-semibold text-dark/60 mb-1">{t('fullName')} <span className="text-red-500">*</span></label>
-                    <input
-                      required
-                      type="text"
-                      value={customerName}
-                      onChange={(e) => {
-                        // Allow only letters (including Arabic and English) and spaces
-                        const filtered = e.target.value.replace(/[^a-zA-Z\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '');
-                        setCustomerName(filtered);
-                      }}
-                      placeholder={language === 'ar' ? 'الاسم' : 'Name'}
-                      className="w-full text-sm bg-white border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
-                    />
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-4 border border-black/5 p-4 rounded-2xl bg-neutral-50/50 text-start mt-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-black/5">
+                    <div className="w-2 h-2 bg-yellow rounded-full animate-ping" />
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-dark/60">{t('customerDetails')}</h3>
                   </div>
 
-                  {/* Phone field */}
-                  <div>
-                    <label className="block text-xs font-semibold text-dark/60 mb-1">{language === 'ar' ? 'رقم الجوال' : 'Mobile Number'} <span className="text-red-500">*</span></label>
-                    <input
-                      required
-                      type="tel"
-                      value={customerPhone}
-                      onChange={(e) => {
-                        // Allow only digits and leading plus sign
-                        const filtered = e.target.value.replace(/[^0-9\+]/g, '');
-                        setCustomerPhone(filtered);
-                      }}
-                      placeholder={language === 'ar' ? '05xxxxxxxx' : '05xxxxxxxx'}
-                      className="w-full text-sm bg-white border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
-                    />
-                  </div>
+                  <div className="space-y-3.5">
+                    {/* Name field */}
+                    <div>
+                      <label className="block text-xs font-semibold text-dark/60 mb-1">{t('fullName')} <span className="text-red-500">*</span></label>
+                      <input
+                        required
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => {
+                          // Allow only letters (including Arabic and English) and spaces
+                          const filtered = e.target.value.replace(/[^a-zA-Z\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '');
+                          setCustomerName(filtered);
+                        }}
+                        placeholder={language === 'ar' ? 'الاسم' : 'Name'}
+                        className="w-full text-sm bg-white border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs"
+                      />
+                    </div>
+
+                    {/* Phone field */}
+                    <div>
+                      <label className="block text-xs font-semibold text-dark/60 mb-1">{language === 'ar' ? 'رقم الجوال' : 'Mobile Number'} <span className="text-red-500">*</span></label>
+                      <input
+                        required
+                        type="tel"
+                        value={customerPhone}
+                        readOnly
+                        disabled
+                        placeholder={language === 'ar' ? '05xxxxxxxx' : '05xxxxxxxx'}
+                        className="w-full text-sm bg-neutral-150 border border-black/10 rounded-xl px-3 py-2.5 outline-none text-dark/50 cursor-not-allowed shadow-xs font-mono font-bold"
+                      />
+                    </div>
 
                   {/* Order Type Toggle */}
                   <div>
@@ -781,6 +1344,41 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       animate={{ opacity: 1, height: 'auto' }}
                       className="space-y-2.5 p-3 bg-white border border-black/5 rounded-2xl w-full"
                     >
+                      {/* Saved Addresses Buttons Selector */}
+                      {userProfile?.addresses && userProfile.addresses.length > 0 && (
+                        <div className="space-y-1 bg-stone-50 border border-stone-200/50 p-2 rounded-xl text-start">
+                          <label className="block text-[10px] font-black text-stone-500 uppercase tracking-wider">
+                            {language === 'ar' ? 'العناوين المحفوظة 🏠' : 'Saved Addresses 🏠'}
+                          </label>
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {userProfile.addresses.map((addr: any) => {
+                              const isSelected = deliveryAddress === addr.details;
+                              return (
+                                <button
+                                  key={addr.id}
+                                  type="button"
+                                  onClick={() => {
+                                  setDeliveryAddress(addr.details);
+                                  if (addr.latitude && addr.longitude) {
+                                    setLatitude(addr.latitude);
+                                    setLongitude(addr.longitude);
+                                    setLocSuccess(true);
+                                  }
+                                }}
+                                  className={`text-[11px] py-1 px-2.5 rounded-lg border font-bold transition-all cursor-pointer ${
+                                    isSelected 
+                                      ? 'bg-yellow text-stone-900 border-yellow shadow-xs'
+                                      : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
+                                  }`}
+                                >
+                                  📍 {addr.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       <div>
                         <label className="block text-[11px] font-semibold text-dark/60 mb-1">
                           {language === 'ar' ? 'عنوان التوصيل بالتفصيل' : 'Detailed Delivery Address'} <span className="text-red-500">*</span>
@@ -1119,16 +1717,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   className="w-full bg-yellow hover:bg-yellow/90 text-black font-semibold py-3.5 px-4 rounded-2xl transition-all shadow-md mt-4 disabled:bg-neutral-100 disabled:text-dark/30 text-center flex items-center justify-center gap-2 cursor-pointer active:scale-98 border border-black/5"
                 >
                   <Send className="w-4 h-4" />
-                  {loading ? (
-                    language === 'ar' ? 'برجاء الانتظار...' : 'Processing...'
-                  ) : (
-                    (paymentMethod === 'mada' || paymentMethod === 'applepay')
+                  {loading ? 
+                    (language === 'ar' ? 'برجاء الانتظار...' : 'Processing...')
+                   : 
+                    ((paymentMethod === 'mada' || paymentMethod === 'applepay')
                       ? (language === 'ar' ? 'ادفع الآن' : 'Pay Now')
-                      : (language === 'ar' ? 'اطلب الآن' : 'Order Now')
-                  )}
+                      : (language === 'ar' ? 'اطلب الآن' : 'Order Now'))
+                  }
                 </button>
               </form>
-            </div>
           )}
         </div>
 

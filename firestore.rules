@@ -119,5 +119,21 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
+
+    // Users Rules
+    match /users/{phone} {
+      allow read: if true;
+      allow create, update: if isValidId(phone)
+        && incoming().keys().hasAll(['name', 'phone'])
+        && incoming().name is string && incoming().name.size() <= 100
+        && incoming().phone == phone
+        && (!('addresses' in incoming()) || incoming().addresses is list);
+      allow delete: if isAdmin();
+    }
+
+    // Support Tickets Rules
+    match /support_tickets/{ticketId} {
+      allow read, write: if true;
+    }
   }
 }

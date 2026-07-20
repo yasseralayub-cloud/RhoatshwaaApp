@@ -95,6 +95,17 @@
         "vatNumber": { "type": "string" }
       },
       "required": ["restaurantNameAr", "restaurantNameEn", "logoUrl", "whatsappNumber", "taxEnabled", "taxPercent"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile with saved addresses",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "addresses": { "type": "array" }
+      },
+      "required": ["name", "phone"]
     }
   },
   "firestore": {
@@ -117,6 +128,10 @@
     "/settings/{docId}": {
       "schema": "BusinessSettings",
       "description": "Singleton storing localized values and tax parameters"
+    },
+    "/users/{phone}": {
+      "schema": "User",
+      "description": "Registered customer profiles and saved addresses"
     }
   }
 }

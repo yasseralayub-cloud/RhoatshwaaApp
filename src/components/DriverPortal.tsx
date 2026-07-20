@@ -63,6 +63,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
   const [carRegistrationImg, setCarRegistrationImg] = useState<string>('');
   const [bankName, setBankName] = useState<string>('Al Rajhi'); // 'Al Rajhi' or 'STC Bank'
   const [iban, setIban] = useState<string>('');
+  const [bankAccountName, setBankAccountName] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [registrationSuccessMsg, setRegistrationSuccessMsg] = useState('');
 
@@ -479,6 +480,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
         carRegistrationImg,
         bankName,
         iban: cleanIban,
+        bankAccountName: bankAccountName.trim() || doubleName,
         status: 'pending',
         createdAt: new Date().toISOString()
       };
@@ -695,14 +697,18 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
   // Helper to generate WhatsApp link
   const getWhatsAppLink = (order: Order, customStatus?: string) => {
     let cleanedPhone = order.customerPhone.replace(/\D/g, ''); // Keep only digits
+    if (cleanedPhone.startsWith('00966')) {
+      cleanedPhone = cleanedPhone.substring(2);
+    }
+    if (cleanedPhone.startsWith('96605')) {
+      cleanedPhone = '966' + cleanedPhone.substring(4);
+    }
     if (cleanedPhone.startsWith('05') && cleanedPhone.length === 10) {
       cleanedPhone = '966' + cleanedPhone.substring(1);
     } else if (cleanedPhone.startsWith('5') && cleanedPhone.length === 9) {
       cleanedPhone = '966' + cleanedPhone;
-    } else if (cleanedPhone.startsWith('00966')) {
-      cleanedPhone = cleanedPhone.substring(2);
-    } else if (cleanedPhone.length === 9 && cleanedPhone.startsWith('5')) {
-      cleanedPhone = '966' + cleanedPhone;
+    } else if (cleanedPhone.startsWith('005') && cleanedPhone.length === 11) {
+      cleanedPhone = '966' + cleanedPhone.substring(2);
     }
 
     const activeStatus = customStatus || order.status;
@@ -748,11 +754,6 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
           <h2 className="text-2xl font-serif font-bold text-dark tracking-tight">
             {isAr ? 'بوابة كابتن التوصيل 🚴' : 'Delivery Captain Portal 🚴'}
           </h2>
-          <p className="text-xs text-dark/50">
-            {isAr 
-              ? 'متابعة وتحديث طلبات التوصيل المنزلي بشكل مستقل وفوري دون التأثير على تصفح المشتري.' 
-              : 'Standalone hub for delivery drivers to claim and fulfill charcoal-grilled orders.'}
-          </p>
         </div>
 
         {selectedDriver && (
@@ -1122,6 +1123,20 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
                       value={iban}
                       onChange={(e) => setIban(e.target.value.toUpperCase())}
                       className="w-full bg-white text-dark border border-amber-200/60 rounded-xl px-3 py-2 outline-none focus:border-yellow text-xs font-mono font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-extrabold text-amber-800 block">
+                      {isAr ? 'الاسم الكامل للمستفيد (كما هو بالحساب أو البطاقة البنكية):' : 'Full Cardholder Name (as on bank account):'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={isAr ? 'مثال: أحمد عبد الله الراجحي' : 'e.g. Ahmad Abdullah Al Rajhi'}
+                      value={bankAccountName}
+                      onChange={(e) => setBankAccountName(e.target.value)}
+                      className="w-full bg-white text-dark border border-amber-200/60 rounded-xl px-3 py-2 outline-none focus:border-yellow text-xs font-bold"
                     />
                   </div>
                 </div>
@@ -1962,7 +1977,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
                               ⬅️ {isAr ? 'غرب (-Lng)' : 'West (-Lng)'}
                             </button>
                           </div>
-                          <p className="text-[10px] text-amber-700/80 font-medium">
+                          <p className="text-[10px] text-amber-700/80 font-medium text-start">
                             {isAr ? 'تنبيه: تحريك المؤشر أعلاه يحاكي حركة المندوب فورياً ويقوم بتحديث الإحداثيات في لوحة التحكم وعند العميل لمتابعة خط السير.' : 'Note: Simulating updates live GPS tracking logs for testing customer view paths.'}
                           </p>
                         </div>
@@ -2017,70 +2032,152 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
                         </p>
                       </div>
 
-                      {/* Premium bank card mockup */}
-                      <div className="max-w-md mx-auto w-full">
-                        <div className={`aspect-video rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between ${
-                          (selectedDriver.bankName || 'Al Rajhi') === 'STC Bank'
-                            ? 'bg-gradient-to-br from-indigo-700 via-purple-800 to-indigo-950 border border-indigo-500/30'
-                            : 'bg-gradient-to-br from-blue-900 via-blue-950 to-neutral-950 border border-blue-800/30'
-                        }`}>
-                          {/* Radial ambient glow */}
-                          <div className="absolute -top-12 -right-12 w-44 h-44 bg-yellow/10 rounded-full blur-3xl pointer-events-none" />
-                          
-                          {/* Top row: Chip and Bank logo */}
-                          <div className="flex justify-between items-start relative z-10">
-                            <div className="space-y-1">
-                              <span className="text-[9.5px] font-black text-yellow tracking-widest uppercase block">
-                                {isAr ? 'بطاقة كابتن معتمد' : 'VERIFIED CAPTAIN'}
-                              </span>
-                              {/* Golden Chip */}
-                              <div className="w-9 h-7 bg-amber-400/20 border border-amber-400/30 rounded-md shadow-inner mt-2 relative overflow-hidden">
-                                <div className="absolute inset-x-0 top-1 h-px bg-amber-400/40" />
-                                <div className="absolute inset-x-0 bottom-1 h-px bg-amber-400/40" />
-                                <div className="absolute inset-y-0 left-2.5 w-px bg-amber-400/40" />
+                      {/* Bank Form or Bank Card Mockup depending on isEditingBank */}
+                      {isEditingBank ? (
+                        <form onSubmit={handleSaveBankDetails} className="max-w-md mx-auto w-full bg-white border border-black/5 rounded-3xl p-6 text-start space-y-4 animate-fade-in">
+                          <h4 className="text-xs font-black text-dark tracking-wide uppercase border-b border-black/5 pb-2">
+                            {isAr ? '✏️ تحديث الحساب البنكي' : '✏️ Edit Bank Details'}
+                          </h4>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-extrabold text-dark/70 block">
+                              {isAr ? 'اسم المصرف / البنك:' : 'Select Bank:'}
+                            </label>
+                            <select
+                              value={editBankName}
+                              onChange={(e) => setEditBankName(e.target.value)}
+                              className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-xs font-bold"
+                            >
+                              <option value="Al Rajhi">{isAr ? 'مصرف الراجحي (Al Rajhi Bank)' : 'Al Rajhi Bank'}</option>
+                              <option value="STC Bank">{isAr ? 'stc bank (STC Pay)' : 'STC Bank'}</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-extrabold text-dark/70 block">
+                              {isAr ? 'رقم الآيبان (IBAN):' : 'IBAN:'}
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="SA..."
+                              value={editIban}
+                              onChange={(e) => setEditIban(e.target.value.toUpperCase())}
+                              className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-xs font-mono font-bold"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-extrabold text-dark/70 block">
+                              {isAr ? 'الاسم الكامل كما هو مسجل في البنك:' : 'Full Legal Name on Bank Account:'}
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder={isAr ? 'مثال: أحمد عبد الله الراجحي' : 'e.g. Ahmad Abdullah Al Rajhi'}
+                              value={editBankAccountName}
+                              onChange={(e) => setEditBankAccountName(e.target.value)}
+                              className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-xs font-bold"
+                            />
+                          </div>
+
+                          <div className="flex gap-2 pt-2">
+                            <button
+                              type="submit"
+                              disabled={isSavingBank}
+                              className="flex-1 py-2.5 px-4 bg-yellow hover:bg-yellow-500 text-black font-black text-xs rounded-xl transition-all cursor-pointer text-center"
+                            >
+                              {isSavingBank ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ التعديلات ✅' : 'Save Details ✅')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingBank(false)}
+                              className="py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 text-dark font-bold text-xs rounded-xl cursor-pointer"
+                            >
+                              {isAr ? 'إلغاء' : 'Cancel'}
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="max-w-md mx-auto w-full space-y-4">
+                          <div className={`aspect-video rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between ${
+                            (selectedDriver.bankName || 'Al Rajhi') === 'STC Bank'
+                              ? 'bg-gradient-to-br from-indigo-700 via-purple-800 to-indigo-950 border border-indigo-500/30'
+                              : 'bg-gradient-to-br from-blue-900 via-blue-950 to-neutral-950 border border-blue-800/30'
+                          }`}>
+                            {/* Radial ambient glow */}
+                            <div className="absolute -top-12 -right-12 w-44 h-44 bg-yellow/10 rounded-full blur-3xl pointer-events-none" />
+                            
+                            {/* Top row: Chip and Bank logo */}
+                            <div className="flex justify-between items-start relative z-10">
+                              <div className="space-y-1">
+                                <span className="text-[9.5px] font-black text-yellow tracking-widest uppercase block">
+                                  {isAr ? 'بطاقة كابتن معتمد' : 'VERIFIED CAPTAIN'}
+                                </span>
+                                {/* Golden Chip */}
+                                <div className="w-9 h-7 bg-amber-400/20 border border-amber-400/30 rounded-md shadow-inner mt-2 relative overflow-hidden">
+                                  <div className="absolute inset-x-0 top-1 h-px bg-amber-400/40" />
+                                  <div className="absolute inset-x-0 bottom-1 h-px bg-amber-400/40" />
+                                  <div className="absolute inset-y-0 left-2.5 w-px bg-amber-400/40" />
+                                </div>
+                              </div>
+                              
+                              <div className="text-right">
+                                <span className="font-black text-sm tracking-wide block">
+                                  {(selectedDriver.bankName || 'Al Rajhi') === 'STC Bank' ? 'stc bank' : 'AL RAJHI BANK'}
+                                </span>
+                                <span className="text-[9.5px] text-white/50 block font-mono font-bold mt-0.5">{isAr ? 'شريك التوصيل المالي' : 'FINANCIAL PORTAL'}</span>
                               </div>
                             </div>
-                            
-                            <div className="text-right">
-                              <span className="font-black text-sm tracking-wide block">
-                                {(selectedDriver.bankName || 'Al Rajhi') === 'STC Bank' ? 'stc bank' : 'AL RAJHI BANK'}
-                              </span>
-                              <span className="text-[9.5px] text-white/50 block font-mono font-bold mt-0.5">{isAr ? 'شريك التوصيل المالي' : 'FINANCIAL PORTAL'}</span>
+
+                            {/* IBAN section */}
+                            <div className="space-y-1 relative z-10 my-4 text-start">
+                              <span className="text-[8px] text-white/40 block font-mono font-bold tracking-widest uppercase">SAUDI ARABIA IBAN</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-base md:text-lg font-black tracking-wider block text-white select-all">
+                                  {selectedDriver.iban || 'SA00 0000 0000 0000 0000 0000'}
+                                </span>
+                                {selectedDriver.iban && (
+                                  <button
+                                    onClick={() => handleCopyIBAN(selectedDriver.iban!)}
+                                    className="p-1 bg-white/10 hover:bg-white/20 text-white rounded-lg cursor-pointer transition-colors"
+                                    title={isAr ? 'نسخ الآيبان' : 'Copy IBAN'}
+                                  >
+                                    {copiedText ? <Check className="w-3.5 h-3.5 text-yellow" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Cardholder name & Date */}
+                            <div className="flex justify-between items-end relative z-10 font-mono text-[10px]">
+                              <div className="text-start">
+                                <span className="text-white/40 block text-[8px] uppercase">{isAr ? 'اسم المستفيد' : 'ACCOUNT HOLDER'}</span>
+                                <span className="font-bold text-white block mt-0.5">{selectedDriver.bankAccountName || selectedDriver.name}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-white/40 block text-[8px] uppercase">STATUS</span>
+                                <span className="text-emerald-400 font-extrabold block mt-0.5">{isAr ? 'نشط ومعتمد ✅' : 'ACTIVE ✅'}</span>
+                              </div>
                             </div>
                           </div>
 
-                          {/* IBAN section */}
-                          <div className="space-y-1 relative z-10 my-4 text-start">
-                            <span className="text-[8px] text-white/40 block font-mono font-bold tracking-widest uppercase">SAUDI ARABIA IBAN</span>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-base md:text-lg font-black tracking-wider block text-white select-all">
-                                {selectedDriver.iban || 'SA00 0000 0000 0000 0000 0000'}
-                              </span>
-                              {selectedDriver.iban && (
-                                <button
-                                  onClick={() => handleCopyIBAN(selectedDriver.iban!)}
-                                  className="p-1 bg-white/10 hover:bg-white/20 text-white rounded-lg cursor-pointer transition-colors"
-                                  title={isAr ? 'نسخ الآيبان' : 'Copy IBAN'}
-                                >
-                                  {copiedText ? <Check className="w-3.5 h-3.5 text-yellow" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Cardholder name & Date */}
-                          <div className="flex justify-between items-end relative z-10 font-mono text-[10px]">
-                            <div className="text-start">
-                              <span className="text-white/40 block text-[8px] uppercase">{isAr ? 'اسم المستفيد' : 'ACCOUNT HOLDER'}</span>
-                              <span className="font-bold text-white block mt-0.5">{selectedDriver.name}</span>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-white/40 block text-[8px] uppercase">STATUS</span>
-                              <span className="text-emerald-400 font-extrabold block mt-0.5">{isAr ? 'نشط ومعتمد ✅' : 'ACTIVE ✅'}</span>
-                            </div>
+                          <div className="flex justify-center pt-1">
+                            <button
+                              onClick={() => {
+                                setEditBankName(selectedDriver.bankName || 'Al Rajhi');
+                                setEditBankAccountName(selectedDriver.bankAccountName || selectedDriver.name || '');
+                                setEditIban(selectedDriver.iban || '');
+                                setIsEditingBank(true);
+                              }}
+                              className="text-xs font-black text-dark hover:text-yellow flex items-center gap-1 bg-neutral-100 hover:bg-neutral-200 px-4 py-2 rounded-xl cursor-pointer transition-all border border-black/5"
+                            >
+                              <span>✏️</span>
+                              <span>{isAr ? 'تعديل البيانات البنكية' : 'Edit Bank Credentials'}</span>
+                            </button>
                           </div>
                         </div>
-                      </div>
+                      )}
 
                       {/* Bank payout terms helper */}
                       <div className="bg-neutral-50 rounded-2xl p-4 border border-black/5 text-start text-[11px] leading-relaxed text-dark/60 space-y-2">

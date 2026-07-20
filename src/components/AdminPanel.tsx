@@ -60,7 +60,8 @@ import {
   Copy,
   ExternalLink,
   Bell,
-  CreditCard
+  CreditCard,
+  Send
 } from 'lucide-react';
 import {
   BarChart,
@@ -279,6 +280,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [onlinePaymentApiKey, setOnlinePaymentApiKey] = useState('');
   const [onlinePaymentMerchantId, setOnlinePaymentMerchantId] = useState('');
 
+  // Telegram Bot integration variables
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramBotEnabled, setTelegramBotEnabled] = useState(false);
+
   // Bank transfer state variables
   const [bankNameAr, setBankNameAr] = useState('مصرف الراجحي');
   const [bankNameEn, setBankNameEn] = useState('Al Rajhi Bank');
@@ -322,9 +328,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [pendingDrivers, setPendingDrivers] = useState<PendingDriver[]>([]);
   const [loadingPendingDrivers, setLoadingPendingDrivers] = useState(false);
   const [selectedDocPreview, setSelectedDocPreview] = useState<string | null>(null);
-  const [activeAdminTab, setActiveAdminTab] = useState<'orders' | 'menu' | 'promotions' | 'drivers' | 'stats' | 'settings'>('orders');
+  const [activeAdminTab, setActiveAdminTab] = useState<'orders' | 'menu' | 'promotions' | 'drivers' | 'stats' | 'settings' | 'support'>('orders');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [statsPeriod, setStatsPeriod] = useState<'7days' | '30days' | 'all'>('7days');
+
+  // Support Tickets States
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [loadingTickets, setLoadingTickets] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
   const previousOrdersCountRef = useRef<number>(0);
   const alarmedOrderIdsRef = useRef<Set<string>>(new Set());
@@ -366,6 +378,56 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       console.warn('Notification API permission request is blocked or unsupported in this sandbox environment:', e);
     }
   }, []);
+
+  // Support Tickets Firestore Subscriber
+  useEffect(() => {
+    setLoadingTickets(true);
+    const ticketsQuery = query(collection(db, 'support_tickets'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(ticketsQuery, (snapshot) => {
+      const fetchedTickets: any[] = [];
+      snapshot.forEach((doc) => {
+        fetchedTickets.push({ id: doc.id, ...doc.data() });
+      });
+      setTickets(fetchedTickets);
+      setLoadingTickets(false);
+    }, (error) => {
+      console.warn('Tickets snapshot error, using simulated tickets:', error);
+      // Fallback local storage cached tickets if any
+      const cached = localStorage.getItem('simulated_support_tickets');
+      if (cached) {
+        setTickets(JSON.parse(cached));
+      }
+      setLoadingTickets(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Send Admin Reply to Support Ticket
+  const handleSendReply = async (ticketId: string) => {
+    if (!replyText.trim()) return;
+    try {
+      const ticketRef = doc(db, 'support_tickets', ticketId);
+      await updateDoc(ticketRef, {
+        adminReply: replyText.trim(),
+        status: 'replied'
+      });
+      setReplyText('');
+      showNotification(language === 'ar' ? 'تم إرسال الرد للعميل بنجاح' : 'Reply sent successfully', 'success');
+    } catch (err) {
+      console.warn('Error sending live reply, fallback to simulated updates:', err);
+      // Local/Simulated update
+      const updatedTickets = tickets.map(t => {
+        if (t.id === ticketId) {
+          return { ...t, adminReply: replyText.trim(), status: 'replied' };
+        }
+        return t;
+      });
+      setTickets(updatedTickets);
+      localStorage.setItem('simulated_support_tickets', JSON.stringify(updatedTickets));
+      setReplyText('');
+      showNotification(language === 'ar' ? 'تم حفظ الرد محلياً بنجاح' : 'Reply saved locally successfully', 'success');
+    }
+  };
 
   // Sync activePromo state inputs
   useEffect(() => {
@@ -421,6 +483,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setOnlinePaymentGateway(businessSettings.onlinePaymentGateway || 'sandbox');
       setOnlinePaymentApiKey(businessSettings.onlinePaymentApiKey || '');
       setOnlinePaymentMerchantId(businessSettings.onlinePaymentMerchantId || '');
+      setTelegramBotToken(businessSettings.telegramBotToken || '');
+      setTelegramChatId(businessSettings.telegramChatId || '');
+      setTelegramBotEnabled(businessSettings.telegramBotEnabled ?? false);
       
       // Sync bank settings
       setBankNameAr(businessSettings.bankNameAr || 'مصرف الراجحي');
@@ -504,7 +569,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onlinePaymentEnabled: onlinePaymentEnabled,
       onlinePaymentGateway: onlinePaymentGateway,
       onlinePaymentApiKey: onlinePaymentApiKey,
-      onlinePaymentMerchantId: onlinePaymentMerchantId
+      onlinePaymentMerchantId: onlinePaymentMerchantId,
+      telegramBotToken: telegramBotToken,
+      telegramChatId: telegramChatId,
+      telegramBotEnabled: telegramBotEnabled
     };
 
     if (onSettingsUpdate) {
@@ -567,7 +635,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const dummy: Order[] = [
           {
             id: 'Rehla-7001',
-            customerName: 'محمد الربيعان',
+            customerName: 'صالح العتيبي',
             customerPhone: '0551029302',
             tableOrDelivery: 'table',
             tableNumber: '3',
@@ -585,7 +653,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           },
           {
             id: 'Rehla-7002',
-            customerName: 'محمد الربيعان',
+            customerName: 'صالح العتيبي',
             customerPhone: '0502030405',
             tableOrDelivery: 'delivery',
             deliveryAddress: 'المربع، شارع خالد بن الوليد، مخرج 3',
@@ -735,8 +803,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setDrivers(JSON.parse(savedDrivers));
       } else {
         const initialDrivers: Driver[] = [
-          { id: 'drv-1', name: 'محمد الربيعان', phone: '0512345678', status: 'available', createdAt: new Date().toISOString() },
-          { id: 'drv-2', name: 'محمد الربيعان', phone: '0598765432', status: 'busy', createdAt: new Date().toISOString() },
+          { id: 'drv-1', name: 'أحمد الغامدي', phone: '0512345678', status: 'available', createdAt: new Date().toISOString() },
+          { id: 'drv-2', name: 'سلمان الشمري', phone: '0598765432', status: 'busy', createdAt: new Date().toISOString() },
         ];
         localStorage.setItem('simulated_drivers', JSON.stringify(initialDrivers));
         setDrivers(initialDrivers);
@@ -1040,10 +1108,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const orderToUpdate = orders.find(o => o.id === orderId);
     if (orderToUpdate) {
       let cleanPhone = orderToUpdate.customerPhone.replace(/\D/g, "");
+      if (cleanPhone.startsWith("00966")) {
+        cleanPhone = cleanPhone.substring(2);
+      }
+      if (cleanPhone.startsWith("96605")) {
+        cleanPhone = "966" + cleanPhone.substring(4);
+      }
       if (cleanPhone.startsWith("05") && cleanPhone.length === 10) {
         cleanPhone = "966" + cleanPhone.substring(1);
       } else if (cleanPhone.startsWith("5") && cleanPhone.length === 9) {
         cleanPhone = "966" + cleanPhone;
+      } else if (cleanPhone.startsWith("005") && cleanPhone.length === 11) {
+        cleanPhone = "966" + cleanPhone.substring(2);
       }
 
       const baseDomain = (businessSettings?.websiteUrl || 'https://rhoatshwaa-app.vercel.app').replace(/\/+$/, '');
@@ -1341,10 +1417,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     // Format driver phone
     let cleanPhone = ord.driverPhone.replace(/\D/g, "");
+    if (cleanPhone.startsWith("00966")) {
+      cleanPhone = cleanPhone.substring(2);
+    }
+    if (cleanPhone.startsWith("96605")) {
+      cleanPhone = "966" + cleanPhone.substring(4);
+    }
     if (cleanPhone.startsWith("05") && cleanPhone.length === 10) {
       cleanPhone = "966" + cleanPhone.substring(1);
     } else if (cleanPhone.startsWith("5") && cleanPhone.length === 9) {
       cleanPhone = "966" + cleanPhone;
+    } else if (cleanPhone.startsWith("005") && cleanPhone.length === 11) {
+      cleanPhone = "966" + cleanPhone.substring(2);
     }
 
     // Format order items
@@ -2387,6 +2471,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 { id: 'promotions', labelAr: '🏷️ العروض والخصومات', labelEn: '🏷️ Promotions' },
                 { id: 'drivers', labelAr: '🚚 إدارة المندوبين', labelEn: '🚚 Drivers List' },
                 { id: 'settings', labelAr: '⚙️ إعدادات المطعم', labelEn: '⚙️ Restaurant Settings' },
+                { id: 'support', labelAr: 'الدعم والشكاوى', labelEn: 'Support & Complaints' },
               ].map((tab) => (
                 <option key={tab.id} value={tab.id} className="bg-stone-900 text-stone-100 font-bold py-2">
                   {language === 'ar' ? tab.labelAr : tab.labelEn}
@@ -2469,6 +2554,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 { id: 'promotions', labelAr: '🏷️ العروض والخصومات', labelEn: '🏷️ Promotions' },
                 { id: 'drivers', labelAr: '🚚 إدارة المندوبين', labelEn: '🚚 Drivers List' },
                 { id: 'settings', labelAr: '⚙️ إعدادات المطعم', labelEn: '⚙️ Restaurant Settings' },
+                { id: 'support', labelAr: 'الدعم والشكاوى', labelEn: 'Support & Complaints' },
               ].map((tab) => {
                 const isActive = activeAdminTab === tab.id;
                 return (
@@ -2501,6 +2587,156 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* Main Tab content Workspace */}
         <div className="flex-1 w-full space-y-8">
+
+          {/* SUPPORT & COMPLAINTS TAB */}
+          {activeAdminTab === 'support' && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white border border-stone-200/80 rounded-3xl p-6 shadow-xs text-start space-y-6"
+            >
+              <div>
+                <h2 className="text-xl font-black text-stone-850">
+                  {language === 'ar' ? 'نظام الدعم الفني والشكاوى' : 'Technical Support & Complaints'}
+                </h2>
+                <p className="text-xs text-stone-500 mt-1">
+                  {language === 'ar' 
+                    ? 'إدارة رسائل وتواصل العملاء والرد الفوري عليها لتحسين مستوى الخدمة.' 
+                    : 'Manage customer complaints and messages and reply to them in real time.'}
+                </p>
+              </div>
+
+              {loadingTickets ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-2">
+                  <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+                  <p className="text-xs text-stone-400 font-bold">
+                    {language === 'ar' ? 'جاري جلب الرسائل...' : 'Loading messages...'}
+                  </p>
+                </div>
+              ) : tickets.length === 0 ? (
+                <div className="py-12 text-center border border-dashed border-stone-250 rounded-2xl bg-stone-50 text-stone-400 text-xs">
+                  {language === 'ar' ? 'لا توجد رسائل دعم فني أو شكاوى واردة حالياً' : 'No support messages or complaints at the moment'}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Tickets List */}
+                  <div className="lg:col-span-5 space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                    {tickets.map((ticket) => {
+                      const isSelected = selectedTicketId === ticket.id;
+                      const hasReply = !!ticket.adminReply;
+                      return (
+                        <div
+                          key={ticket.id}
+                          onClick={() => {
+                            setSelectedTicketId(ticket.id);
+                            setReplyText(ticket.adminReply || '');
+                          }}
+                          className={`p-4 rounded-2xl border transition-all cursor-pointer text-start space-y-2 ${
+                            isSelected 
+                              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-100' 
+                              : 'bg-stone-50 hover:bg-stone-100 border-stone-200'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <span className="font-bold text-stone-800 text-xs truncate">
+                              {ticket.customerName}
+                            </span>
+                            <span className="text-[10px] text-stone-400 font-mono shrink-0">
+                              {ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-US', {
+                                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                              }) : ''}
+                            </span>
+                          </div>
+                          <p className="text-xs text-stone-600 line-clamp-2">
+                            {ticket.message}
+                          </p>
+                          <div className="flex justify-between items-center pt-1">
+                            <span className="text-[10px] text-stone-500 font-mono">
+                              {ticket.customerPhone}
+                            </span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                              hasReply 
+                                ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' 
+                                : 'bg-red-50 text-red-600 border border-red-200'
+                            }`}>
+                              {hasReply 
+                                ? (language === 'ar' ? 'تم الرد' : 'Replied') 
+                                : (language === 'ar' ? 'في الانتظار' : 'Pending')}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Reply Area */}
+                  <div className="lg:col-span-7 border border-stone-200/80 rounded-2xl p-4 bg-stone-50/50 flex flex-col justify-between min-h-[300px]">
+                    {selectedTicketId ? (
+                      (() => {
+                        const activeTicket = tickets.find(t => t.id === selectedTicketId);
+                        if (!activeTicket) return null;
+                        return (
+                          <div className="space-y-4 h-full flex flex-col justify-between">
+                            <div className="space-y-3 flex-1">
+                              <div className="border-b border-stone-200 pb-3">
+                                <h3 className="font-extrabold text-stone-800 text-sm">
+                                  {activeTicket.customerName}
+                                </h3>
+                                <p className="text-[10px] text-stone-500 font-mono">
+                                  {activeTicket.customerPhone} | {activeTicket.createdAt ? new Date(activeTicket.createdAt).toLocaleString() : ''}
+                                </p>
+                              </div>
+                              <div className="bg-white border border-stone-200 rounded-xl p-3 text-xs text-stone-700 leading-relaxed max-h-[150px] overflow-y-auto">
+                                <p className="font-semibold text-[10px] text-stone-400 mb-1">
+                                  {language === 'ar' ? 'رسالة العميل:' : 'Customer message:'}
+                                </p>
+                                {activeTicket.message}
+                              </div>
+
+                              {activeTicket.adminReply && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-stone-700 leading-relaxed">
+                                  <p className="font-semibold text-[10px] text-amber-600 mb-1">
+                                    {language === 'ar' ? 'الرد السابق للمسؤول:' : 'Previous Admin Reply:'}
+                                  </p>
+                                  {activeTicket.adminReply}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="space-y-2 pt-2 border-t border-stone-200">
+                              <label className="block text-xs font-bold text-stone-600">
+                                {language === 'ar' ? 'كتابة رد جديد أو تعديل الرد:' : 'Write a new reply or edit:'}
+                              </label>
+                              <textarea
+                                rows={4}
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                placeholder={language === 'ar' ? 'اكتب ردك هنا وسيظهر فوراً للعميل في حسابه...' : 'Type your reply here, client will see it instantly in their account...'}
+                                className="w-full text-xs bg-white border border-stone-250 rounded-xl p-3 outline-none focus:border-amber-500 text-stone-800 font-medium resize-none shadow-inner"
+                              />
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendReply(activeTicket.id)}
+                                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl transition-all shadow-sm cursor-pointer"
+                                >
+                                  {language === 'ar' ? 'إرسال الرد' : 'Send Reply'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-center text-stone-400 text-xs py-12">
+                        {language === 'ar' ? 'يرجى اختيار رسالة من القائمة لعرض تفاصيلها والرد عليها' : 'Please select a message from the list to view and reply'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
 
           {/* 1. REPORTS & STATS TAB */}
           {activeAdminTab === 'stats' && (
@@ -3166,10 +3402,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             onClick={() => {
                               const customerPhone = ord.customerPhone;
                               let cleanPhone = customerPhone.replace(/\D/g, "");
+                              if (cleanPhone.startsWith("00966")) {
+                                cleanPhone = cleanPhone.substring(2);
+                              }
+                              if (cleanPhone.startsWith("96605")) {
+                                cleanPhone = "966" + cleanPhone.substring(4);
+                              }
                               if (cleanPhone.startsWith("05") && cleanPhone.length === 10) {
                                 cleanPhone = "966" + cleanPhone.substring(1);
                               } else if (cleanPhone.startsWith("5") && cleanPhone.length === 9) {
                                 cleanPhone = "966" + cleanPhone;
+                              } else if (cleanPhone.startsWith("005") && cleanPhone.length === 11) {
+                                cleanPhone = "966" + cleanPhone.substring(2);
                               }
                               
                               const rNameAr = setRestaurantNameAr || 'رحلة شواء';
@@ -3974,6 +4218,79 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
+            {/* Telegram Bot Integration Section */}
+            <div className="md:col-span-2 pt-6 border-t border-slate-100 text-start animate-none">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Send className="w-4 h-4 text-sky-500 fill-sky-500/10" />
+                {language === 'ar' ? 'إشعارات تيليجرام التلقائية (بوت التنبيهات) 📢' : 'Telegram Automated Alerts (Notification Bot) 📢'}
+              </h4>
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200/50 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200/60 pb-3">
+                  <div className="text-start">
+                    <label className="block text-xs font-bold text-slate-800">
+                      {language === 'ar' ? 'تفعيل إشعارات تيليجرام عند طلب جديد' : 'Enable Telegram New Order Alerts'}
+                    </label>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {language === 'ar' 
+                        ? 'عند تفعيله، سيقوم البوت بإرسال تفاصيل كل طلب جديد فوراً إلى قناتك أو مجموعتك الخاصة.' 
+                        : 'When enabled, the bot will instantly broadcast every new order directly to your private chat or channel.'}
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={telegramBotEnabled} 
+                        onChange={(e) => setTelegramBotEnabled(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+                      <span className="mr-3 text-xs font-bold text-slate-600 font-mono select-none">
+                        {telegramBotEnabled 
+                          ? (language === 'ar' ? 'نشط ✅' : 'Active ✅') 
+                          : (language === 'ar' ? 'موقف ❌' : 'Stopped ❌')}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {language === 'ar' ? 'توكن البوت (Bot API Token):' : 'Telegram Bot API Token:'}
+                    </label>
+                    <input
+                      type="password"
+                      value={telegramBotToken}
+                      onChange={(e) => setTelegramBotToken(e.target.value)}
+                      placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-sky-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {language === 'ar' ? 'معرف الدردشة / المجموعة (Chat ID):' : 'Target Chat / Channel ID:'}
+                    </label>
+                    <input
+                      type="text"
+                      value={telegramChatId}
+                      onChange={(e) => setTelegramChatId(e.target.value)}
+                      placeholder="e.g. -100123456789 or 987654321"
+                      className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-sky-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <span className="text-[10px] text-slate-400 block leading-relaxed">
+                    {language === 'ar' 
+                      ? '💡 طريقة التهيئة: ١. ابحث في تيليجرام عن BotFather وأنشئ بوتاً جديداً للحصول على التوكن. ٢. أضف البوت إلى مجموعتك أو قناتك كمسؤول. ٣. احصل على الـ Chat ID للمجموعة وضع بياناتك هنا، ثم انقر حفظ.' 
+                      : '💡 How to Setup: 1. Create a bot using @BotFather on Telegram to receive your Token. 2. Add the bot to your group or channel as an Administrator. 3. Retrieve the Chat ID and paste the details above, then click save.'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {/* Thermal Printer & Receipt Style Customizer Section */}
             <div className="md:col-span-2 pt-6 border-t border-slate-100 text-start">
               <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5 justify-between">
@@ -4675,7 +4992,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   type="text"
                   value={driverName}
                   onChange={(e) => setDriverName(e.target.value)}
-                  placeholder={language === 'ar' ? 'مثال: محمد الربيعان' : 'e.g. Mohammed Al-Rubaian'}
+                  placeholder={language === 'ar' ? 'مثال: صالح العتيبي' : 'e.g. Saleh Al-Otaibi'}
                   className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none focus:border-amber-500 font-semibold"
                 />
               </div>

@@ -12,7 +12,7 @@ interface LanguageContextType {
 const TR_DICT: Record<string, Record<Language, string>> = {
   appName: { ar: 'رحلة شواء', en: 'Grilling Journey' },
   appSub: { ar: 'مذاق المشويات الفاخرة على أصولها', en: 'The Authentic Taste of Premium Grills' },
-  menu: { ar: 'المنيو التفاعلي', en: 'Interactive Menu' },
+  menu: { ar: 'المنيو', en: 'Menu' },
   cart: { ar: 'سلة المشتريات', en: 'Shopping Cart' },
   admin: { ar: 'لوحة المشرف', en: 'Admin Dashboard' },
   tracker: { ar: 'تتبع طلبك', en: 'Track Order' },
@@ -58,7 +58,7 @@ const TR_DICT: Record<string, Record<Language, string>> = {
   popularItemsChart: { ar: 'الأصناف الأكثر طلباً', en: 'Most Requested Items' },
   controlMenu: { ar: 'التحكم بالمنيو والأصناف', en: 'Menu & Availability Control' },
   isAvailable: { ar: 'متوفر', en: 'Available' },
-  outOfStock: { ar: 'مباع / غير متوفر', en: 'Out of Stock' },
+  outOfStock: { ar: 'غير متوفر', en: 'Out of Stock' },
   save: { ar: 'حفظ', en: 'Save' },
   editPrice: { ar: 'تعديل السعر', en: 'Edit Price' },
   backToMenu: { ar: 'العودة للمنيو', en: 'Back to Menu' },

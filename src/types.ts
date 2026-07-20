@@ -25,6 +25,8 @@ export interface CartItemOption {
   notes: string[];
   addons: { nameAr: string; nameEn: string; price: number }[];
   selectedDrink?: { id: string; nameAr: string; nameEn: string; price: number };
+  selectedSize?: { id: string; labelAr: string; labelEn: string; price: number; diff: number };
+  selectedSoftDrinks?: { id: string; nameAr: string; nameEn: string; price: number; quantity: number }[];
 }
 
 export interface CartItem {
@@ -75,6 +77,7 @@ export interface Driver {
   carRegistrationImg?: string;
   bankName?: string;
   iban?: string;
+  bankAccountName?: string;
   latitude?: number;
   longitude?: number;
   lastActive?: string;
@@ -139,6 +142,9 @@ export interface BusinessSettings {
   onlinePaymentGateway?: 'stripe' | 'hyperpay' | 'paytabs' | 'moyasar' | 'sandbox';
   onlinePaymentApiKey?: string;
   onlinePaymentMerchantId?: string;
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  telegramBotEnabled?: boolean;
 }
 
 export interface Category {
@@ -160,4 +166,5 @@ export interface PendingDriver {
   licenseImg?: string;
   bankName?: string;
   iban?: string;
+  bankAccountName?: string;
 }

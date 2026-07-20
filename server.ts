@@ -1,9 +1,45 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dns from "dns";
+import { GoogleGenAI } from "@google/genai";
 
 dns.setDefaultResultOrder("ipv4first"); // Accelerate local name resolutions
+
+// Extremely fast and reliable local address parser to format both Google Maps and Nominatim addresses,
+// completely bypassing Gemini for reverse geocoding to prevent any 429 quota/rate limit errors.
+function cleanAddressLocal(raw: string): string {
+  if (!raw) return "موقع مجهول";
+  
+  // Remove 5-digit postal codes from anywhere in the string
+  let cleaned = raw.replace(/\b\d{5}\b/g, "").trim();
+  
+  // Split by standard or Arabic comma
+  const parts = cleaned.split(/[،,]/).map(p => p.trim()).filter(Boolean);
+  
+  // Filter out redundant country and general elements
+  const cleanedParts = parts.filter(part => {
+    const lowerPart = part.toLowerCase();
+    const isCountry = /^(السعودية|المملكة العربية السعودية|Saudi Arabia|KSA)$/i.test(part);
+    const isPostalCode = /^\d{5}$/.test(part);
+    const isShortPostal = /^\d{4}$/.test(part);
+    const isRedundantAlQassim = lowerPart === "منطقة القصيم" && parts.some(p => p.includes("عيون الجواء"));
+    
+    return !isCountry && !isPostalCode && !isShortPostal && !isRedundantAlQassim && part.length > 0;
+  });
+
+  let result = cleanedParts.join("، ");
+  
+  // Clean up any double commas or spaces
+  result = result.replace(/\s+/g, " ").replace(/،\s*،/g, "،").trim();
+  if (result.startsWith("،")) result = result.slice(1).trim();
+  if (result.endsWith("،")) result = result.slice(0, -1).trim();
+  
+  return result || "موقع مجهول";
+}
 
 const app = express();
 const PORT = 3000;
@@ -248,9 +284,18 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // 4. Secure server-side Telegram notifications
   app.post("/api/notify-telegram", async (req: express.Request, res: express.Response) => {
     try {
-      const { order } = req.body;
+      const { order, telegramBotToken, telegramChatId, telegramBotEnabled } = req.body;
       if (!order || !order.id) {
         return res.status(400).json({ success: false, message: "Missing order details" });
+      }
+
+      // Check if Telegram is explicitly disabled in the payload
+      if (telegramBotEnabled === false) {
+        return res.json({
+          success: true,
+          message: "Telegram alerts are disabled in business settings.",
+          isConfigured: false
+        });
       }
 
       // Helper to decode obfuscated credentials (user-requested secure Telegram token/chatId integration)
@@ -265,8 +310,8 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
       const obfuscatedBotToken = decodeB64("ODY3NDE4MjE5NjpBQUhpSUpzSUtDLXNwb2pwVTJPemRObFVjUUVDUGZNMDZn"); // "8674182196:AAHiIJsIKC-spojpU2Ozd0NlUcQECPfM06g"
       const obfuscatedChatId = decodeB64("NTI0MTMxMzczNw=="); // "5241313737"
 
-      const botToken = process.env.TELEGRAM_BOT_TOKEN || obfuscatedBotToken;
-      const chatId = process.env.TELEGRAM_CHAT_ID || obfuscatedChatId;
+      const botToken = telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || obfuscatedBotToken;
+      const chatId = telegramChatId || process.env.TELEGRAM_CHAT_ID || obfuscatedChatId;
 
       if (!botToken || !chatId) {
         console.warn(`[Telegram Config Warning] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in environmental settings. Order ${order.id} skipped notification.`);
@@ -480,6 +525,288 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
         success: false,
         message: telegramErr.message || "Failed to route Telegram notification webhook."
       });
+    }
+  });
+
+  // 4c. Secure server-side intelligent reverse geocoding (Lat/Lng to Beautiful Arabic Address)
+  app.post("/api/reverse-geocode", async (req: express.Request, res: express.Response) => {
+    try {
+      const { lat, lng } = req.body;
+      if (lat === undefined || lng === undefined) {
+        return res.status(400).json({ success: false, message: "Coordinates (lat and lng) are required" });
+      }
+
+      const latitude = Number(lat);
+      const longitude = Number(lng);
+
+      const apiKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || 
+                     process.env.GOOGLE_MAPS_API_KEY || 
+                     process.env.GOOGLE_MAP_API_KEY || 
+                     process.env.GOOGLE_API_KEY;
+
+      let source = "nominatim";
+      let rawAddress = "";
+
+      if (apiKey && apiKey.startsWith("AIzaSy") && !apiKey.includes("YOUR_KEY_HERE")) {
+        try {
+          const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}&language=ar`;
+          const response = await fetch(googleUrl);
+          if (response.ok) {
+            const data = await response.json() as any;
+            if (data && data.status === "OK" && data.results && data.results.length > 0) {
+              rawAddress = data.results[0].formatted_address || "";
+              source = "google";
+            }
+          }
+        } catch (err) {
+          console.warn("Server-side Google reverse geocoding failed, falling back:", err);
+        }
+      }
+
+      // Fallback to Nominatim if Google failed or key was missing
+      if (!rawAddress) {
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ar&zoom=18`,
+            {
+              headers: {
+                "User-Agent": "GrillJourneyDelivery/1.0 (yasseralayub@gmail.com)",
+                "Accept-Language": "ar"
+              }
+            }
+          );
+          if (response.ok) {
+            const data = await response.json() as any;
+            rawAddress = data.display_name || "";
+          }
+        } catch (err) {
+          console.warn("Server-side Nominatim reverse geocode failed:", err);
+        }
+      }
+
+      let processedAddress = cleanAddressLocal(rawAddress);
+
+      return res.json({ success: true, address: processedAddress });
+    } catch (err: any) {
+      console.error("Exception in reverse-geocode API:", err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 4d. Secure server-side intelligent geocoding (Address/Query to Lat/Lng inside Saudi Arabia)
+  app.post("/api/geocode", async (req: express.Request, res: express.Response) => {
+    try {
+      const { query } = req.body;
+      if (!query) {
+        return res.status(400).json({ success: false, message: "Query is required" });
+      }
+
+      const queryStr = String(query).trim();
+
+      // 1. Check if it's already coordinates
+      const coordinateRegex = /([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/;
+      const coordMatch = queryStr.match(coordinateRegex);
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lng = parseFloat(coordMatch[2]);
+        return res.json({
+          success: true,
+          lat,
+          lng,
+          address: queryStr
+        });
+      }
+
+      // 2. Check if it's a Google Maps URL
+      if (queryStr.includes("http") && (queryStr.includes("goo.gl") || queryStr.includes("maps"))) {
+        try {
+          const expandResponse = await fetch(queryStr, {
+            method: "GET",
+            redirect: "follow",
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          });
+          const expandedUrl = expandResponse.url;
+          const urlCoordMatch = expandedUrl.match(coordinateRegex);
+          if (urlCoordMatch) {
+            const lat = parseFloat(urlCoordMatch[1]);
+            const lng = parseFloat(urlCoordMatch[2]);
+            return res.json({
+              success: true,
+              lat,
+              lng,
+              address: queryStr
+            });
+          }
+        } catch (e) {
+          console.warn("Failed to expand URL in geocode endpoint:", e);
+        }
+      }
+
+      const apiKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || 
+                     process.env.GOOGLE_MAPS_API_KEY || 
+                     process.env.GOOGLE_MAP_API_KEY || 
+                     process.env.GOOGLE_API_KEY;
+
+      let googleResult = null;
+
+      if (apiKey && apiKey.startsWith("AIzaSy") && !apiKey.includes("YOUR_KEY_HERE")) {
+        try {
+          let localizedQuery = queryStr;
+          const lowerQ = queryStr.toLowerCase();
+          const isBuraidah = lowerQ.includes("بريدة") || lowerQ.includes("buraidah") || lowerQ.includes("buraydah");
+
+          if (isBuraidah) {
+            if (!lowerQ.includes("قصيم") && !lowerQ.includes("qassim")) {
+              localizedQuery = `${queryStr}، بريدة، القصيم`;
+            }
+          } else if (!lowerQ.includes("سعود") && !lowerQ.includes("saudi") && !lowerQ.includes("قصيم") && !lowerQ.includes("جواء")) {
+            const buraidahNeighborhoods = ["فايزية", "fayziyah", "إسكان", "eskan", "ريان", "rayan", "صفراء", "safra", "أفق", "ofuq", "بساتين", "basatin", "سلطانة", "sultanah", "غدير", "ghadir"];
+            const isLikelyBuraidah = buraidahNeighborhoods.some(n => lowerQ.includes(n));
+            
+            if (isLikelyBuraidah) {
+              localizedQuery = `${queryStr}، بريدة، القصيم`;
+            } else {
+              localizedQuery = `${queryStr}، القصيم، السعودية`;
+            }
+          }
+
+          const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(localizedQuery)}&key=${apiKey}&language=ar&region=sa&components=country:SA`;
+          const response = await fetch(googleUrl);
+          if (response.ok) {
+            const data = await response.json() as any;
+            if (data && data.status === "OK" && data.results && data.results.length > 0) {
+              googleResult = {
+                lat: parseFloat(data.results[0].geometry.location.lat),
+                lng: parseFloat(data.results[0].geometry.location.lng),
+                address: data.results[0].formatted_address
+              };
+            }
+          }
+        } catch (err) {
+          console.warn("Google Maps geocoding failed, falling back:", err);
+        }
+      }
+
+      // 3. Try Nominatim fallback if Google failed or key was missing
+      let nominatimResult = null;
+      if (!googleResult) {
+        try {
+          let localizedQuery = queryStr;
+          const lowerQ = queryStr.toLowerCase();
+          const isBuraidah = lowerQ.includes("بريدة") || lowerQ.includes("buraidah") || lowerQ.includes("buraydah");
+
+          if (isBuraidah) {
+            if (!lowerQ.includes("قصيم") && !lowerQ.includes("qassim")) {
+              localizedQuery = `${queryStr}، بريدة، القصيم`;
+            }
+          } else if (!lowerQ.includes("سعود") && !lowerQ.includes("saudi") && !lowerQ.includes("قصيم") && !lowerQ.includes("جواء")) {
+            const buraidahNeighborhoods = ["فايزية", "fayziyah", "إسكان", "eskan", "ريان", "rayan", "صفراء", "safra", "أفق", "ofuq", "بساتين", "basatin", "سلطانة", "sultanah", "غدير", "ghadir"];
+            const isLikelyBuraidah = buraidahNeighborhoods.some(n => lowerQ.includes(n));
+            
+            if (isLikelyBuraidah) {
+              localizedQuery = `${queryStr}• بريدة، القصيم`;
+              // Let's replace the bullet with standard Arabic comma to match the rest of the file
+              localizedQuery = `${queryStr}، بريدة، القصيم`;
+            } else {
+              localizedQuery = `${queryStr}، القصيم، السعودية`;
+            }
+          }
+
+          const osmUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(localizedQuery)}&limit=1&countrycodes=sa&accept-language=ar`;
+          const response = await fetch(osmUrl, {
+            headers: {
+              "User-Agent": "GrillJourneyDelivery/1.0 (yasseralayub@gmail.com)"
+            }
+          });
+          if (response.ok) {
+            const data = await response.json() as any;
+            if (data && data.length > 0) {
+              nominatimResult = {
+                lat: parseFloat(data[0].lat),
+                lng: parseFloat(data[0].lon),
+                address: data[0].display_name
+              };
+            }
+          }
+        } catch (err) {
+          console.warn("Nominatim search failed inside geocode API:", err);
+        }
+      }
+
+      const activeResult = googleResult || nominatimResult;
+
+      // If we already have a direct geocoded result from Google or Nominatim, return it immediately.
+      // This is extremely fast, highly accurate, and completely avoids hitting Gemini API quotas (429 rate limits).
+      if (activeResult) {
+        return res.json({
+          success: true,
+          lat: activeResult.lat,
+          lng: activeResult.lng,
+          address: cleanAddressLocal(activeResult.address)
+        });
+      }
+
+      // Only use Gemini as an intelligent semantic query parser when direct geocoding fails.
+      let geminiResult = null;
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const prompt = `You are an expert geocoding AI assistant for both Buraidah (بريدة) and Uyun Al-Jiwa (عيون الجواء) in the Al-Qassim region, Saudi Arabia.
+The user searched for this location text: "${queryStr}".
+Google/OSM returned this potential coordinate: None.
+
+Determine the best latitude and longitude coordinates in Saudi Arabia for this search query.
+Focus highly on Buraidah (approx Lat 26.3260, Lng 43.9750) and Uyun Al-Jiwa (approx Lat 26.5057, Lng 43.7915) in the Al-Qassim province.
+If the search query mentions a Buraidah neighborhood (such as حي الإسكان، حي الفايزية، حي الصفراء، حي الريان، حي الأفق، حي سلطانة، حي الغدير، حي البساتين، إلخ), return the accurate or approximate coordinates of that neighborhood in Buraidah.
+If the search query mentions a neighborhood in Uyun Al-Jiwa (like حي الروضة، حي الملك فهد، حي الخالدية، حي المنتزه، حي السليمية، إلخ), return the exact or approximate coordinates of that neighborhood in Uyun Al-Jiwa.
+If the query is generic, default to the center of Buraidah (Lat 26.3260, Lng 43.9750) or Uyun Al-Jiwa (Lat 26.5057, Lng 43.7915) or Al-Qassim.
+
+Return ONLY a valid JSON object. Do not wrap in markdown blocks.
+JSON format:
+{
+  "success": true,
+  "lat": 26.5057,
+  "lng": 43.7915,
+  "address": "حي الروضة، عيون الجواء"
+}
+If you cannot find or approximate the location at all, return:
+{
+  "success": false,
+  "message": "لم نتمكن من العثور على هذا الموقع بدقة، يرجى كتابة اسم الحي والشارع بشكل أوضح"
+}`;
+
+          const geminiResponse = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json"
+            }
+          });
+
+          const responseText = geminiResponse.text?.trim() || "{}";
+          const parsed = JSON.parse(responseText);
+          if (parsed && parsed.success) {
+            geminiResult = parsed;
+          }
+        } catch (geminiErr: any) {
+          console.warn("Gemini geocoding fallback bypassed (quota/rate-limit):", geminiErr?.message || geminiErr);
+        }
+      }
+
+      if (geminiResult) {
+        return res.json(geminiResult);
+      } else {
+        return res.json({
+          success: false,
+          message: "تعذر العثور على الموقع بدقة، يرجى كتابة اسم الحي والشارع بشكل أوضح"
+        });
+      }
+
+    } catch (err: any) {
+      console.error("Exception in geocode API:", err);
+      return res.status(500).json({ success: false, message: err.message });
     }
   });
 

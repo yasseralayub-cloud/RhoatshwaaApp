@@ -7,6 +7,7 @@ import { CartDrawer } from './components/CartDrawer';
 import { OrderTracker } from './components/OrderTracker';
 import { AdminPanel } from './components/AdminPanel';
 import { DriverPortal } from './components/DriverPortal';
+import { MyAccount } from './components/MyAccount';
 import { CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_BUSINESS_SETTINGS } from './initialData';
 import { MenuItem, Promotion, BusinessSettings, CartItem, CartItemOption } from './types';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
@@ -97,7 +98,71 @@ function MenuAndOrdersApp() {
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('main');
-  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver'>('menu');
+  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver' | 'account'>('menu');
+  const [quotaExceeded, setQuotaExceeded] = useState(() => {
+    return (window as any).firestoreQuotaExceeded === true;
+  });
+
+  useEffect(() => {
+    const handleQuota = () => {
+      setQuotaExceeded(true);
+    };
+    window.addEventListener('firestore-quota-exceeded', handleQuota);
+    return () => {
+      window.removeEventListener('firestore-quota-exceeded', handleQuota);
+    };
+  }, []);
+
+  // Custom tab navigation listener
+  useEffect(() => {
+    const handleNavigateTab = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setActiveTab(customEvent.detail);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('navigate-tab', handleNavigateTab);
+    return () => {
+      window.removeEventListener('navigate-tab', handleNavigateTab);
+    };
+  }, []);
+
+  // Auto category transition state and ref
+  const nextCategoryRef = React.useRef<HTMLDivElement>(null);
+
+  const currentCategoryIdx = CATEGORIES.findIndex(c => c.id === selectedCategory);
+  const nextCategory = currentCategoryIdx !== -1 && currentCategoryIdx < CATEGORIES.length - 1 
+    ? CATEGORIES[currentCategoryIdx + 1] 
+    : null;
+
+  useEffect(() => {
+    if (!nextCategory || activeTab !== 'menu') {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting) {
+          // Immediately select the next category without returning to the top of the page
+          setSelectedCategory(nextCategory.id);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const target = nextCategoryRef.current;
+    if (target) {
+      observer.observe(target);
+    }
+
+    return () => {
+      if (target) {
+        observer.unobserve(target);
+      }
+    };
+  }, [selectedCategory, activeTab, nextCategory]);
   const [showAdminTab, setShowAdminTab] = useState(() => {
     return localStorage.getItem('show_admin_tab') === 'true';
   });
@@ -126,69 +191,110 @@ function MenuAndOrdersApp() {
   // Any toggles / availability switches marked by an admin instantly update on the client screens!
   useEffect(() => {
     // Listen to collection 'menuItems'
-    const unsub = onSnapshot(
-      collection(db, 'menuItems'),
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const docs: MenuItem[] = [];
-          snapshot.forEach((snap) => {
-            docs.push(snap.data() as MenuItem);
-          });
-          setMenuItems(docs);
-          localStorage.setItem('simulated_menu', JSON.stringify(docs));
-        } else {
-          // If collection exists but is empty, use initial provided records
-          console.log('Firestore menuItems collection is empty. Showing default items.');
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(
+        collection(db, 'menuItems'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const docs: MenuItem[] = [];
+            snapshot.forEach((snap) => {
+              docs.push(snap.data() as MenuItem);
+            });
+            setMenuItems(docs);
+            localStorage.setItem('simulated_menu', JSON.stringify(docs));
+          } else {
+            console.log('Firestore menuItems collection is empty. Showing default items.');
+          }
+        },
+        (error: any) => {
+          console.warn('Could not establish live Firestore menu connection. Defaulting to cached data:', error);
+          const errMsg = error?.message || String(error);
+          if (errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('resource-exhausted') || error?.code === 'resource-exhausted') {
+            console.warn('Quota exceeded. Auto-unsubscribing menu listener to save memory & prevent connection retries.');
+            if (unsub) unsub();
+            setQuotaExceeded(true);
+            (window as any).firestoreQuotaExceeded = true;
+          }
         }
-      },
-      (error) => {
-        console.warn('Could not establish live Firestore menu connection (Offline or fresh setup). Defaulting to cached data:', error);
-      }
-    );
+      );
+    } catch (e) {
+      console.warn('Failed to initialize menuItems listener:', e);
+    }
 
-    return () => unsub();
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   // 1.5 Establish Realtime Sync with Firestore for active promotion!
   useEffect(() => {
-    const unsub = onSnapshot(
-      doc(db, 'promotions', 'active'),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const promo = snapshot.data() as Promotion;
-          setActivePromo(promo);
-          localStorage.setItem('simulated_promotion', JSON.stringify(promo));
-        } else {
-          console.log('No active promotion document in Firestore. Using offline/local.');
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(
+        doc(db, 'promotions', 'active'),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const promo = snapshot.data() as Promotion;
+            setActivePromo(promo);
+            localStorage.setItem('simulated_promotion', JSON.stringify(promo));
+          } else {
+            console.log('No active promotion document in Firestore. Using offline/local.');
+          }
+        },
+        (error: any) => {
+          console.warn('Could not establish live Firestore promotion connection:', error);
+          const errMsg = error?.message || String(error);
+          if (errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('resource-exhausted') || error?.code === 'resource-exhausted') {
+            console.warn('Quota exceeded. Auto-unsubscribing active promo listener.');
+            if (unsub) unsub();
+            setQuotaExceeded(true);
+            (window as any).firestoreQuotaExceeded = true;
+          }
         }
-      },
-      (error) => {
-        console.warn('Could not establish live Firestore promotion connection:', error);
-      }
-    );
+      );
+    } catch (e) {
+      console.warn('Failed to initialize active promo listener:', e);
+    }
 
-    return () => unsub();
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   // 1.8 Real-time Sync with Firestore for business settings doc
   useEffect(() => {
-    const unsub = onSnapshot(
-      doc(db, 'settings', 'business'),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const settingsObj = snapshot.data() as BusinessSettings;
-          setBusinessSettings(settingsObj);
-          localStorage.setItem('simulated_business_settings', JSON.stringify(settingsObj));
-        } else {
-          console.log('No settings document found in Firestore. Using offline default.');
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(
+        doc(db, 'settings', 'business'),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const settingsObj = snapshot.data() as BusinessSettings;
+            setBusinessSettings(settingsObj);
+            localStorage.setItem('simulated_business_settings', JSON.stringify(settingsObj));
+          } else {
+            console.log('No settings document found in Firestore. Using offline default.');
+          }
+        },
+        (error: any) => {
+          console.warn('Could not establish live Firestore settings connection:', error);
+          const errMsg = error?.message || String(error);
+          if (errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('resource-exhausted') || error?.code === 'resource-exhausted') {
+            console.warn('Quota exceeded. Auto-unsubscribing settings listener.');
+            if (unsub) unsub();
+            setQuotaExceeded(true);
+            (window as any).firestoreQuotaExceeded = true;
+          }
         }
-      },
-      (error) => {
-        console.warn('Could not establish live Firestore settings connection:', error);
-      }
-    );
+      );
+    } catch (e) {
+      console.warn('Failed to initialize settings listener:', e);
+    }
 
-    return () => unsub();
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   // Synchronically update the website icon (favicon / apple-touch-icon) from business logo settings
@@ -307,6 +413,14 @@ function MenuAndOrdersApp() {
       setLastPlacedOrderId(urlOrderId);
       localStorage.setItem('last_order_id', urlOrderId);
 
+      // Clean up the URL search parameters to prevent infinite tracking triggers on reload
+      try {
+        const newUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      } catch (e) {
+        console.warn('Could not clean up payment parameters from URL:', e);
+      }
+
       // If we also got a Tap transaction ID to verify:
       if (tapId) {
         const verifyPayment = async () => {
@@ -339,7 +453,12 @@ function MenuAndOrdersApp() {
                   fetch('/api/notify-telegram', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ order: updatedOrder })
+                    body: JSON.stringify({
+                      order: updatedOrder,
+                      telegramBotToken: businessSettings?.telegramBotToken,
+                      telegramChatId: businessSettings?.telegramChatId,
+                      telegramBotEnabled: businessSettings?.telegramBotEnabled
+                    })
                   }).catch(e => console.warn('Telegram payment notification dispatcher error:', e));
                 } catch (teleErr) {
                   console.warn('Telegram payment notification trigger failed:', teleErr);
@@ -415,7 +534,9 @@ function MenuAndOrdersApp() {
 
     // It's a MenuItem (from main card addition)
     const item = itemOrCartItem as MenuItem;
-    if (isSandwichItem(item) || isFriesItem(item)) {
+    const hasSizing = ['s2', 's4', 'g1', 'g5', 'g7', 'g10'].includes(item.id);
+    const isSodasGroup = item.id === 'drinks-soft-group';
+    if (isSandwichItem(item) || isFriesItem(item) || hasSizing || isSodasGroup) {
       setCustomizingItem(item);
     } else {
       setCart((prevCart) => {
@@ -494,23 +615,36 @@ function MenuAndOrdersApp() {
   // Convert old order items back to cart, cancel the old order, and load the cart drawer for modifications
   const handleModifyOrder = async (order: any) => {
     const loadedCartItems: CartItem[] = order.items.map((orderIt: any) => {
-      const matchItem = menuItems.find((m) => m.id === orderIt.id) || {
-        id: orderIt.id,
+      const braceIndex = orderIt.id.indexOf('-{');
+      const baseItemId = braceIndex > -1 ? orderIt.id.substring(0, braceIndex) : orderIt.id;
+
+      const matchItem = menuItems.find((m) => m.id === baseItemId) || {
+        id: baseItemId,
         name: orderIt.name,
         nameAr: orderIt.nameAr,
         price: orderIt.price,
         description: '',
         descriptionAr: '',
-        category: 'skewers',
+        category: 'main',
         image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600',
         calories: 0,
         isAvailable: true
       };
 
+      let options: CartItemOption | undefined = undefined;
+      if (braceIndex > -1) {
+        try {
+          options = JSON.parse(orderIt.id.substring(braceIndex + 1));
+        } catch (e) {
+          console.warn('Failed to parse options JSON during modification:', e);
+        }
+      }
+
       return {
         id: orderIt.id,
         item: matchItem,
-        quantity: orderIt.quantity
+        quantity: orderIt.quantity,
+        customizations: options
       };
     });
 
@@ -539,8 +673,60 @@ function MenuAndOrdersApp() {
     setIsCartOpen(true);
   };
 
+  // Reorder items from account history
+  const handleReorder = (items: any[]) => {
+    const loadedCartItems: CartItem[] = items.map((orderIt: any) => {
+      const braceIndex = orderIt.id.indexOf('-{');
+      const baseItemId = braceIndex > -1 ? orderIt.id.substring(0, braceIndex) : orderIt.id;
+
+      const matchItem = menuItems.find((m) => m.id === baseItemId) || {
+        id: baseItemId,
+        name: orderIt.name,
+        nameAr: orderIt.nameAr,
+        price: orderIt.price,
+        description: '',
+        descriptionAr: '',
+        category: 'main',
+        image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600',
+        calories: 0,
+        isAvailable: true
+      };
+
+      let options: CartItemOption | undefined = undefined;
+      if (braceIndex > -1) {
+        try {
+          options = JSON.parse(orderIt.id.substring(braceIndex + 1));
+        } catch (e) {
+          console.warn('Failed to parse options JSON during reordering:', e);
+        }
+      }
+
+      return {
+        id: orderIt.id,
+        item: matchItem,
+        quantity: orderIt.quantity,
+        customizations: options
+      };
+    });
+
+    setCart(loadedCartItems);
+    setActiveTab('menu');
+    setIsCartOpen(true);
+  };
+
   // Filters catalog list matching both Arabic & English titles / descriptions plus keywords
   const filteredMenuItems = menuItems.filter((item) => {
+    // Exclude redundant merged items from display
+    const MERGED_IDS_TO_EXCLUDE = new Set([
+      's1', 's5',
+      'g2', 'g6',
+      'g8', 'g12',
+      'g9', 'g13',
+      'g4', 'g11',
+      'dr1', 'dr2', 'dr3', 'dr4', 'dr5', 'dr5d', 'dr6'
+    ]);
+    if (MERGED_IDS_TO_EXCLUDE.has(item.id)) return false;
+
     // Filter by tab category
     if (item.category !== selectedCategory) return false;
 
@@ -610,6 +796,22 @@ function MenuAndOrdersApp() {
         onWelcomeClick={handleInstallOrWelcomeClick}
       />
 
+      {quotaExceeded && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 py-2.5 px-4 text-center">
+          <div className="max-w-[1440px] mx-auto flex items-center justify-center gap-2 text-stone-800 text-xs font-semibold select-text">
+            <span className="flex h-2 w-2 relative shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+            </span>
+            <span className="leading-relaxed">
+              {language === 'ar' 
+                ? '⚡ تم تفعيل نمط الاستمرارية السحابية! يعمل التطبيق الآن بكفاءة متناهية بالكامل مع حفظ طلباتك محلياً وطلبها فوراً عبر الـ WhatsApp والاتصال.'
+                : '⚡ Cloud Continuity Enabled! The application is operating with peak fallback efficiency. Your checkout requests, profile data, and orders are stored locally and routed directly via WhatsApp.'}
+            </span>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 md:px-6 py-6 font-sans">
         
         {activeTab === 'menu' && (
@@ -650,11 +852,13 @@ function MenuAndOrdersApp() {
             )}
 
             {/* Scrolling Categories selection line bar */}
-            <CategoryNav
-              categories={CATEGORIES}
-              selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
-            />
+            <div id="menu-header-anchor" className="scroll-mt-24">
+              <CategoryNav
+                categories={CATEGORIES}
+                selectedCategory={selectedCategory}
+                onSelectCategory={setSelectedCategory}
+              />
+            </div>
 
             {/* Menu items display GRID layout */}
             <div className="space-y-4">
@@ -695,6 +899,11 @@ function MenuAndOrdersApp() {
                   </AnimatePresence>
                 </div>
               )}
+
+              {/* Invisible sentinel for seamless category transition */}
+              {nextCategory && filteredMenuItems.length > 0 && (
+                <div ref={nextCategoryRef} className="h-4 w-full opacity-0 pointer-events-none" />
+              )}
             </div>
 
           </div>
@@ -729,6 +938,14 @@ function MenuAndOrdersApp() {
         {/* Independent Driver logistics hub */}
         {activeTab === 'driver' && showDriverTab && (
           <DriverPortal businessSettings={businessSettings} />
+        )}
+
+        {/* Customer Account & Addresses portal */}
+        {activeTab === 'account' && (
+          <MyAccount 
+            onReorder={handleReorder} 
+            activePromo={activePromo} 
+          />
         )}
 
       </main>
@@ -865,7 +1082,7 @@ function MenuAndOrdersApp() {
       </AnimatePresence>
 
       {/* Interactive ChatBot Smart Assistant */}
-      {!isCartOpen && (
+      {!isCartOpen && activeTab !== 'account' && (
         <ChatBot menuItems={menuItems} businessSettings={businessSettings} language={language} />
       )}
 

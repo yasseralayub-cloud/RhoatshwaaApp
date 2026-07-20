@@ -8,8 +8,8 @@ interface HeaderProps {
   onCartClick: () => void;
   searchTerm: string;
   onSearchChange: (val: string) => void;
-  onTabChange: (tab: 'menu' | 'tracker' | 'admin' | 'driver') => void;
-  activeTab: 'menu' | 'tracker' | 'admin' | 'driver';
+  onTabChange: (tab: 'menu' | 'tracker' | 'admin' | 'driver' | 'account') => void;
+  activeTab: 'menu' | 'tracker' | 'admin' | 'driver' | 'account';
   isAdminAuthenticated: boolean;
   businessSettings?: import('../types').BusinessSettings;
   showAdminTab?: boolean;
@@ -59,32 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <p className="text-[10px] text-dark/50 font-mono uppercase tracking-widest hidden sm:block leading-none">
                     {language === 'ar' ? (businessSettings?.taglineAr || 'مذاق المشويات الفاخرة على أصولها') : (businessSettings?.taglineEn || 'Premium Charcoal Grilled Platters')}
                   </p>
-                  {/* Working hours badge */}
-                  {businessSettings?.workingHoursStart && businessSettings?.workingHoursEnd && (
-                    <div className="flex items-center gap-1">
-                      <span className="hidden sm:inline text-dark/10 text-[10px] select-none">|</span>
-                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8.5px] sm:text-[9px] font-bold ${
-                        isRestaurantOpen(businessSettings.workingHoursStart, businessSettings.workingHoursEnd)
-                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-500/10'
-                          : 'bg-rose-50 text-rose-600 border border-rose-500/10'
-                      }`}>
-                        <span className={`w-1 h-1 rounded-full ${
-                          isRestaurantOpen(businessSettings.workingHoursStart, businessSettings.workingHoursEnd)
-                            ? 'bg-emerald-500 animate-pulse'
-                            : 'bg-rose-500'
-                        }`} />
-                        <span>
-                          {isRestaurantOpen(businessSettings.workingHoursStart, businessSettings.workingHoursEnd)
-                            ? (language === 'ar' ? 'مفتوح' : 'Open')
-                            : (language === 'ar' ? 'مغلق' : 'Closed')
-                          }
-                        </span>
-                        <span className="text-dark/40 font-mono text-[7.5px] sm:text-[8px] font-normal">
-                          ({formatTime12h(businessSettings.workingHoursStart, language)})
-                        </span>
-                      </div>
-                    </div>
-                  )}
+
                 </div>
               </div>
             </div>
@@ -156,6 +131,23 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <ClipboardList className="w-3.5 h-3.5" />
                 <span>{t('tracker')}</span>
+              </button>
+
+              <button
+                id="account-tab-nav"
+                onClick={() => onTabChange('account')}
+                className={`flex-1 md:flex-none text-center px-4 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'account'
+                    ? 'bg-yellow text-black font-bold shadow-xs'
+                    : 'text-dark/60 hover:text-dark'
+                }`}
+              >
+                <div className="w-4 h-4 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0 border border-black/10">
+                  <svg className="w-full h-full text-slate-500" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
+                <span>{language === 'ar' ? 'حسابي' : 'Account'}</span>
               </button>
 
             </div>
