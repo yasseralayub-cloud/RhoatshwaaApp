@@ -4,7 +4,15 @@ import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+
+// Detect if we are running in the AI Studio environment.
+// If yes, connect to the custom AI Studio database. Otherwise (e.g. Vercel, localhost), connect to the project's default database.
+const isAiStudio = typeof window !== 'undefined' && (
+  window.location.hostname.includes('europe-west2.run.app') ||
+  window.location.hostname.includes('aistudio.google')
+);
+
+export const db = getFirestore(app, isAiStudio ? firebaseConfig.firestoreDatabaseId : undefined); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();
 
 export enum OperationType {
