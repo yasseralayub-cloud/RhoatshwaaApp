@@ -208,8 +208,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     e.preventDefault();
     setAuthError('');
 
-    if (!verificationCode || verificationCode.length < 4) {
-      setAuthError(language === 'ar' ? 'الرجاء إدخال رمز التحقق الصحيح' : 'Please enter the correct verification code');
+    if (!verificationCode || verificationCode.length < 6) {
+      setAuthError(language === 'ar' ? 'الرجاء إدخال رمز التحقق المكون من 6 أرقام' : 'Please enter the correct 6-digit verification code');
       return;
     }
 
@@ -1204,7 +1204,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       >
                         <div>
                           <label className="block text-xs font-bold text-dark/60 mb-1">
-                            {language === 'ar' ? 'رقم الجوال السعودي 📱' : 'Saudi Mobile Number 📱'}
+                            {language === 'ar' ? 'رقم الجوال السعودي' : 'Saudi Mobile Number'}
                           </label>
                           <div className="relative flex items-center">
                             <div className="absolute left-3 flex items-center gap-1.5 text-dark/70 font-extrabold text-sm border-r border-black/10 pr-2 pointer-events-none h-5">
@@ -1232,11 +1232,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                               className="w-full text-sm font-mono bg-white border border-black/10 rounded-xl py-3 pl-[76px] pr-3 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs font-bold"
                             />
                           </div>
-                          <p className="text-[10px] text-dark/40 font-semibold leading-normal mt-1">
-                            {language === 'ar' 
-                              ? '● سنرسل رمز تحقق حقيقي (OTP) عبر رسالة نصية SMS إلى رقم جوالك باستخدام Firebase Phone Auth.' 
-                              : '● We will send a real verification code (OTP) via SMS to your mobile using Firebase Phone Auth.'}
-                          </p>
                         </div>
 
                         {authError && (
@@ -1287,8 +1282,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                 className="w-full bg-amber-600 hover:bg-amber-700 text-white font-extrabold py-2 px-3 rounded-xl transition-all shadow-sm active:scale-98 text-[11px] cursor-pointer"
                               >
                                 {language === 'ar' 
-                                  ? '🔓 تخطي والتسجيل كحساب تجريبي (للتجربة الفورية)' 
-                                  : '🔓 Skip & Log in as Test Account (For Instant Test)'}
+                                  ? 'تخطي والتسجيل كحساب تجريبي (للتجربة الفورية)' 
+                                  : 'Skip & Log in as Test Account (For Instant Test)'}
                               </button>
                             </div>
                           </div>
@@ -1302,7 +1297,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           {authLoading ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <span>{language === 'ar' ? 'أرسل رمز التحقق 📲' : 'Send Verification Code 📲'}</span>
+                            <span>{language === 'ar' ? 'أرسل رمز التحقق' : 'Send Verification Code'}</span>
                           )}
                         </button>
                       </motion.form>
@@ -1318,15 +1313,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       >
                         <div>
                           <label className="block text-xs font-bold text-dark/60 mb-1">
-                            {language === 'ar' ? 'رمز التحقق المكون من 4 أرقام 🔐' : '4-Digit Code 🔐'}
+                            {language === 'ar' ? 'رمز التحقق المكون من 6 أرقام' : '6-Digit Code'}
                           </label>
                           <input
                             required
                             type="text"
-                            maxLength={4}
+                            maxLength={6}
                             value={verificationCode}
                             onChange={(e) => setVerificationCode(e.target.value)}
-                            placeholder="xxxx"
+                            placeholder="xxxxxx"
                             className="w-full text-center text-lg font-mono tracking-widest bg-white border border-black/10 rounded-xl px-3 py-3 outline-none focus:border-yellow text-dark placeholder-dark/30 shadow-xs font-black"
                           />
                         </div>

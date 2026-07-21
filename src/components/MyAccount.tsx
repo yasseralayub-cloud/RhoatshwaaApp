@@ -314,8 +314,8 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     e.preventDefault();
     setAuthError('');
 
-    if (!verificationCode || verificationCode.length < 4) {
-      setAuthError(language === 'ar' ? 'الرجاء إدخال رمز التحقق الصحيح' : 'Please enter the correct verification code');
+    if (!verificationCode || verificationCode.length < 6) {
+      setAuthError(language === 'ar' ? 'الرجاء إدخال رمز التحقق المكون من 6 أرقام' : 'Please enter the correct 6-digit verification code');
       return;
     }
 
@@ -770,9 +770,6 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                     className="w-full text-sm font-mono bg-stone-50 border border-stone-200 rounded-xl py-3.5 pl-[76px] pr-4 outline-none focus:border-yellow focus:bg-white transition-all font-bold"
                   />
                 </div>
-                <p className="text-[10px] text-stone-400 font-bold leading-normal">
-                  {language === 'ar' ? '● سنرسل رمز تحقق حقيقي (OTP) عبر رسالة نصية SMS إلى رقم جوالك باستخدام Firebase Phone Auth.' : '● We will send a real verification code (OTP) via SMS to your mobile using Firebase Phone Auth.'}
-                </p>
               </div>
 
               {authError && (
@@ -823,8 +820,8 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                       className="w-full bg-amber-600 hover:bg-amber-700 text-white font-extrabold py-2 px-3 rounded-xl transition-all shadow-sm active:scale-98 text-[11px] cursor-pointer"
                     >
                       {language === 'ar' 
-                        ? '🔓 تخطي والتسجيل كحساب تجريبي (للتجربة الفورية)' 
-                        : '🔓 Skip & Log in as Test Account (For Instant Test)'}
+                        ? 'تخطي والتسجيل كحساب تجريبي (للتجربة الفورية)' 
+                        : 'Skip & Log in as Test Account (For Instant Test)'}
                     </button>
                   </div>
                 </div>
@@ -838,7 +835,7 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                 {authLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <span>{language === 'ar' ? 'أرسل رمز التحقق 📲' : 'Send Verification Code 📲'}</span>
+                  <span>{language === 'ar' ? 'أرسل رمز التحقق' : 'Send Verification Code'}</span>
                 )}
               </button>
             </motion.form>
@@ -854,15 +851,15 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
             >
               <div className="space-y-1.5">
                 <label className="block text-xs font-extrabold text-stone-700 text-start">
-                  {language === 'ar' ? 'رمز التحقق المكون من 4 أرقام' : '4-Digit Code'}
+                  {language === 'ar' ? 'رمز التحقق المكون من 6 أرقام' : '6-Digit Code'}
                 </label>
                 <input
                   required
                   type="text"
-                  maxLength={4}
+                  maxLength={6}
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value)}
-                  placeholder="xxxx"
+                  placeholder="xxxxxx"
                   className="w-full text-center text-xl font-mono tracking-widest bg-stone-50 border border-stone-200 rounded-xl py-3.5 outline-none focus:border-yellow focus:bg-white transition-all font-black"
                 />
               </div>
