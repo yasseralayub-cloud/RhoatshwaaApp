@@ -519,9 +519,17 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
       });
 
       // Filter only active orders (status is not delivered or cancelled)
-      const activeList = Array.from(uniqueMap.values()).filter(o => 
+      let activeList = Array.from(uniqueMap.values()).filter(o => 
         o.status !== 'delivered' && o.status !== 'cancelled'
       );
+
+      // Only show active orders that belong to the user's phone number.
+      // If there's no phone number logged in (public/guest), do not show any active orders list.
+      if (phone) {
+        activeList = activeList.filter(o => o.customerPhone === phone);
+      } else {
+        activeList = [];
+      }
 
       // Sort by createdAt descending
       activeList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

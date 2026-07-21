@@ -227,7 +227,7 @@ function MenuAndOrdersApp() {
           if (!snapshot.empty) {
             const docs: MenuItem[] = [];
             snapshot.forEach((snap) => {
-              docs.push(snap.data() as MenuItem);
+              docs.push({ id: snap.id, ...snap.data() } as MenuItem);
             });
             setMenuItems(docs);
             localStorage.setItem('simulated_menu', JSON.stringify(docs));

@@ -609,7 +609,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           setLoadingOrders(false);
           const docs: Order[] = [];
           snapshot.forEach((snap) => {
-            docs.push(snap.data() as Order);
+            docs.push({ id: snap.id, ...snap.data() } as Order);
           });
           previousOrdersCountRef.current = docs.length;
           setOrders(docs);
@@ -788,7 +788,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           setLoadingDrivers(false);
           const docs: Driver[] = [];
           snapshot.forEach((snap) => {
-            docs.push(snap.data() as Driver);
+            docs.push({ id: snap.id, ...snap.data() } as Driver);
           });
           setDrivers(docs);
         },

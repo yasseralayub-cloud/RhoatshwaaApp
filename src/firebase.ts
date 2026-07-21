@@ -12,7 +12,7 @@ const isAiStudio = typeof window !== 'undefined' && (
   window.location.hostname.includes('aistudio.google')
 );
 
-export const db = getFirestore(app, isAiStudio ? firebaseConfig.firestoreDatabaseId : undefined); /* CRITICAL: The app will break without this line */
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();
 
 export enum OperationType {
