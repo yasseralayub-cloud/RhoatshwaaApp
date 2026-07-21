@@ -726,7 +726,7 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                 {authLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <span>{language === 'ar' ? 'إتمام التسجيل والدخول 🚀' : 'Complete Registration & Enter 🚀'}</span>
+                  <span>{language === 'ar' ? 'إتمام التسجيل والدخول' : 'Complete Registration & Enter'}</span>
                 )}
               </button>
             </motion.form>

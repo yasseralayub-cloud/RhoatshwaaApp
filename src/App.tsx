@@ -128,41 +128,69 @@ function MenuAndOrdersApp() {
     };
   }, []);
 
-  // Auto category transition state and ref
-  const nextCategoryRef = React.useRef<HTMLDivElement>(null);
+  // Smooth scroll click handler for Categories selection
+  const handleSelectCategory = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    const element = document.getElementById(`category-sec-${categoryId}`);
+    if (element) {
+      const headerOffset = window.innerWidth < 768 ? 190 : 160;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.scrollY - headerOffset;
+      
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
 
-  const currentCategoryIdx = CATEGORIES.findIndex(c => c.id === selectedCategory);
-  const nextCategory = currentCategoryIdx !== -1 && currentCategoryIdx < CATEGORIES.length - 1 
-    ? CATEGORIES[currentCategoryIdx + 1] 
-    : null;
-
+  // Scroll spy listener to auto-highlight categories as user scrolls
   useEffect(() => {
-    if (!nextCategory || activeTab !== 'menu') {
-      return;
-    }
+    if (activeTab !== 'menu') return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry.isIntersecting) {
-          // Immediately select the next category without returning to the top of the page
-          setSelectedCategory(nextCategory.id);
+    const handleScroll = () => {
+      // Find all rendered category sections
+      const categorySections = CATEGORIES.map(cat => ({
+        id: cat.id,
+        element: document.getElementById(`category-sec-${cat.id}`)
+      })).filter(item => item.element !== null) as { id: string; element: HTMLElement }[];
+
+      if (categorySections.length === 0) return;
+
+      // Define offset threshold at which a section is considered "entered"
+      const offset = window.innerWidth < 768 ? 200 : 180;
+
+      let activeId = categorySections[0].id;
+      for (const section of categorySections) {
+        const rect = section.element.getBoundingClientRect();
+        if (rect.top <= offset) {
+          activeId = section.id;
+        } else {
+          break;
         }
-      },
-      { threshold: 0.1 }
-    );
+      }
 
-    const target = nextCategoryRef.current;
-    if (target) {
-      observer.observe(target);
-    }
+      setSelectedCategory((prev) => {
+        if (prev !== activeId) {
+          // Gently scroll the CategoryNav tab item into view in the horizontal scrollbar
+          const btn = document.getElementById(`cat-btn-${activeId}`);
+          if (btn) {
+            btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+          }
+          return activeId;
+        }
+        return prev;
+      });
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    // Run initially to capture current position
+    handleScroll();
 
     return () => {
-      if (target) {
-        observer.unobserve(target);
-      }
+      window.removeEventListener('scroll', handleScroll);
     };
-  }, [selectedCategory, activeTab, nextCategory]);
+  }, [activeTab, menuItems, searchTerm]);
   const [showAdminTab, setShowAdminTab] = useState(() => {
     return localStorage.getItem('show_admin_tab') === 'true';
   });
@@ -727,9 +755,6 @@ function MenuAndOrdersApp() {
     ]);
     if (MERGED_IDS_TO_EXCLUDE.has(item.id)) return false;
 
-    // Filter by tab category
-    if (item.category !== selectedCategory) return false;
-
     // Filter by input search text
     if (!searchTerm.trim()) return true;
     const cleanSearch = searchTerm.toLowerCase();
@@ -796,21 +821,6 @@ function MenuAndOrdersApp() {
         onWelcomeClick={handleInstallOrWelcomeClick}
       />
 
-      {quotaExceeded && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 py-2.5 px-4 text-center">
-          <div className="max-w-[1440px] mx-auto flex items-center justify-center gap-2 text-stone-800 text-xs font-semibold select-text">
-            <span className="flex h-2 w-2 relative shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            </span>
-            <span className="leading-relaxed">
-              {language === 'ar' 
-                ? '⚡ تم تفعيل نمط الاستمرارية السحابية! يعمل التطبيق الآن بكفاءة متناهية بالكامل مع حفظ طلباتك محلياً وطلبها فوراً عبر الـ WhatsApp والاتصال.'
-                : '⚡ Cloud Continuity Enabled! The application is operating with peak fallback efficiency. Your checkout requests, profile data, and orders are stored locally and routed directly via WhatsApp.'}
-            </span>
-          </div>
-        </div>
-      )}
 
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 md:px-6 py-6 font-sans">
         
@@ -852,28 +862,19 @@ function MenuAndOrdersApp() {
             )}
 
             {/* Scrolling Categories selection line bar */}
-            <div id="menu-header-anchor" className="scroll-mt-24">
+            <div 
+              id="menu-header-anchor" 
+              className="sticky top-[108px] md:top-[124px] z-30 bg-[#FCFCFB]/95 backdrop-blur-md border-b border-black/5 -mx-4 px-4 md:-mx-6 md:px-6 py-1 transition-all duration-200"
+            >
               <CategoryNav
                 categories={CATEGORIES}
                 selectedCategory={selectedCategory}
-                onSelectCategory={setSelectedCategory}
+                onSelectCategory={handleSelectCategory}
               />
             </div>
 
             {/* Menu items display GRID layout */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center text-dark border-b border-black/5 pb-2 text-start">
-                <div>
-                  <h3 className="font-bold font-serif text-xl flex items-center gap-1.5 uppercase tracking-wide">
-                    <Flame className="w-4 h-4 text-yellow animate-pulse" />
-                    {language === 'ar' 
-                      ? CATEGORIES.find(c => c.id === selectedCategory)?.nameAr 
-                      : CATEGORIES.find(c => c.id === selectedCategory)?.name}
-                  </h3>
-                  <p className="text-[10px] text-dark/40 font-mono mt-0.5">{filteredMenuItems.length} {language === 'ar' ? 'خيارات لذيذة' : 'choices found'}</p>
-                </div>
-              </div>
-
+            <div className="space-y-12">
               {filteredMenuItems.length === 0 ? (
                 <div className="h-56 flex flex-col items-center justify-center text-dark/40 text-center border border-dashed border-black/10 rounded-[2rem] bg-neutral-50 p-6 animate-fade-in">
                   <AlertCircle className="w-10 h-10 text-dark/30 stroke-[1.5] mb-2" />
@@ -881,28 +882,48 @@ function MenuAndOrdersApp() {
                   <p className="text-xs text-dark/50 max-w-sm">{language === 'ar' ? 'جرّب البحث عن صنف آخر كالشاورما أو الكباب أو القهوة العربية الممتازة' : 'Try searching for items in our specific catalog.'}</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <AnimatePresence mode="popLayout">
-                    {filteredMenuItems.map((item) => {
-                      const cartQty = cart.filter((c) => c.item.id === item.id).reduce((sum, c) => sum + c.quantity, 0);
-                      return (
-                        <MenuCard
-                          key={item.id}
-                          item={item}
-                          cartQuantity={cartQty}
-                          onAdd={handleAddToCart}
-                          onRemove={handleRemoveFromCart}
-                          activePromo={activePromo}
-                        />
-                      );
-                    })}
-                  </AnimatePresence>
-                </div>
-              )}
+                CATEGORIES.map((category) => {
+                  const categoryItems = filteredMenuItems.filter(item => item.category === category.id);
+                  if (categoryItems.length === 0) return null;
 
-              {/* Invisible sentinel for seamless category transition */}
-              {nextCategory && filteredMenuItems.length > 0 && (
-                <div ref={nextCategoryRef} className="h-4 w-full opacity-0 pointer-events-none" />
+                  return (
+                    <div
+                      key={category.id}
+                      id={`category-sec-${category.id}`}
+                      className="space-y-6 pt-6 scroll-mt-[220px] md:scroll-mt-[200px]"
+                    >
+                      <div className="flex justify-between items-center text-dark border-b border-black/5 pb-2 text-start">
+                        <div>
+                          <h3 className="font-bold font-serif text-xl flex items-center gap-1.5 uppercase tracking-wide">
+                            <Flame className="w-4 h-4 text-yellow animate-pulse" />
+                            {language === 'ar' ? category.nameAr : category.name}
+                          </h3>
+                          <p className="text-[10px] text-dark/40 font-mono mt-0.5">
+                            {categoryItems.length} {language === 'ar' ? 'خيارات لذيذة' : 'choices found'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <AnimatePresence mode="popLayout">
+                          {categoryItems.map((item) => {
+                            const cartQty = cart.filter((c) => c.item.id === item.id).reduce((sum, c) => sum + c.quantity, 0);
+                            return (
+                              <MenuCard
+                                key={item.id}
+                                item={item}
+                                cartQuantity={cartQty}
+                                onAdd={handleAddToCart}
+                                onRemove={handleRemoveFromCart}
+                                activePromo={activePromo}
+                              />
+                            );
+                          })}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
 
@@ -1082,7 +1103,7 @@ function MenuAndOrdersApp() {
       </AnimatePresence>
 
       {/* Interactive ChatBot Smart Assistant */}
-      {!isCartOpen && activeTab !== 'account' && (
+      {activeTab === 'menu' && !isCartOpen && (
         <ChatBot menuItems={menuItems} businessSettings={businessSettings} language={language} />
       )}
 

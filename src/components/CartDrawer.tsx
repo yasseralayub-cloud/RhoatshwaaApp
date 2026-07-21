@@ -1155,7 +1155,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       >
                         <div>
                           <label className="block text-xs font-bold text-dark/60 mb-1">
-                            {language === 'ar' ? 'الاسم الثنائي (حروف فقط بدون أرقام) 👤' : 'Full Name (Letters only) 👤'}
+                            {language === 'ar' ? 'الاسم الثنائي (حروف فقط بدون أرقام)' : 'Full Name (Letters only)'}
                           </label>
                           <div className="relative">
                             <input
@@ -1188,7 +1188,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           {authLoading ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <span>{language === 'ar' ? 'إتمام التسجيل والدخول 🚀' : 'Complete Registration & Enter 🚀'}</span>
+                            <span>{language === 'ar' ? 'إتمام التسجيل والدخول' : 'Complete Registration & Enter'}</span>
                           )}
                         </button>
                       </motion.form>
