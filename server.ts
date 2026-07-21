@@ -425,6 +425,129 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
     }
   });
 
+  // 4a-2. Secure server-side real SMS OTP sending (Taqnyat/Twilio)
+  app.post("/api/send-sms", async (req: express.Request, res: express.Response) => {
+    try {
+      const { phone, code, language } = req.body;
+      if (!phone || !code) {
+        return res.status(400).json({ success: false, message: "Missing phone or code parameters" });
+      }
+
+      const lang = language === "ar" ? "ar" : "en";
+      const messageText = lang === "ar"
+        ? `رمز التحقق الخاص بك لتسجيل الدخول في تطبيق رحلة شواء هو: ${code}`
+        : `Your verification code for Grill Journey app is: ${code}`;
+
+      // Normalize phone number formats
+      let cleanPhone = phone.replace(/\D/g, "");
+      let taqnyatPhone = cleanPhone;
+      let twilioPhone = cleanPhone;
+
+      if (cleanPhone.startsWith("05") && cleanPhone.length === 10) {
+        taqnyatPhone = "966" + cleanPhone.substring(1);
+        twilioPhone = "+966" + cleanPhone.substring(1);
+      } else if (cleanPhone.startsWith("5") && cleanPhone.length === 9) {
+        taqnyatPhone = "966" + cleanPhone;
+        twilioPhone = "+966" + cleanPhone;
+      } else if (cleanPhone.startsWith("966") && cleanPhone.length > 9) {
+        taqnyatPhone = cleanPhone;
+        twilioPhone = "+" + cleanPhone;
+      } else if (cleanPhone.startsWith("00966")) {
+        taqnyatPhone = cleanPhone.substring(2);
+        twilioPhone = "+" + cleanPhone.substring(2);
+      } else {
+        taqnyatPhone = cleanPhone;
+        twilioPhone = "+" + cleanPhone;
+      }
+
+      const taqnyatKey = process.env.TAQNYAT_API_KEY;
+      const taqnyatSender = process.env.TAQNYAT_SENDER || "GrillJourney";
+
+      const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+      const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+      const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
+
+      // 1. Try Taqnyat (Saudi SMS Gateway) if configured
+      if (taqnyatKey && !taqnyatKey.includes("YOUR_")) {
+        try {
+          console.log(`Sending real SMS via Taqnyat to: ${taqnyatPhone}`);
+          const taqnyatResponse = await fetch("https://api.taqnyat.sa/v1/messages", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${taqnyatKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              recipients: [taqnyatPhone],
+              body: messageText,
+              sender: taqnyatSender
+            })
+          });
+
+          const resData = await taqnyatResponse.json() as any;
+          if (taqnyatResponse.ok && resData && (resData.success || resData.statusCode === 200)) {
+            return res.json({
+              success: true,
+              isSimulated: false,
+              gatewayUsed: "taqnyat",
+              message: "SMS sent successfully via Taqnyat."
+            });
+          } else {
+            console.warn("Taqnyat API returned non-success response:", resData);
+          }
+        } catch (taqnyatErr) {
+          console.error("Error communicating with Taqnyat API:", taqnyatErr);
+        }
+      }
+
+      // 2. Try Twilio if configured
+      if (twilioSid && twilioAuthToken && twilioFrom && !twilioSid.includes("YOUR_")) {
+        try {
+          console.log(`Sending real SMS via Twilio to: ${twilioPhone}`);
+          const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
+            method: "POST",
+            headers: {
+              "Authorization": "Basic " + Buffer.from(`${twilioSid}:${twilioAuthToken}`).toString("base64"),
+              "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: new URLSearchParams({
+              To: twilioPhone,
+              From: twilioFrom,
+              Body: messageText
+            })
+          });
+
+          const resData = await twilioResponse.json() as any;
+          if (twilioResponse.ok && resData && resData.sid) {
+            return res.json({
+              success: true,
+              isSimulated: false,
+              gatewayUsed: "twilio",
+              message: "SMS sent successfully via Twilio."
+            });
+          } else {
+            console.warn("Twilio API returned non-success response:", resData);
+          }
+        } catch (twilioErr) {
+          console.error("Error communicating with Twilio API:", twilioErr);
+        }
+      }
+
+      // 3. Fallback to Simulated Mode if no keys are defined or sending failed
+      console.log(`Simulated SMS sent to: ${phone}. Code: ${code}`);
+      return res.json({
+        success: true,
+        isSimulated: true,
+        message: "SMS Gateway is not configured, or dispatch failed. Fell back to simulation mode.",
+        code: code
+      });
+
+    } catch (err: any) {
+      console.error("Exception in send-sms API:", err);
+      return res.status(500).json({ success: false, message: err.message || "Failed to process SMS request" });
+    }
+  });
+
   // 4b. Secure server-side Telegram driver registration notifications
   app.post("/api/notify-driver-registration", async (req: express.Request, res: express.Response) => {
     try {

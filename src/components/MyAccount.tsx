@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
-import { db } from '../firebase';
+import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
+import { auth, db } from '../firebase';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { Order, CartItem } from '../types';
 import { 
@@ -81,10 +82,52 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRegisteringNewUser, setIsRegisteringNewUser] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
-  const [sentCode, setSentCode] = useState('1234'); // Default simulated code
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [smsToast, setSmsToast] = useState<{ show: boolean; code: string } | null>(null);
+  const [showPhoneAuthHelp, setShowPhoneAuthHelp] = useState(false);
+
+  // Format phone number to E.164 format for Firebase Phone Auth (+9665XXXXXXXX)
+  const formatPhoneE164 = (phone: string): string => {
+    let clean = phone.trim().replace(/\D/g, '');
+    if (clean.startsWith('05') && clean.length === 10) {
+      return '+966' + clean.substring(1);
+    }
+    if (clean.startsWith('5') && clean.length === 9) {
+      return '+966' + clean;
+    }
+    if (clean.startsWith('9665') && clean.length === 12) {
+      return '+' + clean;
+    }
+    if (clean.length === 9) {
+      return '+966' + clean;
+    }
+    if (clean.startsWith('00966') && clean.length === 14) {
+      return '+' + clean.substring(2);
+    }
+    if (!phone.startsWith('+')) {
+      return '+' + clean;
+    }
+    return phone;
+  };
+
+  // Skip Phone Auth and use a pre-set Demo Customer account for testing
+  const handleDemoBypass = () => {
+    const demoProfile = {
+      name: language === 'ar' ? 'عميل تجريبي' : 'Demo Customer',
+      phone: '0500000000',
+      addresses: []
+    };
+    setUser(demoProfile);
+    localStorage.setItem('rehla_user_profile', JSON.stringify(demoProfile));
+    setIsVerifying(false);
+    setPhoneInput('');
+    setVerificationCode('');
+    setConfirmationResult(null);
+    setAuthError('');
+    setShowPhoneAuthHelp(false);
+    window.dispatchEvent(new Event('storage'));
+  };
 
   // Profile Edit states
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -116,16 +159,6 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
   const [supportTickets, setSupportTickets] = useState<any[]>([]);
   const [loadingSupportTickets, setLoadingSupportTickets] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-
-  // Auto-hide SMS toast after 12 seconds
-  useEffect(() => {
-    if (smsToast?.show) {
-      const timer = setTimeout(() => {
-        setSmsToast(null);
-      }, 12000);
-      return () => clearTimeout(timer);
-    }
-  }, [smsToast]);
 
   // Setup live orders subscription when logged in
   useEffect(() => {
@@ -204,42 +237,73 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     return () => unsubscribe();
   }, [user?.phone]);
 
-  // Handle Login request (Sends OTP first)
+  // Handle Login request (Sends OTP first via Firebase Phone Auth)
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+    setShowPhoneAuthHelp(false);
     
-    // Clean phone number
-    let cleanPhone = phoneInput.trim();
-    if (!cleanPhone.startsWith('05') && !cleanPhone.startsWith('5') && !cleanPhone.startsWith('+9665') && !cleanPhone.startsWith('9665')) {
-      setAuthError(language === 'ar' ? 'الرجاء إدخال رقم جوال سعودي صحيح يبدأ بـ 05' : 'Please enter a valid Saudi mobile starting with 05');
-      return;
-    }
-
-    if (cleanPhone.startsWith('5')) {
-      cleanPhone = '0' + cleanPhone;
-    } else if (cleanPhone.startsWith('9665')) {
-      cleanPhone = '0' + cleanPhone.substring(3);
-    } else if (cleanPhone.startsWith('+9665')) {
-      cleanPhone = '0' + cleanPhone.substring(4);
-    }
-
-    if (cleanPhone.length !== 10) {
-      setAuthError(language === 'ar' ? 'يجب أن يتكون رقم الجوال من 10 خانات' : 'Mobile number must be exactly 10 digits');
+    // Clean phone number input
+    const cleanPhone = phoneInput.trim();
+    if (cleanPhone.length !== 9 || !cleanPhone.startsWith('5')) {
+      setAuthError(language === 'ar' 
+        ? 'الرجاء إدخال رقم جوال سعودي صحيح يتكون من 9 أرقام ويبدأ بـ 5 (مثال: 506572881)' 
+        : 'Please enter a valid 9-digit Saudi mobile starting with 5 (e.g., 506572881)');
       return;
     }
 
     setAuthLoading(true);
 
     try {
-      // Simulate sending OTP
-      const randomCode = Math.floor(1000 + Math.random() * 9000).toString();
-      setSentCode(randomCode);
+      const e164Phone = formatPhoneE164(phoneInput);
+
+      // Initialize reCAPTCHA verifier if not already initialized
+      if (!(window as any).recaptchaVerifier) {
+        (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          size: 'invisible',
+          callback: () => {
+            // reCAPTCHA solved
+          },
+          'expired-callback': () => {
+            // Response expired
+          }
+        });
+      }
+
+      const appVerifier = (window as any).recaptchaVerifier;
+
+      // Send OTP via Firebase Phone Auth
+      const confirmationResultObj = await signInWithPhoneNumber(auth, e164Phone, appVerifier);
+      setConfirmationResult(confirmationResultObj);
       setIsVerifying(true);
-      setVerificationCode(''); // Keep it empty so they have to type it!
-      setSmsToast({ show: true, code: randomCode });
-    } catch (err) {
-      setAuthError(language === 'ar' ? 'حدث خطأ في الاتصال، جرب ثانية' : 'Connection error, please try again');
+      setVerificationCode('');
+    } catch (err: any) {
+      console.error('Firebase Phone Auth Error:', err);
+      let friendlyError = language === 'ar'
+        ? 'فشل إرسال رمز التحقق عبر Firebase Phone Auth. يرجى التحقق من رقم الجوال أو إعدادات المشروع.'
+        : 'Failed to send verification code via Firebase Phone Auth. Please verify your mobile number or project configuration.';
+      
+      if (err?.code === 'auth/invalid-phone-number') {
+        friendlyError = language === 'ar' ? 'رقم الهاتف غير صالح!' : 'Invalid phone number!';
+      } else if (err?.code === 'auth/too-many-requests') {
+        friendlyError = language === 'ar' ? 'تم حظر الطلبات لكثرة المحاولات. يرجى المحاولة لاحقاً.' : 'Too many requests. Please try again later.';
+      } else if (err?.message?.includes('captcha') || err?.code?.includes('captcha')) {
+        friendlyError = language === 'ar' ? 'خطأ في التحقق من reCAPTCHA. يرجى المحاولة لاحقاً.' : 'reCAPTCHA verification error. Please try again later.';
+      } else if (
+        err?.code === 'auth/operation-not-allowed' || 
+        err?.message?.includes('operation-not-allowed') ||
+        err?.message?.includes('region') ||
+        err?.message?.includes('SMS unable to be sent')
+      ) {
+        setShowPhoneAuthHelp(true);
+        friendlyError = language === 'ar'
+          ? '⚠️ لم يتم إرسال الرمز: خيار Phone Sign-In غير مفعل أو تحتاج لتفعيل منطقة المملكة العربية السعودية (+966) من إعدادات الـ SMS في Firebase Console.'
+          : '⚠️ SMS not sent: Phone Sign-In is disabled or you need to allow Saudi Arabia (+966) region in Firebase Console SMS Settings.';
+      } else {
+        // Append raw error details for other unhandled errors
+        friendlyError += ` (${err?.code || err?.message || ''})`;
+      }
+      setAuthError(friendlyError);
     } finally {
       setAuthLoading(false);
     }
@@ -250,8 +314,8 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     e.preventDefault();
     setAuthError('');
 
-    if (verificationCode !== sentCode && verificationCode !== '1234') {
-      setAuthError(language === 'ar' ? 'رمز التحقق غير صحيح!' : 'Incorrect verification code!');
+    if (!verificationCode || verificationCode.length < 4) {
+      setAuthError(language === 'ar' ? 'الرجاء إدخال رمز التحقق الصحيح' : 'Please enter the correct verification code');
       return;
     }
 
@@ -263,6 +327,15 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     else if (cleanPhone.startsWith('+9665')) cleanPhone = '0' + cleanPhone.substring(4);
 
     try {
+      if (!confirmationResult) {
+        throw new Error('No confirmation result found');
+      }
+
+      // Confirm OTP code using Firebase Phone Auth confirmationResult
+      const userCredential = await confirmationResult.confirm(verificationCode);
+      const fbUser = userCredential.user;
+      console.log('Firebase Phone Auth successful login:', fbUser.uid);
+
       const userRef = doc(db, 'users', cleanPhone);
       let userSnap = null;
       let existingData: any = null;
@@ -314,15 +387,23 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
         setIsVerifying(false);
         setPhoneInput('');
         setVerificationCode('');
-        setSmsToast(null);
+        setConfirmationResult(null);
       } else {
         // New user - Transition to profile registration view
         setIsRegisteringNewUser(true);
         setNameInput('');
       }
-    } catch (err) {
-      console.error(err);
-      setAuthError(language === 'ar' ? 'فشل التحقق من الحساب بقاعدة البيانات' : 'Failed to load account from database');
+    } catch (err: any) {
+      console.error('OTP Verification Error:', err);
+      let friendlyError = language === 'ar' 
+        ? 'رمز التحقق غير صحيح أو منتهي الصلاحية.' 
+        : 'Incorrect or expired verification code.';
+      if (err?.code === 'auth/invalid-verification-code') {
+        friendlyError = language === 'ar' ? 'رمز التحقق الذي أدخلته غير صحيح!' : 'The verification code entered is incorrect!';
+      } else if (err?.code === 'auth/code-expired') {
+        friendlyError = language === 'ar' ? 'انتهت صلاحية الرمز، يرجى طلب رمز جديد.' : 'The code has expired, please request a new one.';
+      }
+      setAuthError(friendlyError);
     } finally {
       setAuthLoading(false);
     }
@@ -370,7 +451,6 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
       setPhoneInput('');
       setNameInput('');
       setVerificationCode('');
-      setSmsToast(null);
     } catch (err) {
       console.error(err);
       setAuthError(language === 'ar' ? 'فشل حفظ الحساب بقاعدة البيانات' : 'Failed to register account');
@@ -587,30 +667,6 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     return (
       <div className="max-w-md mx-auto bg-white border border-black/5 rounded-[2.5rem] p-6 md:p-8 shadow-xl mt-4 animate-fade-in text-start relative">
         
-        {/* iOS/Android Simulated SMS Push Notification */}
-        {smsToast && smsToast.show && (
-          <div className="fixed top-4 right-4 left-4 md:left-auto md:w-96 z-[99999] bg-stone-900/95 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl border border-white/10 flex items-start gap-3 animate-bounce">
-            <div className="p-2 bg-stone-800 rounded-xl text-lg shrink-0">💬</div>
-            <div className="flex-1 space-y-1 text-start">
-              <div className="flex justify-between items-center">
-                <span className="font-extrabold text-xs text-stone-300">{language === 'ar' ? 'الرسائل النصية • SMS' : 'SMS Message'}</span>
-                <span className="text-[10px] text-stone-500 font-mono">{language === 'ar' ? 'الآن' : 'now'}</span>
-              </div>
-              <p className="text-xs text-stone-100 font-bold leading-normal">
-                {language === 'ar' 
-                  ? `رمز التحقق الخاص بك لتسجيل الدخول في تطبيق رحلة شواء هو: ${smsToast.code}` 
-                  : `Your verification code for Grill Journey app is: ${smsToast.code}`}
-              </p>
-            </div>
-            <button 
-              onClick={() => setSmsToast(null)} 
-              className="text-stone-400 hover:text-white text-xs cursor-pointer font-bold self-start"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
         <div className="text-center space-y-3 mb-8">
           <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center mx-auto shadow-sm overflow-hidden shrink-0 relative">
             <svg className="w-12 h-12 text-slate-400 translate-y-1.5" fill="currentColor" viewBox="0 0 24 24">
@@ -688,19 +744,34 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                 <label className="block text-xs font-extrabold text-stone-700">
                   {language === 'ar' ? 'رقم الجوال السعودي' : 'Saudi Mobile Number'}
                 </label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-3.5 w-4 h-4 text-stone-400" />
+                <div className="relative flex items-center">
+                  <div className="absolute left-3 flex items-center gap-1.5 text-stone-600 font-extrabold text-sm border-r border-stone-200 pr-2 pointer-events-none h-5">
+                    <span>🇸🇦</span>
+                    <span className="font-mono text-xs">+966</span>
+                  </div>
                   <input
                     required
                     type="tel"
                     value={phoneInput}
-                    onChange={(e) => setPhoneInput(e.target.value)}
-                    placeholder="05xxxxxxxx"
-                    className="w-full text-sm font-mono bg-stone-50 border border-stone-200 rounded-xl py-3.5 pl-10 pr-4 outline-none focus:border-yellow focus:bg-white transition-all font-bold"
+                    onChange={(e) => {
+                      let val = e.target.value.trim().replace(/\D/g, '');
+                      if (val.startsWith('966')) {
+                        val = val.substring(3);
+                      }
+                      if (val.startsWith('0')) {
+                        val = val.substring(1);
+                      }
+                      if (val.length > 9) {
+                        val = val.substring(0, 9);
+                      }
+                      setPhoneInput(val);
+                    }}
+                    placeholder="5xxxxxxxx"
+                    className="w-full text-sm font-mono bg-stone-50 border border-stone-200 rounded-xl py-3.5 pl-[76px] pr-4 outline-none focus:border-yellow focus:bg-white transition-all font-bold"
                   />
                 </div>
                 <p className="text-[10px] text-stone-400 font-bold leading-normal">
-                  {language === 'ar' ? '● سنقوم بإرسال رمز تحقق حقيقي إلى نافذة التنبيهات لتأكيد ملكية جوالك.' : '● We will send a real verification code notification to confirm your mobile ownership.'}
+                  {language === 'ar' ? '● سنرسل رمز تحقق حقيقي (OTP) عبر رسالة نصية SMS إلى رقم جوالك باستخدام Firebase Phone Auth.' : '● We will send a real verification code (OTP) via SMS to your mobile using Firebase Phone Auth.'}
                 </p>
               </div>
 
@@ -708,6 +779,54 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                 <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{authError}</span>
+                </div>
+              )}
+
+              {showPhoneAuthHelp && (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-3 text-start">
+                  <p className="font-extrabold text-amber-800 text-sm">
+                    {language === 'ar' ? '⚠️ خطوات تفعيل ميزة التحقق عبر SMS (برمجة حقيقية):' : '⚠️ Steps to enable Firebase SMS Phone Auth:'}
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-amber-950 font-semibold leading-relaxed">
+                    {language === 'ar' ? (
+                      <>
+                        <li>اذهب إلى <a href="https://console.firebase.google.com/project/rehlat-shawaa-nkzzl9/authentication/providers" target="_blank" rel="noopener noreferrer" className="underline font-black text-amber-700 hover:text-amber-900">لوحة تحكم Firebase</a></li>
+                        <li>اختر تبويب <b>Sign-in method</b> ثم اضغط على <b>Add new provider</b> واختر <b>Phone</b> ثم قم بـ <b>تفعيله</b> وحفظه.</li>
+                        <li><b>تفعيل المنطقة (هام جداً):</b> اذهب لتبويب <b>Settings</b> (الإعدادات) بجوار Sign-in method. اختر <b>SMS Region Policy</b> ثم اختر <b>Allow</b> وقم بإضافة <b>Saudi Arabia (+966)</b> إلى القائمة المسموحة، ثم اضغط <b>Save</b>.</li>
+                        <li><b>إضافة النطاقات المصرحة (هام للويب):</b> في نفس تبويب <b>Settings</b>، اختر <b>Authorized domains</b> ثم اضغط <b>Add domain</b> وأضف النطاقين التاليين:
+                          <div className="my-1.5 p-1.5 bg-amber-100 rounded-lg font-mono text-[9px] select-all break-all leading-normal text-amber-950 font-bold">
+                            ais-dev-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app<br/>
+                            ais-pre-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app
+                          </div>
+                        </li>
+                        <li><b>الفتح في نافذة جديدة:</b> نظراً لقيود الأمان على الـ iFrame، يرجى الضغط على زر <b>"فتح في نافذة جديدة" (Open in new tab)</b> بأعلى صفحة المعاينة لكي يظهر اختبار الـ reCAPTCHA بشكل سليم وتصلك الرسالة بدون حظر المتصفح.</li>
+                      </>
+                    ) : (
+                      <>
+                        <li>Go to the <a href="https://console.firebase.google.com/project/rehlat-shawaa-nkzzl9/authentication/providers" target="_blank" rel="noopener noreferrer" className="underline font-black text-amber-700 hover:text-amber-900">Firebase Console</a></li>
+                        <li>Select the <b>Sign-in method</b> tab, click <b>Add new provider</b>, select <b>Phone</b>, toggle <b>Enable</b>, and click <b>Save</b>.</li>
+                        <li><b>Enable Region (Crucial):</b> Go to the <b>Settings</b> tab (next to Sign-in method). Select <b>SMS Region Policy</b>, choose <b>Allow</b>, add <b>Saudi Arabia (+966)</b>, and click <b>Save</b>.</li>
+                        <li><b>Add Authorized Domains (Crucial):</b> In the same <b>Settings</b> tab, select <b>Authorized domains</b>, click <b>Add domain</b>, and add these two domains:
+                          <div className="my-1.5 p-1.5 bg-amber-100 rounded-lg font-mono text-[9px] select-all break-all leading-normal text-amber-950 font-bold">
+                            ais-dev-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app<br/>
+                            ais-pre-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app
+                          </div>
+                        </li>
+                        <li><b>Open in New Tab:</b> Due to iframe cross-origin security restrictions, please click the <b>"Open in new tab"</b> button at the top of the preview pane to run the app outside the iframe so reCAPTCHA works smoothly and SMS can be sent.</li>
+                      </>
+                    )}
+                  </ol>
+                  <div className="pt-2 border-t border-amber-200/60">
+                    <button
+                      type="button"
+                      onClick={handleDemoBypass}
+                      className="w-full bg-amber-600 hover:bg-amber-700 text-white font-extrabold py-2 px-3 rounded-xl transition-all shadow-sm active:scale-98 text-[11px] cursor-pointer"
+                    >
+                      {language === 'ar' 
+                        ? '🔓 تخطي والتسجيل كحساب تجريبي (للتجربة الفورية)' 
+                        : '🔓 Skip & Log in as Test Account (For Instant Test)'}
+                    </button>
+                  </div>
                 </div>
               )}
 
