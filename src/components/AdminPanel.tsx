@@ -17,7 +17,7 @@ import {
 } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
-import { INITIAL_MENU_ITEMS, CATEGORIES } from '../initialData';
+import { INITIAL_MENU_ITEMS, CATEGORIES, DEFAULT_BUSINESS_SETTINGS } from '../initialData';
 import {
   TrendingUp,
   ShoppingBag,
@@ -1047,13 +1047,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setSeedingLoading(true);
     setSeedingSuccessMsg('');
     try {
-      for (const item of INITIAL_MENU_ITEMS) {
+      const updatedItems = INITIAL_MENU_ITEMS.map(item => ({ ...item, isAvailable: true }));
+      for (const item of updatedItems) {
         await setDoc(doc(db, 'menuItems', item.id), item);
       }
+      // Seed default business settings as well
+      await setDoc(doc(db, 'settings', 'business'), DEFAULT_BUSINESS_SETTINGS);
+      
       setSeedingSuccessMsg(t('seedSuccess'));
-      showNotification(language === 'ar' ? 'تم تأسيس وتحديث قائمة المأكولات بنجاح!' : 'Menu catalog seeded successfully!', 'success');
+      showNotification(
+        language === 'ar' 
+          ? 'تم تأسيس وتحديث قائمة المأكولات بنجاح وتفعيل توفر جميع الأصناف!' 
+          : 'Menu catalog seeded successfully and all items set to available!', 
+        'success'
+      );
       // Sync menu state in the shell
-      onMenuUpdate(INITIAL_MENU_ITEMS);
+      onMenuUpdate(updatedItems);
     } catch (err) {
       console.error(err);
       showNotification(language === 'ar' ? `خطأ في التأسيس: ${err}` : `Error seeding items: ${err}`, 'error');

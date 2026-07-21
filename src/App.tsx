@@ -10,7 +10,7 @@ import { DriverPortal } from './components/DriverPortal';
 import { MyAccount } from './components/MyAccount';
 import { CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_BUSINESS_SETTINGS } from './initialData';
 import { MenuItem, Promotion, BusinessSettings, CartItem, CartItemOption } from './types';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Flame, Star, Coffee, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -233,6 +233,22 @@ function MenuAndOrdersApp() {
             localStorage.setItem('simulated_menu', JSON.stringify(docs));
           } else {
             console.log('Firestore menuItems collection is empty. Showing default items.');
+            // Automatically seed the empty database with default items and business settings!
+            // This is perfect for the user's brand new database so they don't have to do it manually.
+            const autoSeedDatabase = async () => {
+              try {
+                console.log('Auto-seeding empty database...');
+                const updatedItems = INITIAL_MENU_ITEMS.map(item => ({ ...item, isAvailable: true }));
+                for (const item of updatedItems) {
+                  await setDoc(doc(db, 'menuItems', item.id), item);
+                }
+                await setDoc(doc(db, 'settings', 'business'), DEFAULT_BUSINESS_SETTINGS);
+                console.log('Auto-seeding completed successfully!');
+              } catch (err) {
+                console.error('Error during auto-seeding:', err);
+              }
+            };
+            autoSeedDatabase();
           }
         },
         (error: any) => {
