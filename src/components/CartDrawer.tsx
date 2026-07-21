@@ -1252,10 +1252,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                   <li>اذهب إلى <a href="https://console.firebase.google.com/project/rehlat-shawaa-nkzzl9/authentication/providers" target="_blank" rel="noopener noreferrer" className="underline font-black text-amber-700 hover:text-amber-900">لوحة تحكم Firebase</a></li>
                                   <li>اختر تبويب <b>Sign-in method</b> ثم اضغط على <b>Add new provider</b> واختر <b>Phone</b> ثم قم بـ <b>تفعيله</b> وحفظه.</li>
                                   <li><b>تفعيل المنطقة (هام جداً):</b> اذهب لتبويب <b>Settings</b> (الإعدادات) بجوار Sign-in method. اختر <b>SMS Region Policy</b> ثم اختر <b>Allow</b> وقم بإضافة <b>Saudi Arabia (+966)</b> إلى القائمة المسموحة، ثم اضغط <b>Save</b>.</li>
-                                  <li><b>إضافة النطاقات المصرحة (هام للويب):</b> في نفس تبويب <b>Settings</b>، اختر <b>Authorized domains</b> ثم اضغط <b>Add domain</b> وأضف النطاقين التاليين:
+                                  <li><b>إضافة النطاقات المصرحة (هام جداً للعمل على الويب والـ Vercel):</b> في نفس تبويب <b>Settings</b>، اختر <b>Authorized domains</b> ثم اضغط <b>Add domain</b> وأضف النطاقات التالية:
                                     <div className="my-1.5 p-1.5 bg-amber-100 rounded-lg font-mono text-[9px] select-all break-all leading-normal text-amber-950 font-bold">
                                       ais-dev-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app<br/>
-                                      ais-pre-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app
+                                      ais-pre-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app<br/>
+                                      localhost<br/>
+                                      [رابط موقعك على Vercel أو الدومين الخاص بك (مثال: your-app.vercel.app)]
                                     </div>
                                   </li>
                                   <li><b>الفتح في نافذة جديدة:</b> نظراً لقيود الأمان على الـ iFrame، يرجى الضغط على زر <b>"فتح في نافذة جديدة" (Open in new tab)</b> بأعلى صفحة المعاينة لكي يظهر اختبار الـ reCAPTCHA بشكل سليم وتصلك الرسالة بدون حظر المتصفح.</li>
@@ -1265,10 +1267,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                   <li>Go to the <a href="https://console.firebase.google.com/project/rehlat-shawaa-nkzzl9/authentication/providers" target="_blank" rel="noopener noreferrer" className="underline font-black text-amber-700 hover:text-amber-900">Firebase Console</a></li>
                                   <li>Select the <b>Sign-in method</b> tab, click <b>Add new provider</b>, select <b>Phone</b>, toggle <b>Enable</b>, and click <b>Save</b>.</li>
                                   <li><b>Enable Region (Crucial):</b> Go to the <b>Settings</b> tab (next to Sign-in method). Select <b>SMS Region Policy</b>, choose <b>Allow</b>, add <b>Saudi Arabia (+966)</b>, and click <b>Save</b>.</li>
-                                  <li><b>Add Authorized Domains (Crucial):</b> In the same <b>Settings</b> tab, select <b>Authorized domains</b>, click <b>Add domain</b>, and add these two domains:
+                                  <li><b>Add Authorized Domains (Crucial for Web & Vercel Deployments):</b> In the same <b>Settings</b> tab, select <b>Authorized domains</b>, click <b>Add domain</b>, and add these domains:
                                     <div className="my-1.5 p-1.5 bg-amber-100 rounded-lg font-mono text-[9px] select-all break-all leading-normal text-amber-950 font-bold">
                                       ais-dev-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app<br/>
-                                      ais-pre-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app
+                                      ais-pre-hdbiwbg6h7t5kss4yemaad-739645737905.europe-west2.run.app<br/>
+                                      localhost<br/>
+                                      [your-vercel-app-domain.vercel.app or your custom domain]
                                     </div>
                                   </li>
                                   <li><b>Open in New Tab:</b> Due to iframe cross-origin security restrictions, please click the <b>"Open in new tab"</b> button at the top of the preview pane to run the app outside the iframe so reCAPTCHA works smoothly and SMS can be sent.</li>
