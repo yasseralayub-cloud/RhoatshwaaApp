@@ -827,6 +827,9 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                 </div>
               )}
 
+              {/* Recaptcha container for invisible verification */}
+              <div id="recaptcha-container" className="my-1"></div>
+
               <button
                 type="submit"
                 disabled={authLoading}

@@ -1289,6 +1289,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           </div>
                         )}
 
+                        {/* Recaptcha container for invisible verification */}
+                        <div id="recaptcha-container" className="my-1"></div>
+
                         <button
                           type="submit"
                           disabled={authLoading}
