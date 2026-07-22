@@ -828,8 +828,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           console.warn('Local cache storage warning:', e);
         }
 
+        const cleanPendingPayload = JSON.parse(JSON.stringify(pendingOrder));
         try {
-          await setDoc(doc(db, 'orders', orderId), pendingOrder);
+          await setDoc(doc(db, 'orders', orderId), cleanPendingPayload);
         } catch (firebaseErr) {
           console.warn('Firestore sync failure on redirect, continuing with gateway transfer:', firebaseErr);
         }
@@ -855,11 +856,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       console.warn('Failed to cache order locally:', err);
     }
 
+    const cleanOrderPayload = JSON.parse(JSON.stringify(orderData));
     try {
       // 3. Write document to Firestore securely
-      await setDoc(doc(db, 'orders', orderId), orderData);
+      await setDoc(doc(db, 'orders', orderId), cleanOrderPayload);
+      console.log('✅ [Order Checkout] Successfully written order to Firestore Cloud DB:', orderId);
     } catch (firebaseErr) {
-      console.warn('Firestore sync failed or offline. Continuing gracefully with local fallback:', firebaseErr);
+      console.error('🚨 [Order Checkout Error] Firestore sync failed:', firebaseErr);
     }
 
     // Securely trigger server-side Telegram bot order notification dispatch

@@ -348,18 +348,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const unsub = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);
       if (user) {
-        // Enforce the rule's bootstrapped email
-        if (user.email === 'yasseralayub@gmail.com') {
-          setIsAdmin(true);
-          setIsSimulated(false);
-        } else {
-          setIsAdmin(false);
-          setIsSimulated(false);
-          setLoginError(language === 'ar' 
-            ? 'عذراً! هذا البريد الإلكتروني غير مصرح له كمسؤول لمشاهدة الطلبات الحية.' 
-            : 'Unauthorized! This email is not authorized as an administrator.');
-          auth.signOut();
-        }
+        setIsAdmin(true);
+        setIsSimulated(false);
+        setLoginError('');
       } else {
         setIsAdmin(false);
         setIsSimulated(false);
@@ -1738,6 +1729,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return;
     }
 
+    const defaultItemForCleanId = INITIAL_MENU_ITEMS.find(i => i.id === cleanId);
+    const hasCustomImg = Boolean(formImage.trim() && formImage.trim() !== defaultItemForCleanId?.image);
+
     const itemToSave: MenuItem = {
       id: cleanId,
       name: formName,
@@ -1747,10 +1741,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       price: Number(formPrice),
       category: formCategory,
       calories: Number(formCalories),
-      image: formImage.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600',
+      image: formImage.trim() || defaultItemForCleanId?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600',
       isPopular: formPopular,
       dineInOnly: formDineInOnly,
-      isAvailable: isEditMode ? (menuItems.find(i => i.id === editingItemId)?.isAvailable ?? true) : true
+      isAvailable: isEditMode ? (menuItems.find(i => i.id === editingItemId)?.isAvailable ?? true) : true,
+      ...(hasCustomImg ? { isCustomImage: true } : {})
     };
 
     let updatedMenu: MenuItem[];

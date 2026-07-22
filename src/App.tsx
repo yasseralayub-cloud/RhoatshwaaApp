@@ -250,21 +250,38 @@ function MenuAndOrdersApp() {
                 structuralConflicts.push({ id: docId, issues, rawData: data });
               }
 
-              // Precise mapping with strict document ID binding and type safe coersions
+              // Find matching default item to preserve original image links and data
+              const defaultItem = INITIAL_MENU_ITEMS.find((item) => item.id === docId);
+
+              // Image Resolution Strategy:
+              // Strictly rely on defaultItem.image from INITIAL_MENU_ITEMS for pre-defined menu items,
+              // unless data.isCustomImage is true OR the item was newly created by the admin (!defaultItem).
+              let resolvedImage = defaultItem?.image;
+              if (data.isCustomImage && data.image && String(data.image).trim() !== '') {
+                resolvedImage = String(data.image);
+              } else if (!defaultItem && data.image && String(data.image).trim() !== '') {
+                resolvedImage = String(data.image);
+              } else if (!resolvedImage) {
+                resolvedImage = String(data.image || 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=600');
+              }
+
+              // Precise mapping with strict document ID binding and type safe coercions
               const menuItem: MenuItem = {
+                ...defaultItem,
                 ...data,
                 id: docId, // Ensure Firestore Document ID always overrides any embedded id property
-                name: String(data.name || data.nameAr || 'Item'),
-                nameAr: String(data.nameAr || data.name || 'صنف'),
-                description: String(data.description || ''),
-                descriptionAr: String(data.descriptionAr || ''),
-                price: typeof data.price === 'number' ? data.price : (Number(data.price) || 0),
-                category: String(data.category || 'general'),
-                image: String(data.image || ''),
-                calories: typeof data.calories === 'number' ? data.calories : (Number(data.calories) || 0),
-                isPopular: Boolean(data.isPopular),
-                isAvailable: data.isAvailable !== undefined ? Boolean(data.isAvailable) : true,
-                dineInOnly: Boolean(data.dineInOnly),
+                name: String(data.name || defaultItem?.name || data.nameAr || 'Item'),
+                nameAr: String(data.nameAr || defaultItem?.nameAr || data.name || 'صنف'),
+                description: String(data.description || defaultItem?.description || ''),
+                descriptionAr: String(data.descriptionAr || defaultItem?.descriptionAr || ''),
+                price: typeof data.price === 'number' ? data.price : (Number(data.price) || defaultItem?.price || 0),
+                category: String(data.category || defaultItem?.category || 'general'),
+                image: resolvedImage,
+                calories: typeof data.calories === 'number' ? data.calories : (Number(data.calories) || defaultItem?.calories || 0),
+                isPopular: data.isPopular !== undefined ? Boolean(data.isPopular) : Boolean(defaultItem?.isPopular),
+                isAvailable: data.isAvailable !== undefined ? Boolean(data.isAvailable) : (defaultItem?.isAvailable ?? true),
+                dineInOnly: data.dineInOnly !== undefined ? Boolean(data.dineInOnly) : Boolean(defaultItem?.dineInOnly),
+                isCustomImage: Boolean(data.isCustomImage),
               };
 
               docs.push(menuItem);

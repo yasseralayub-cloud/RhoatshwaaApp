@@ -11,6 +11,7 @@ export interface MenuItem {
   isPopular?: boolean;
   isAvailable: boolean;
   dineInOnly?: boolean;
+  isCustomImage?: boolean;
 }
 
 export interface OrderItem {
