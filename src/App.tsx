@@ -91,7 +91,21 @@ function MenuAndOrdersApp() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
     // Check if there is an existing local cache, otherwise start with initial
     const saved = localStorage.getItem('simulated_menu');
-    return saved ? JSON.parse(saved) : INITIAL_MENU_ITEMS;
+    if (saved) {
+      try {
+        const parsed: MenuItem[] = JSON.parse(saved);
+        return parsed.map(item => {
+          const def = INITIAL_MENU_ITEMS.find(d => d.id === item.id);
+          if (def && !item.isCustomImage) {
+            return { ...item, image: def.image };
+          }
+          return item;
+        });
+      } catch {
+        return INITIAL_MENU_ITEMS;
+      }
+    }
+    return INITIAL_MENU_ITEMS;
   });
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -256,13 +270,9 @@ function MenuAndOrdersApp() {
               // Image Resolution Strategy:
               // Strictly rely on defaultItem.image from INITIAL_MENU_ITEMS for pre-defined menu items,
               // unless data.isCustomImage is true OR the item was newly created by the admin (!defaultItem).
-              let resolvedImage = defaultItem?.image;
-              if (data.isCustomImage && data.image && String(data.image).trim() !== '') {
+              let resolvedImage = defaultItem !== undefined ? defaultItem.image : String(data.image || '');
+              if (data.isCustomImage && data.image !== undefined) {
                 resolvedImage = String(data.image);
-              } else if (!defaultItem && data.image && String(data.image).trim() !== '') {
-                resolvedImage = String(data.image);
-              } else if (!resolvedImage) {
-                resolvedImage = String(data.image || 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=600');
               }
 
               // Precise mapping with strict document ID binding and type safe coercions
@@ -896,7 +906,17 @@ function MenuAndOrdersApp() {
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         activeTab={activeTab}
-        onTabChange={(tab) => setActiveTab(tab)}
+        onTabChange={(tab) => {
+          if (tab === 'admin') {
+            setShowAdminTab(true);
+            localStorage.setItem('show_admin_tab', 'true');
+          }
+          if (tab === 'driver') {
+            setShowDriverTab(true);
+            localStorage.setItem('show_driver_tab', 'true');
+          }
+          setActiveTab(tab);
+        }}
         isAdminAuthenticated={localStorage.getItem('last_order_id') !== null}
         businessSettings={businessSettings}
         showAdminTab={showAdminTab}
@@ -1023,7 +1043,7 @@ function MenuAndOrdersApp() {
         )}
 
         {/* Admin administrative controllers */}
-        {activeTab === 'admin' && showAdminTab && (
+        {activeTab === 'admin' && (
           <AdminPanel 
             onMenuUpdate={handleMenuUpdate} 
             menuItems={menuItems} 

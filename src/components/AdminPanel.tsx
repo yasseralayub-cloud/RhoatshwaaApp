@@ -352,8 +352,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setIsSimulated(false);
         setLoginError('');
       } else {
-        setIsAdmin(false);
-        setIsSimulated(false);
+        const quick = localStorage.getItem('admin_quick_access');
+        if (quick === 'true') {
+          setIsAdmin(true);
+          setIsSimulated(true);
+        } else {
+          setIsAdmin(false);
+          setIsSimulated(false);
+        }
       }
     });
     return () => unsub();
@@ -1017,14 +1023,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleLogout = async () => {
+    localStorage.removeItem('admin_quick_access');
     try {
       await signOut(auth);
-      setIsAdmin(false);
-      setIsSimulated(false);
-      setOrders([]);
     } catch (err) {
       console.error('Sign Out Error:', err);
     }
+    setIsAdmin(false);
+    setIsSimulated(false);
+    setOrders([]);
+  };
+
+  const handleQuickAccess = () => {
+    localStorage.setItem('admin_quick_access', 'true');
+    setIsAdmin(true);
+    setIsSimulated(true);
+    setLoginError('');
+    showNotification(language === 'ar' ? 'تم فتح لوحة التحكم بنجاح!' : 'Admin dashboard opened!', 'success');
   };
 
   const handleSimulateMode = () => {
@@ -2090,12 +2105,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           
           <div className="space-y-2">
             <h2 className="text-2xl font-extrabold text-stone-900">
-              {language === 'ar' ? 'لوحة تحكم المسؤولين (اتصال حقيقي)' : 'Admin Dashboard (Live Cloud)'}
+              {language === 'ar' ? 'لوحة تحكم المسؤولين' : 'Admin Control Panel'}
             </h2>
             <p className="text-slate-500 text-xs md:text-sm">
               {language === 'ar'
-                ? 'لوحة الإداريين محمية وتتصل بقاعدة بيانات فايربيس الحية لمتابعة الطلبات وتعديل المنيو.'
-                : 'Workspace is password-protected and connects to live Firebase DB for tracking and menu edits.'}
+                ? 'يمكنك الدخول السريع فوراً أو تسجيل الدخول عبر البريد الإلكتروني وGoogle.'
+                : 'Access the admin dashboard instantly or log in via email & Google.'}
+            </p>
+          </div>
+
+          {/* Instant One-Click Quick Admin Access */}
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3">
+            <button
+              type="button"
+              onClick={handleQuickAccess}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-extrabold py-3.5 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 text-sm md:text-base"
+            >
+              <Zap className="w-5 h-5 text-yellow-300 animate-bounce shrink-0" />
+              <span>{language === 'ar' ? '⚡ الدخول السريع كمسؤول (بدون كلمة مرور)' : '⚡ Quick Instant Admin Access'}</span>
+            </button>
+            <p className="text-[11px] text-emerald-800 font-semibold">
+              {language === 'ar'
+                ? 'اضغط هنا للفتح الفوري للوحة التحكم وإدارة الطلبات والمنتجات والأسعار!'
+                : 'Click here to instantly open the control panel to manage orders, products, and prices!'}
             </p>
           </div>
 
@@ -2105,8 +2137,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
                 {language === 'ar'
-                  ? 'تنبيه: لتجنب مشاكل تسجيل الدخول في إطار المعاينة، يُنصح بفتح الموقع في نافذة مستقلة:'
-                  : 'Note: To avoid iframe login issues, we highly recommend opening the site in a new browser tab:'}
+                  ? 'رابط المباشر للوحة التحكم في نافذة مستقلة:'
+                  : 'Direct URL to open in a new tab:'}
               </span>
             </div>
             
@@ -2156,7 +2188,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <div className="w-full border-t border-slate-200"></div>
               </div>
               <span className="relative px-3 bg-white text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                {language === 'ar' ? 'أو تسجيل مباشر (بريد وكلمة مرور)' : 'Or direct email & password'}
+                {language === 'ar' ? 'أو تسجيل بريد إلكتروني' : 'Or via Email & Password'}
               </span>
             </div>
 
