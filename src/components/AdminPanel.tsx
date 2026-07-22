@@ -231,6 +231,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showItemForm, setShowItemForm] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
+  // Custom categories state
+  const [customCategories, setCustomCategories] = useState<import('../types').Category[]>(() => {
+    try {
+      const saved = localStorage.getItem('simulated_custom_categories');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+
+  const mergedCategories = React.useMemo(() => {
+    const existing = new Set(CATEGORIES.map(c => c.id));
+    const newOnes = customCategories.filter(c => !existing.has(c.id));
+    return [...CATEGORIES, ...newOnes];
+  }, [customCategories]);
+
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [newCatId, setNewCatId] = useState('');
+  const [newCatNameAr, setNewCatNameAr] = useState('');
+  const [newCatNameEn, setNewCatNameEn] = useState('');
+
+  const handleAddCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCatNameAr.trim()) return;
+
+    const id = newCatId.trim().toLowerCase().replace(/\s+/g, '_') || `cat_${Date.now()}`;
+    const newCategory: import('../types').Category = {
+      id,
+      name: newCatNameEn.trim() || newCatNameAr.trim(),
+      nameAr: newCatNameAr.trim(),
+      icon: 'Sparkles'
+    };
+
+    const updated = [...customCategories.filter(c => c.id !== id), newCategory];
+    setCustomCategories(updated);
+    localStorage.setItem('simulated_custom_categories', JSON.stringify(updated));
+
+    setNewCatId('');
+    setNewCatNameAr('');
+    setNewCatNameEn('');
+    setShowCategoryForm(false);
+    showNotification(language === 'ar' ? 'تم إضافة القسم الجديد بنجاح!' : 'New category created successfully!', 'success');
+  };
   
   const [formId, setFormId] = useState('');
   const [formName, setFormName] = useState('');
@@ -5330,35 +5375,123 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <Sliders className="w-5 h-5 text-amber-500" />
               {t('controlMenu')}
             </h3>
-            <p className="text-xs text-slate-500">{language === 'ar' ? 'تعديل أسعار العناصر أو حجب المنتجات غير المتوفرة فوراً' : 'Adjust product prices and toggle live stock availability'}</p>
+            <p className="text-xs text-slate-500">{language === 'ar' ? 'تعديل أسعار العناصر، إضافة أقسام جديدة، أو حجب المنتجات غير المتوفرة فوراً' : 'Adjust product prices, manage categories, and toggle stock availability'}</p>
           </div>
 
-          <button
-            id="admin-add-item-trigger"
-            onClick={() => {
-              if (showItemForm) {
-                setShowItemForm(false);
-              } else {
-                setFormId('');
-                setFormName('');
-                setFormNameAr('');
-                setFormDesc('');
-                setFormDescAr('');
-                setFormPrice(10);
-                setFormCategory('main');
-                setFormCalories(0);
-                setFormImage('');
-                setFormPopular(false);
-                setIsEditMode(false);
-                setEditingItemId(null);
-                setShowItemForm(true);
-              }
-            }}
-            className="bg-amber-600 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs hover:bg-amber-700 transition"
-          >
-            {showItemForm ? (language === 'ar' ? 'إغلاق النموذج' : 'Close Form') : (language === 'ar' ? '+ صنف جديد' : '+ New Item')}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowCategoryForm(!showCategoryForm)}
+              className="bg-amber-100 text-amber-900 hover:bg-amber-200 font-bold text-xs py-2 px-3.5 rounded-xl transition border border-amber-300/60"
+            >
+              {showCategoryForm ? (language === 'ar' ? 'إغلاق الأقسام' : 'Close Category Form') : (language === 'ar' ? '📁 + إنشاء قسم جديد' : '📁 + New Category')}
+            </button>
+
+            <button
+              id="admin-add-item-trigger"
+              onClick={() => {
+                if (showItemForm) {
+                  setShowItemForm(false);
+                } else {
+                  setFormId('');
+                  setFormName('');
+                  setFormNameAr('');
+                  setFormDesc('');
+                  setFormDescAr('');
+                  setFormPrice(10);
+                  setFormCategory('main');
+                  setFormCalories(0);
+                  setFormImage('');
+                  setFormPopular(false);
+                  setIsEditMode(false);
+                  setEditingItemId(null);
+                  setShowItemForm(true);
+                }
+              }}
+              className="bg-amber-600 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs hover:bg-amber-700 transition"
+            >
+              {showItemForm ? (language === 'ar' ? 'إغلاق النموذج' : 'Close Form') : (language === 'ar' ? '+ صنف جديد' : '+ New Item')}
+            </button>
+          </div>
         </div>
+
+        {/* Add custom Category form panel */}
+        <AnimatePresence>
+          {showCategoryForm && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden border border-amber-200 bg-amber-500/10 p-4 rounded-2xl text-start space-y-3"
+            >
+              <h4 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                <span>📁</span>
+                <span>{language === 'ar' ? 'إنشاء قسم منتجات جديد' : 'Create New Category'}</span>
+              </h4>
+
+              <form onSubmit={handleAddCategory} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'اسم القسم (عربي)' : 'Category Name (Arabic)'}</label>
+                  <input
+                    required
+                    type="text"
+                    value={newCatNameAr}
+                    onChange={(e) => setNewCatNameAr(e.target.value)}
+                    placeholder="مثال: قسم الصوصات"
+                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'اسم القسم (إنجليزي)' : 'Category Name (English)'}</label>
+                  <input
+                    type="text"
+                    value={newCatNameEn}
+                    onChange={(e) => setNewCatNameEn(e.target.value)}
+                    placeholder="e.g. Sauces"
+                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'معرّف الكود (ID اختياري)' : 'Category ID (Optional)'}</label>
+                  <input
+                    type="text"
+                    value={newCatId}
+                    onChange={(e) => setNewCatId(e.target.value)}
+                    placeholder="e.g. sauces"
+                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none font-mono"
+                  />
+                </div>
+
+                <div className="sm:col-span-3 flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowCategoryForm(false)}
+                    className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl"
+                  >
+                    {language === 'ar' ? 'إلغاء' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 text-xs font-black text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-xs"
+                  >
+                    {language === 'ar' ? 'حفظ ونشر القسم الجديد' : 'Save & Publish Category'}
+                  </button>
+                </div>
+              </form>
+
+              {/* List of existing categories */}
+              <div className="pt-2 border-t border-amber-200/60">
+                <span className="text-[11px] font-bold text-slate-500 block mb-1.5">{language === 'ar' ? 'الأقسام المعتمدة حالياً بالمنيو:' : 'Current Approved Categories:'}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {mergedCategories.map(c => (
+                    <span key={c.id} className="text-xs font-extrabold bg-white text-slate-800 border border-slate-200 px-2.5 py-1 rounded-lg">
+                      {language === 'ar' ? c.nameAr : c.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Add custom Item form panel */}
         <AnimatePresence>
@@ -5428,9 +5561,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none"
+                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
                   >
-                    {CATEGORIES.map((c) => (
+                    {mergedCategories.map((c) => (
                       <option key={c.id} value={c.id}>{language === 'ar' ? c.nameAr : c.name}</option>
                     ))}
                   </select>
@@ -5526,7 +5659,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100 select-all">
                 {menuItems.map((item) => {
-                  const correlatedCat = CATEGORIES.find(c => c.id === item.category);
+                  const correlatedCat = mergedCategories.find(c => c.id === item.category);
                   const isCheckedVal = item.isAvailable;
 
                   return (

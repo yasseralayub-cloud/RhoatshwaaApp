@@ -108,6 +108,23 @@ function MenuAndOrdersApp() {
     return INITIAL_MENU_ITEMS;
   });
 
+  // Custom Categories state
+  const [customCategories, setCustomCategories] = useState<import('./types').Category[]>(() => {
+    try {
+      const saved = localStorage.getItem('simulated_custom_categories');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+
+  const allCategories = React.useMemo(() => {
+    const existingIds = new Set(CATEGORIES.map(c => c.id));
+    const newOnes = customCategories.filter(c => !existingIds.has(c.id));
+    return [...CATEGORIES, ...newOnes];
+  }, [customCategories]);
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -164,7 +181,7 @@ function MenuAndOrdersApp() {
 
     const handleScroll = () => {
       // Find all rendered category sections
-      const categorySections = CATEGORIES.map(cat => ({
+      const categorySections = allCategories.map(cat => ({
         id: cat.id,
         element: document.getElementById(`category-sec-${cat.id}`)
       })).filter(item => item.element !== null) as { id: string; element: HTMLElement }[];
@@ -970,7 +987,7 @@ function MenuAndOrdersApp() {
               className="sticky top-[108px] md:top-[124px] z-30 bg-[#FCFCFB]/95 backdrop-blur-md border-b border-black/5 -mx-4 px-4 md:-mx-6 md:px-6 py-1 transition-all duration-200"
             >
               <CategoryNav
-                categories={CATEGORIES}
+                categories={allCategories}
                 selectedCategory={selectedCategory}
                 onSelectCategory={handleSelectCategory}
               />
@@ -985,7 +1002,7 @@ function MenuAndOrdersApp() {
                   <p className="text-xs text-dark/50 max-w-sm">{language === 'ar' ? 'جرّب البحث عن صنف آخر كالشاورما أو الكباب أو القهوة العربية الممتازة' : 'Try searching for items in our specific catalog.'}</p>
                 </div>
               ) : (
-                CATEGORIES.map((category) => {
+                allCategories.map((category) => {
                   const categoryItems = filteredMenuItems.filter(item => item.category === category.id);
                   if (categoryItems.length === 0) return null;
 
@@ -1206,7 +1223,7 @@ function MenuAndOrdersApp() {
       </AnimatePresence>
 
       {/* Interactive ChatBot Smart Assistant */}
-      {activeTab === 'menu' && !isCartOpen && (
+      {activeTab === 'menu' && !isCartOpen && !customizingItem && (
         <ChatBot menuItems={menuItems} businessSettings={businessSettings} language={language} />
       )}
 

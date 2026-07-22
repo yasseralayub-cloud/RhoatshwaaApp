@@ -24,7 +24,7 @@ export interface OrderItem {
 
 export interface CartItemOption {
   notes: string[];
-  addons: { nameAr: string; nameEn: string; price: number }[];
+  addons: { nameAr: string; nameEn: string; price: number; quantity?: number }[];
   selectedDrink?: { id: string; nameAr: string; nameEn: string; price: number };
   selectedSize?: { id: string; labelAr: string; labelEn: string; price: number; diff: number };
   selectedSoftDrinks?: { id: string; nameAr: string; nameEn: string; price: number; quantity: number }[];

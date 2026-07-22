@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { MenuItem, CartItemOption } from '../types';
 import { useLanguage } from './LanguageContext';
-import { X, Check, Flame, Plus, Minus } from 'lucide-react';
+import { X, Check, Flame, Plus, Minus, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface SizeUpgradeOption {
@@ -102,7 +102,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
 }) => {
   const { language, isRtl } = useLanguage();
   const [selectedNotes, setSelectedNotes] = useState<string[]>([]);
-  const [selectedAddons, setSelectedAddons] = useState<{ nameAr: string; nameEn: string; price: number }[]>([]);
+  const [addonQuantities, setAddonQuantities] = useState<Record<string, number>>({});
   const [selectedDrink, setSelectedDrink] = useState<{ id: string; nameAr: string; nameEn: string; price: number } | null>(null);
   const [quantity, setQuantity] = useState(1);
 
@@ -118,7 +118,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
     setSelectedSize(itemSizes.length > 0 ? itemSizes[0] : null);
     setSodaQuantities({});
     setSelectedNotes([]);
-    setSelectedAddons([]);
+    setAddonQuantities({});
     setSelectedDrink(null);
     setQuantity(1);
   }
@@ -129,10 +129,13 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   const isShawarma = item.category === 'shawarma' || item.nameAr.includes('شاورما') || item.name.toLowerCase().includes('shawarma');
   const isFries = isFriesItem(item);
 
+  // Special check for BBQ Shawarma Meal (وجبة رحلة شواء)
+  const isBbqMeal = item.id === 's3' || item.nameAr.includes('شاورما شواء وجبة') || item.nameAr.includes('وجبة رحلة شواء') || item.name === 'BBQ Shawarma Meal';
+
   // Sizing choices for this item
   const availableSizes = SIZE_UPGRADES_BY_ITEM[item.id] || [];
 
-  // Smart Prebuilt Notes based on item type with gorgeous emojis
+  // Smart Prebuilt Notes based on item type
   const smartNotesList = isFries
     ? [
         { ar: 'بهارات', en: 'Spices', displayAr: '🌶️ بهارات مجانية', displayEn: 'Free Spices 🌶️' },
@@ -151,19 +154,36 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
           { ar: 'بدون بصل وبقدونس', en: 'No Onion & Parsley', displayAr: '🌿 بدون بصل وبقدونس', displayEn: 'No Onion/Parsley 🌿' }
         ];
 
-  // Paid additions (+1 Real) & Free additions
-  const additionsList = isFries
-    ? [
-        { ar: 'زيادة جبنة ذائبة 🧀', en: 'Extra Melted Cheese 🧀', price: 1, isPaid: true },
-        { ar: 'ثومية لذيّذة 🧄', en: 'Garlic Dipping Sauce 🧄', price: 0, isPaid: false },
-        { ar: 'صلصة كاتشب 🍅', en: 'Ketchup Sauce 🍅', price: 0, isPaid: false }
-      ]
-    : [
-        { ar: 'جبنة لامتناهية 🧀', en: 'Extra Melted Cheese 🧀', price: 1, isPaid: true },
-        { ar: 'دبس رمان فاخر 🍯', en: 'Premium Pomegranate Molasses 🍯', price: 1, isPaid: true },
-        { ar: 'ثومية إضافية 🧄', en: 'Extra Garlic Sauce 🧄', price: 0, isPaid: false },
-        { ar: 'صلصة كاتشب 🍅', en: 'Ketchup Sauce 🍅', price: 0, isPaid: false }
-      ];
+  // Dynamic Sauces from 'sauces' category in menuItems + Extra toppings
+  const sauceCategoryItems = menuItems.filter(mi => mi.category === 'sauces' && mi.isAvailable !== false);
+  
+  // Default sauces if category empty
+  const defaultSauceList = [
+    { id: 'sauce1', nameAr: 'ثومية سبيشال طازجة 🧄', nameEn: 'Special Garlic Dip 🧄', price: 3 },
+    { id: 'sauce2', nameAr: 'ثومية حارة بالسبايسي 🌶️', nameEn: 'Spicy Garlic Dip 🌶️', price: 3 },
+    { id: 'sauce3', nameAr: 'صوص الجبنة الذائبة 🧀', nameEn: 'Melted Cheese Sauce 🧀', price: 4 },
+    { id: 'sauce4', nameAr: 'صوص شواء الخاص 🍖', nameEn: 'Signature BBQ Sauce 🍖', price: 3 },
+    { id: 'sauce5', nameAr: 'صوص الطحينة الفاخرة 🥣', nameEn: 'Premium Tahini Dip 🥣', price: 2 },
+    { id: 'sauce6', nameAr: 'صوص دبس الرمان 🍯', nameEn: 'Pomegranate Molasses 🍯', price: 3 },
+  ];
+
+  const availableSauces = sauceCategoryItems.length > 0 
+    ? sauceCategoryItems.map(s => ({
+        id: s.id,
+        nameAr: s.nameAr,
+        nameEn: s.name,
+        price: s.price,
+        image: s.image
+      }))
+    : defaultSauceList;
+
+  // Additional toppings
+  const extraToppingsList = [
+    { id: 'top_cheese', nameAr: 'إضافة جبن شيدر ذائب 🧀', nameEn: 'Extra Melted Cheddar 🧀', price: 2 },
+    { id: 'top_garlic', nameAr: 'علبة ثومية إضافية 🧄', nameEn: 'Extra Garlic Tub 🧄', price: 2 },
+    { id: 'top_ketchup', nameAr: 'صلصة كاتشب 🍅', nameEn: 'Ketchup Portion 🍅', price: 0 },
+    { id: 'top_molasses', nameAr: 'رشة دبس رمان فاخر 🍯', nameEn: 'Pomegranate Molasses 🍯', price: 1 }
+  ];
 
   const handleToggleNote = (noteAr: string) => {
     if (isFries) {
@@ -182,23 +202,25 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
     }
   };
 
-  const handleToggleAddon = (addon: { nameAr: string; nameEn: string; price: number }) => {
-    const exists = selectedAddons.some(a => a.nameAr === addon.nameAr);
-    if (exists) {
-      setSelectedAddons(prev => prev.filter(a => a.nameAr !== addon.nameAr));
-    } else {
-      setSelectedAddons(prev => [...prev, addon]);
-    }
+  const handleUpdateAddonQuantity = (id: string, delta: number) => {
+    setAddonQuantities(prev => {
+      const current = prev[id] || 0;
+      const next = Math.max(0, current + delta);
+      if (next === 0) {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [id]: next };
+    });
   };
 
   // Compute calculated values
-  const isDrinkIncluded = item.id === 's3' || item.nameAr === 'شاورما شواء وجبة' || item.name === 'BBQ Shawarma Meal';
-  const drinkPrice = (selectedDrink && !isDrinkIncluded) ? selectedDrink.price : 0;
+  const drinkPrice = (selectedDrink && !isBbqMeal) ? selectedDrink.price : 0;
   
   // Sizing upgrade difference
   const sizeDiff = selectedSize ? selectedSize.diff : 0;
   
-  // Soft drinks sum
+  // Soft drinks sum for group
   let sodasTotal = 0;
   if (isSodasGroup) {
     sodasTotal = Object.entries(sodaQuantities).reduce((sum: number, [sodaId, qty]: [string, number]) => {
@@ -208,7 +230,13 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
     }, 0);
   }
 
-  const addonsTotal = selectedAddons.reduce((sum, a) => sum + a.price, 0) + drinkPrice + sizeDiff + sodasTotal;
+  // Calculate sum of selected sauces & additions
+  const saucesAndAddonsSum = [...availableSauces, ...extraToppingsList].reduce((sum, item) => {
+    const qty = addonQuantities[item.id] || 0;
+    return sum + (qty * item.price);
+  }, 0);
+
+  const addonsTotal = saucesAndAddonsSum + drinkPrice + sizeDiff + sodasTotal;
   const baseItemPrice = isSodasGroup ? 0 : item.price;
   const singleItemPrice = baseItemPrice + addonsTotal;
   const totalCustomPrice = singleItemPrice * (isSodasGroup ? 1 : quantity);
@@ -233,17 +261,31 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
           }))
       : undefined;
 
+    // Convert addonQuantities map to array
+    const compiledAddons: { nameAr: string; nameEn: string; price: number; quantity: number }[] = [];
+    [...availableSauces, ...extraToppingsList].forEach(add => {
+      const qty = addonQuantities[add.id] || 0;
+      if (qty > 0) {
+        compiledAddons.push({
+          nameAr: add.nameAr,
+          nameEn: add.nameEn,
+          price: add.price,
+          quantity: qty
+        });
+      }
+    });
+
     onConfirm(item, isSodasGroup ? 1 : quantity, {
       notes: selectedNotes,
-      addons: selectedAddons,
-      selectedDrink: selectedDrink || undefined,
+      addons: compiledAddons,
+      selectedDrink: selectedDrink ? { ...selectedDrink, price: isBbqMeal ? 0 : selectedDrink.price } : undefined,
       selectedSize: selectedSize || undefined,
       selectedSoftDrinks: selectedSoftDrinks
     });
     
     // Reset local state & close
     setSelectedNotes([]);
-    setSelectedAddons([]);
+    setAddonQuantities({});
     setSelectedDrink(null);
     setSelectedSize(null);
     setSodaQuantities({});
@@ -274,42 +316,32 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
           {/* Mobile Swipe Handle bar */}
           <div className="absolute top-3 left-1/2 -translate-x-1/2 w-14 h-1.5 bg-white/40 hover:bg-white/60 rounded-full z-30 sm:hidden transition-colors" />
 
-          {/* Header Image Header banner */}
-          <div className="relative aspect-[21/9] sm:aspect-video w-full bg-stone-100 shrink-0 select-none">
-            <img 
-              src={item.image} 
-              alt={language === 'ar' ? item.nameAr : item.item?.name || item.name} 
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-900/45 to-transparent" />
-            
-            {/* Top Close Button bar overlay */}
-            <div className={`absolute top-4 ${isRtl ? 'left-4' : 'right-4'} z-20`}>
+          {/* Clean Top Header Bar (No Image background to prevent customer distraction) */}
+          <div className="relative bg-gradient-to-r from-stone-900 via-stone-850 to-stone-900 text-white p-5 sm:p-6 shrink-0 border-b border-black/10 select-none">
+            <div className="flex items-start justify-between gap-3 pr-2">
+              <div className="space-y-1.5 text-start flex-1">
+                <span className="bg-yellow text-stone-900 font-extrabold text-xs px-3 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5 shadow-md">
+                  <Flame className="w-3.5 h-3.5 text-red-600 animate-pulse" />
+                  {isSodasGroup
+                    ? (language === 'ar' ? 'تشكيلة المشروبات الغازية' : 'Soft Drinks Bundle')
+                    : isFries 
+                    ? (language === 'ar' ? 'تخصيص علبة البطاطس' : 'Customize Fries Box') 
+                    : (language === 'ar' ? 'تخصيص الوجبة والإضافات' : 'Customize Item & Options')}
+                </span>
+                <h3 className="font-extrabold font-serif text-2xl sm:text-3xl text-white leading-tight">
+                  {language === 'ar' ? item.nameAr : item.name}
+                </h3>
+                <p className="text-xs sm:text-sm text-stone-300 leading-normal font-sans line-clamp-2">
+                  {language === 'ar' ? item.descriptionAr : item.description}
+                </p>
+              </div>
+
               <button
                 onClick={onClose}
-                className="w-10 h-10 rounded-full bg-black/40 text-white backdrop-blur-md flex items-center justify-center hover:bg-black/60 transition-colors active:scale-95 cursor-pointer border border-white/20"
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors active:scale-95 cursor-pointer border border-white/15 shrink-0 mt-1"
               >
                 <X className="w-5 h-5" />
               </button>
-            </div>
-
-            {/* Title content details */}
-            <div className="absolute bottom-4 left-5 right-5 text-start space-y-1 sm:space-y-1.5 z-10">
-              <span className="bg-yellow text-stone-900 font-extrabold text-xs px-3 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5 shadow-md">
-                <Flame className="w-4 h-4 text-red-600 animate-pulse" />
-                {isSodasGroup
-                  ? (language === 'ar' ? 'تشكيلة المشروبات الغازية' : 'Soft Drinks Bundle')
-                  : isFries 
-                  ? (language === 'ar' ? 'تخصيص علبة البطاطس' : 'Customize Fries Box') 
-                  : (language === 'ar' ? 'تخصيص السندوتش اللذيذ' : 'Customize Sandwich')}
-              </span>
-              <h3 className="font-extrabold font-serif text-2xl sm:text-3xl text-white leading-tight drop-shadow-sm">
-                {language === 'ar' ? item.nameAr : item.name}
-              </h3>
-              <p className="text-xs sm:text-sm text-stone-200/95 leading-normal font-sans line-clamp-2 md:line-clamp-none drop-shadow-xs">
-                {language === 'ar' ? item.descriptionAr : item.description}
-              </p>
             </div>
           </div>
 
@@ -385,7 +417,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                 </div>
               </div>
             ) : (
-              /* Standard customizers with newly added Size Selector at top */
+              /* Standard customizers */
               <>
                 {/* 0. Portion / Size Selection Option */}
                 {availableSizes.length > 0 && (
@@ -448,7 +480,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                       <Plus className="w-4.5 h-4.5" />
                     </div>
                     <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
-                      {language === 'ar' ? 'خيارات إضافية مجانية' : 'Free Preferences'}
+                      {language === 'ar' ? 'خيارات مجانية وملاحظات' : 'Free Preferences'}
                     </h4>
                   </div>
                   
@@ -463,7 +495,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                           onClick={() => handleToggleNote(note.ar)}
                           className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start cursor-pointer active:scale-95 shadow-xs ${
                             isSelected 
-                              ? 'bg-amber-500/10 border-amber-500 text-amber-900 ring-4 ring-amber-500/10 font-extrabold' 
+                              ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold' 
                               : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10'
                           }`}
                         >
@@ -479,51 +511,158 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                   </div>
                 </div>
 
-                {/* 2. Custom Additions / Extras */}
+                {/* 2. Sauces & Extra Addons with Individual Quantity Controls */}
                 <div className="space-y-3.5 pt-1 text-start">
                   <div className="flex justify-between items-center flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xl">🧑‍🍳</span>
+                      <Sparkles className="w-5 h-5 text-amber-500" />
                       <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
-                        {language === 'ar' ? 'إضافات وصوصات مميزة' : 'Sauces & Extra Addons'}
+                        {language === 'ar' ? 'قسم الصوصات والإضافات المميزة' : 'Sauces & Premium Addons'}
                       </h4>
                     </div>
                     <span className="text-[11px] sm:text-xs text-stone-500 font-bold whitespace-nowrap bg-stone-100 px-2.5 py-1 rounded-full border border-black/5">
-                      {language === 'ar' ? 'إضافات الجبن بـ 1 ريال فقط' : 'Premium cheese toppings are just 1 SAR'}
+                      {language === 'ar' ? 'حدد العدد المطلوب لجميع الصوصات' : 'Select quantity for sauces'}
                     </span>
                   </div>
+
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    {language === 'ar' 
+                      ? 'يمكنك اختيار أي عدد ترغبه من الصوصات والإضافات وسيتم احتساب الإجمالي مباشرة:' 
+                      : 'Choose any quantity of sauces & extras. Extra price is calculated instantly:'}
+                  </p>
                   
-                  <div className="divide-y divide-black/5 border border-black/5 rounded-2xl sm:rounded-3xl overflow-hidden bg-stone-50 px-4 sm:px-5">
-                    {additionsList.map((addon) => {
-                      const addonName = language === 'ar' ? addon.ar : addon.en;
-                      const addonValue = { nameAr: addon.ar, nameEn: addon.en, price: addon.price };
-                      const isSelected = selectedAddons.some(a => a.nameAr === addon.ar);
-                      
-                      return (
-                        <motion.div 
-                          key={addon.ar}
-                          whileTap={{ backgroundColor: 'rgba(0,0,0,0.03)' }}
-                          onClick={() => handleToggleAddon(addonValue)}
-                          className="flex items-center justify-between py-3.5 sm:py-4 cursor-pointer hover:bg-black/[0.01] transition-all select-none group"
-                        >
-                          <div className="flex items-center gap-3.5 sm:gap-4">
-                            <div className={`w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-lg border flex items-center justify-center transition-all ${
-                              isSelected 
-                                ? 'bg-yellow border-yellow text-stone-900' 
-                                : 'border-stone-300 bg-white group-hover:border-stone-400'
-                            }`}>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-stone-900 stroke-[3]" />}
+                  <div className="space-y-2.5 pt-1">
+                    {/* Section A: All Available Sauces */}
+                    <div className="text-xs font-extrabold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/60 flex items-center gap-1.5">
+                      <span>✨ {language === 'ar' ? 'جميع الصوصات المتاحة:' : 'Available Sauces:'}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {availableSauces.map((sauce) => {
+                        const qty = addonQuantities[sauce.id] || 0;
+                        const sauceName = language === 'ar' ? sauce.nameAr : sauce.nameEn;
+                        
+                        return (
+                          <div
+                            key={sauce.id}
+                            className={`p-3 rounded-2xl border transition-all flex items-center justify-between text-start ${
+                              qty > 0 
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-xs' 
+                                : 'bg-stone-50 hover:bg-stone-100/80 border-black/5'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 pr-1">
+                              {sauce.image ? (
+                                <img 
+                                  src={sauce.image} 
+                                  alt={sauceName} 
+                                  className="w-10 h-10 rounded-xl object-cover border border-black/5 bg-white shadow-xs shrink-0" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-lg shrink-0">
+                                  🥣
+                                </div>
+                              )}
+                              <div className="text-start">
+                                <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{sauceName}</span>
+                                <span className="text-[11px] font-bold text-amber-700 font-mono">
+                                  +{sauce.price.toFixed(1)} {language === 'ar' ? 'ريال' : 'SAR'}
+                                </span>
+                              </div>
                             </div>
-                            <span className="text-xs sm:text-[15px] font-bold text-stone-800 text-start">{addonName}</span>
+
+                            {/* Quantity Controls */}
+                            <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs">
+                              {qty > 0 ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateAddonQuantity(sauce.id, -1)}
+                                    className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </button>
+                                  <span className="w-6 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
+                                </>
+                              ) : null}
+
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateAddonQuantity(sauce.id, 1)}
+                                className={`h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
+                                  qty > 0 
+                                    ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                                    : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
+                                }`}
+                              >
+                                <Plus className="w-3 h-3" />
+                                {qty === 0 && <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>}
+                              </button>
+                            </div>
                           </div>
-                          <span className={`text-xs sm:text-[15px] font-extrabold ${isSelected ? 'text-yellow-700' : 'text-stone-500'}`}>
-                            {addon.price > 0 
-                              ? `+${addon.price}.0 ${language === 'ar' ? 'ريال' : 'SAR'}` 
-                              : (language === 'ar' ? 'مجاني' : 'Free')}
-                          </span>
-                        </motion.div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
+
+                    {/* Section B: Additional Toppings */}
+                    <div className="text-xs font-extrabold text-stone-800 bg-stone-100 px-3 py-1.5 rounded-xl border border-black/5 flex items-center gap-1.5 mt-3">
+                      <span>🧀 {language === 'ar' ? 'إضافات طعام أخرى:' : 'Extra Toppings:'}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {extraToppingsList.map((top) => {
+                        const qty = addonQuantities[top.id] || 0;
+                        const topName = language === 'ar' ? top.nameAr : top.nameEn;
+                        
+                        return (
+                          <div
+                            key={top.id}
+                            className={`p-3 rounded-2xl border transition-all flex items-center justify-between text-start ${
+                              qty > 0 
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-xs' 
+                                : 'bg-stone-50 hover:bg-stone-100/80 border-black/5'
+                            }`}
+                          >
+                            <div className="text-start pr-1">
+                              <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{topName}</span>
+                              <span className="text-[11px] font-bold text-amber-700 font-mono">
+                                {top.price > 0 ? `+${top.price.toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}` : (language === 'ar' ? 'مجاني' : 'Free')}
+                              </span>
+                            </div>
+
+                            {/* Quantity Controls */}
+                            <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs">
+                              {qty > 0 ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateAddonQuantity(top.id, -1)}
+                                    className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </button>
+                                  <span className="w-6 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
+                                </>
+                              ) : null}
+
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateAddonQuantity(top.id, 1)}
+                                className={`h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
+                                  qty > 0 
+                                    ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                                    : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
+                                }`}
+                              >
+                                <Plus className="w-3 h-3" />
+                                {qty === 0 && <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -538,12 +677,25 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                         </h4>
                       </div>
                       <span className="text-[11px] sm:text-xs text-stone-500 font-bold whitespace-nowrap bg-stone-100 px-2.5 py-1 rounded-full border border-black/5">
-                        {language === 'ar' ? 'اختياري' : 'Optional'}
+                        {isBbqMeal 
+                          ? (language === 'ar' ? 'مشروب مجاني مع الوجبة 🎁' : 'Free Drink with Meal 🎁')
+                          : (language === 'ar' ? 'اختياري' : 'Optional')}
                       </span>
                     </div>
+
+                    {isBbqMeal ? (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 font-extrabold text-xs sm:text-sm">
+                        <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>
+                          {language === 'ar' 
+                            ? 'وجبة رحلة شواء تتضمن مشروب غازي واحد مجاناً مع الوجبة!' 
+                            : 'BBQ Shawarma Meal includes 1 free soft drink with your order!'}
+                        </span>
+                      </div>
+                    ) : null}
                     
                     <p className="text-xs sm:text-sm text-stone-500 text-start leading-normal pl-1">
-                      {language === 'ar' ? 'اختر مشروبك المفضل مع الوجبة. سيتم تعطيل المشروبات غير المتوفرة تلقائياً:' : 'Select your favorite soft drink. Unavailable choices are auto-disabled:'}
+                      {language === 'ar' ? 'اختر مشروبك المفضل مع الوجبة:' : 'Select your favorite soft drink:'}
                     </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
@@ -598,9 +750,9 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                             >
                               <div className="flex flex-col text-start flex-1 pr-2">
                                 <span>{drinkLabel}</span>
-                                <span className={`text-[10px] font-extrabold ${isDrinkIncluded ? 'text-emerald-600' : 'text-stone-500'}`}>
-                                  {isDrinkIncluded 
-                                    ? (language === 'ar' ? 'مشمول مع الوجبة' : 'Included with Meal') 
+                                <span className={`text-[10px] font-extrabold ${isBbqMeal ? 'text-emerald-600 font-bold' : 'text-stone-500'}`}>
+                                  {isBbqMeal 
+                                    ? (language === 'ar' ? '🎁 مجاني مع وجبة رحلة شواء' : 'Free with BBQ Meal') 
                                     : `+${drink.price}.0 ${language === 'ar' ? 'ريال' : 'SAR'}`}
                                 </span>
                               </div>

@@ -150,19 +150,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>{language === 'ar' ? 'حسابي' : 'Account'}</span>
               </button>
 
-              <button
-                id="admin-tab-nav"
-                onClick={() => onTabChange('admin')}
-                className={`flex-1 md:flex-none text-center px-3 md:px-4 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer ${
-                  activeTab === 'admin'
-                    ? 'bg-amber-600 text-white font-bold shadow-xs'
-                    : 'text-amber-900 bg-amber-100/70 hover:bg-amber-200/80 font-bold'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>{language === 'ar' ? 'لوحة التحكم' : 'Admin'}</span>
-              </button>
-
             </div>
 
             {/* Desktop-only utility elements */}
