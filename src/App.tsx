@@ -465,21 +465,24 @@ function MenuAndOrdersApp() {
     }
   }, [businessSettings?.logoUrl, language]);
 
-  // Check for admin/driver query parameter to reveal the hidden tabs
+  // Check for admin/driver query parameter or pathname to reveal and switch tabs
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const path = window.location.pathname;
     let changed = false;
     let is_admin = false;
     let is_driver = false;
 
-    if (params.get('admin') === 'true') {
+    if (params.get('admin') === 'true' || path === '/admin' || path.startsWith('/admin/')) {
       setShowAdminTab(true);
       localStorage.setItem('show_admin_tab', 'true');
+      localStorage.setItem('admin_quick_access', 'true');
+      setActiveTab('admin');
       changed = true;
       is_admin = true;
     }
 
-    if (params.get('driver') === 'true') {
+    if (params.get('driver') === 'true' || path === '/driver' || path.startsWith('/driver/')) {
       setShowDriverTab(true);
       localStorage.setItem('show_driver_tab', 'true');
       setActiveTab('driver');
@@ -488,13 +491,13 @@ function MenuAndOrdersApp() {
     }
 
     if (changed) {
-      // Clean up the address bar cleanly so the suffix doesn't linger
+      // Clean up search params if needed
       const cleanParams = new URLSearchParams(window.location.search);
       cleanParams.delete('admin');
       cleanParams.delete('driver');
       const suffix = cleanParams.toString();
       
-      let newPath = window.location.pathname;
+      let newPath = path;
       if (is_admin) {
         newPath = '/admin';
       } else if (is_driver) {

@@ -150,6 +150,8 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>{language === 'ar' ? 'حسابي' : 'Account'}</span>
               </button>
 
+
+
             </div>
 
             {/* Desktop-only utility elements */}

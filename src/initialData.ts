@@ -3,7 +3,7 @@ import { Category, MenuItem, BusinessSettings } from './types';
 export const CATEGORIES: Category[] = [
   { id: 'main', name: 'Grills', nameAr: 'المشويات', icon: 'ChefHat' },
   { id: 'shawarma', name: 'Shawarma', nameAr: 'قسم الشاورما', icon: 'Flame' },
-  { id: 'sauces', name: 'Sauces', nameAr: 'قسم الصوصات', icon: 'Sparkles' },
+  { id: 'sauces', name: 'Sauces', nameAr: 'قسم الصوصات', icon: 'Droplets' },
   { id: 'appetizers', name: 'Appetizers', nameAr: 'المقبلات', icon: 'Salad' },
   { id: 'desserts', name: 'Desserts', nameAr: 'الحلويات', icon: 'IceCream' },
   { id: 'drinks', name: 'Drinks', nameAr: 'المشروبات', icon: 'GlassWater' },

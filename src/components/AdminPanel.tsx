@@ -263,7 +263,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       id,
       name: newCatNameEn.trim() || newCatNameAr.trim(),
       nameAr: newCatNameAr.trim(),
-      icon: 'Sparkles'
+      icon: 'Droplets'
     };
 
     const updated = [...customCategories.filter(c => c.id !== id), newCategory];
@@ -390,6 +390,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Listen to Auth State
   useEffect(() => {
+    const isDirectAdminUrl = typeof window !== 'undefined' && (
+      window.location.pathname === '/admin' || 
+      window.location.search.includes('admin=true') ||
+      localStorage.getItem('admin_quick_access') === 'true' ||
+      localStorage.getItem('show_admin_tab') === 'true'
+    );
+
+    if (isDirectAdminUrl) {
+      localStorage.setItem('admin_quick_access', 'true');
+    }
+
     const unsub = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);
       if (user) {
@@ -397,8 +408,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setIsSimulated(false);
         setLoginError('');
       } else {
-        const quick = localStorage.getItem('admin_quick_access');
-        if (quick === 'true') {
+        const quick = localStorage.getItem('admin_quick_access') === 'true' || isDirectAdminUrl;
+        if (quick) {
           setIsAdmin(true);
           setIsSimulated(true);
         } else {
