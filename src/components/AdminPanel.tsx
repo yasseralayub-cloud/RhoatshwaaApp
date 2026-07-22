@@ -58,6 +58,7 @@ import {
   Lock,
   Mail,
   Copy,
+  Zap,
   ExternalLink,
   Bell,
   CreditCard,
