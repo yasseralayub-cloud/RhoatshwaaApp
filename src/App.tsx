@@ -226,9 +226,59 @@ function MenuAndOrdersApp() {
         (snapshot) => {
           if (!snapshot.empty) {
             const docs: MenuItem[] = [];
+            const structuralConflicts: { id: string; issues: string[]; rawData: any }[] = [];
+
             snapshot.forEach((snap) => {
-              docs.push({ id: snap.id, ...snap.data() } as MenuItem);
+              const data = snap.data() || {};
+              const docId = snap.id;
+
+              // Verify field integrity against MenuItem interface
+              const issues: string[] = [];
+              if (data.nameAr === undefined && data.name === undefined) {
+                issues.push('Missing both name and nameAr');
+              }
+              if (data.price === undefined) {
+                issues.push('Missing price property');
+              } else if (typeof data.price !== 'number' && isNaN(Number(data.price))) {
+                issues.push(`Invalid price value (${typeof data.price}: ${data.price})`);
+              }
+              if (data.category === undefined) {
+                issues.push('Missing category property');
+              }
+
+              if (issues.length > 0) {
+                structuralConflicts.push({ id: docId, issues, rawData: data });
+              }
+
+              // Precise mapping with strict document ID binding and type safe coersions
+              const menuItem: MenuItem = {
+                ...data,
+                id: docId, // Ensure Firestore Document ID always overrides any embedded id property
+                name: String(data.name || data.nameAr || 'Item'),
+                nameAr: String(data.nameAr || data.name || 'صنف'),
+                description: String(data.description || ''),
+                descriptionAr: String(data.descriptionAr || ''),
+                price: typeof data.price === 'number' ? data.price : (Number(data.price) || 0),
+                category: String(data.category || 'general'),
+                image: String(data.image || ''),
+                calories: typeof data.calories === 'number' ? data.calories : (Number(data.calories) || 0),
+                isPopular: Boolean(data.isPopular),
+                isAvailable: data.isAvailable !== undefined ? Boolean(data.isAvailable) : true,
+                dineInOnly: Boolean(data.dineInOnly),
+              };
+
+              docs.push(menuItem);
             });
+
+            if (structuralConflicts.length > 0) {
+              console.error(
+                `🚨 [Firestore Sync Error] Found ${structuralConflicts.length} document(s) in 'menuItems' with schema conflicts:`,
+                structuralConflicts
+              );
+            } else {
+              console.log(`✅ [Firestore Sync] Successfully synchronized ${docs.length} menu items from 'menuItems' collection.`);
+            }
+
             setMenuItems(docs);
             localStorage.setItem('simulated_menu', JSON.stringify(docs));
           } else {
