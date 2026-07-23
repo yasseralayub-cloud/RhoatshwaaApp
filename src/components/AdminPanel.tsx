@@ -1788,12 +1788,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     setValidationMsg('');
 
-    if (!formId || !formName || !formNameAr || !formPrice) {
-      setValidationMsg(language === 'ar' ? 'يرجى ملء الحقول الإجبارية' : 'Please fill all mandatory fields');
+    if (!formName || !formNameAr || !formPrice) {
+      setValidationMsg(language === 'ar' ? 'يرجى ملء الحقول الإجبارية (الاسم والسعر)' : 'Please fill mandatory fields (Name & Price)');
       return;
     }
 
-    const cleanId = formId.trim().toLowerCase();
+    let cleanId = formId.trim().toLowerCase();
+    if (!cleanId) {
+      if (isEditMode && editingItemId) {
+        cleanId = editingItemId;
+      } else {
+        cleanId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      }
+    }
 
     // Prevent code overlaps in new product mode
     if (!isEditMode && menuItems.some(i => i.id === cleanId)) {
@@ -1854,6 +1861,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setIsEditMode(false);
     setEditingItemId(null);
     setShowItemForm(false);
+    showNotification(language === 'ar' ? 'تم حفظ الصنف بنجاح!' : 'Item saved successfully!', 'success');
   };
 
   const handleEditClick = (item: MenuItem) => {
@@ -1873,11 +1881,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setEditingItemId(item.id);
     setShowItemForm(true);
     
-    // Scroll to form smoothly
-    const element = document.getElementById('admin-add-item-trigger');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    // Smooth scroll directly to edit form
+    setTimeout(() => {
+      const element = document.getElementById('admin-item-form') || document.getElementById('admin-add-item-trigger');
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 80);
   };
 
   // Promotion handling
@@ -5509,21 +5519,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <AnimatePresence>
           {showItemForm && (
             <motion.div
+              id="admin-item-form"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden border border-amber-100 bg-amber-50/15 p-4 rounded-2xl"
+              className="overflow-hidden border border-amber-100 bg-amber-50/15 p-4 rounded-2xl scroll-mt-28"
             >
               <form onSubmit={handleAddItem} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-start">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'المعرّف الفريد (ID) - غير قابل للتعديل' : 'Unique Item Code - Readonly in Edit'}</label>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'المعرّف الفريد (ID) - تلقائي إذا ترك فارغاً' : 'Unique Item Code - Auto if blank'}</label>
                   <input
-                    required
                     disabled={isEditMode}
                     type="text"
                     value={formId}
                     onChange={(e) => setFormId(e.target.value)}
-                    placeholder="e.g. delicious_salad"
+                    placeholder={language === 'ar' ? 'تلقائي إذا ترك فارغاً' : 'Auto generated if blank'}
                     className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none disabled:bg-slate-100 disabled:text-slate-400"
                   />
                 </div>

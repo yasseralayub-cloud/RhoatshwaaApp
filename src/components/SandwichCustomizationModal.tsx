@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { MenuItem, CartItemOption } from '../types';
 import { useLanguage } from './LanguageContext';
-import { X, Check, Flame, Plus, Minus, Sparkles } from 'lucide-react';
+import { X, Check, Flame, Plus, Minus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface SizeUpgradeOption {
@@ -18,32 +18,28 @@ const SIZE_UPGRADES_BY_ITEM: Record<string, SizeUpgradeOption[]> = {
     { id: 's1', labelAr: 'صاروخ', labelEn: 'Sarookh', price: 9, diff: 4 }
   ],
   s4: [ // صحن عربي وسط
-    { id: 's4', labelAr: 'صحن عربي وسط 🍽️', labelEn: 'Medium Arabic Plate 🍽️', price: 15, diff: 0 },
-    { id: 's5', labelAr: 'صحن عربي كبير عائلي 🎉', labelEn: 'Large Arabic Plate Family 🎉', price: 20, diff: 5 }
+    { id: 's4', labelAr: 'صحن عربي وسط', labelEn: 'Medium Arabic Plate', price: 15, diff: 0 },
+    { id: 's5', labelAr: 'صحن عربي كبير عائلي', labelEn: 'Large Arabic Plate Family', price: 20, diff: 5 }
   ],
   g1: [ // كباب لحم نفر
-    { id: 'g1', labelAr: 'نفر كباب لحم (4 أسياخ) 🍢', labelEn: 'Beef Portion (4 Skewers) 🍢', price: 25, diff: 0 },
-    { id: 'g1_half', labelAr: 'نصف كيلو كباب لحم (8 أسياخ) 🥩', labelEn: 'Half Kilo Beef Kabab (8 Skewers) 🥩', price: 50, diff: 25 },
-    { id: 'g2', labelAr: 'كيلو كامل كباب (16 سيخ) 🥩', labelEn: 'Kilo Beef Kabab (16 Skewers) 🥩', price: 95, diff: 70 },
-    { id: 'g6', labelAr: 'ساندوتش صاروخ كباب لحم 🌯', labelEn: 'Sarookh Kabab Wrap 🌯', price: 12, diff: -13 }
+    { id: 'g1', labelAr: 'نفر كباب لحم (4 أسياخ)', labelEn: 'Beef Portion (4 Skewers)', price: 25, diff: 0 },
+    { id: 'g1_half', labelAr: 'نصف كيلو كباب لحم (8 أسياخ)', labelEn: 'Half Kilo Beef Kabab (8 Skewers)', price: 50, diff: 25 },
+    { id: 'g2', labelAr: 'كيلو كامل كباب (16 سيخ)', labelEn: 'Kilo Beef Kabab (16 Skewers)', price: 95, diff: 70 }
   ],
   g5: [ // كباب دجاج نفر
-    { id: 'g5', labelAr: 'نفر كباب دجاج (4 أسياخ) 🍢', labelEn: 'Chicken Portion (4 Skewers) 🍢', price: 23, diff: 0 },
-    { id: 'g5_half', labelAr: 'نصف كيلو كباب دجاج (8 أسياخ) 🍗', labelEn: 'Half Kilo Chicken Kabab (8 Skewers) 🍗', price: 42, diff: 19 },
-    { id: 'g8', labelAr: 'كيلو كامل كباب دجاج (16 سيخ) 🍗', labelEn: 'Kilo Chicken Kabab (16 Skewers) 🍗', price: 80, diff: 57 },
-    { id: 'g12', labelAr: 'ساندوتش صاروخ كباب دجاج 🌯', labelEn: 'Sarookh Chicken Wrap 🌯', price: 10, diff: -13 }
+    { id: 'g5', labelAr: 'نفر كباب دجاج (4 أسياخ)', labelEn: 'Chicken Portion (4 Skewers)', price: 23, diff: 0 },
+    { id: 'g5_half', labelAr: 'نصف كيلو كباب دجاج (8 أسياخ)', labelEn: 'Half Kilo Chicken Kabab (8 Skewers)', price: 42, diff: 19 },
+    { id: 'g8', labelAr: 'كيلو كامل كباب دجاج (16 سيخ)', labelEn: 'Kilo Chicken Kabab (16 Skewers)', price: 80, diff: 57 }
   ],
   g7: [ // شيش طاووق نفر
-    { id: 'g7', labelAr: 'نفر شيش طاووق (4 أسياخ) 🍢', labelEn: 'Shish Portion (4 Skewers) 🍢', price: 22, diff: 0 },
-    { id: 'g7_half', labelAr: 'نصف كيلو شيش طاووق (8 أسياخ) 🍢', labelEn: 'Half Kilo Shish (8 Skewers) 🍢', price: 45, diff: 23 },
-    { id: 'g9', labelAr: 'كيلو كامل شيش (16 سيخ) 🍢', labelEn: 'Kilo Shish (16 Skewers) 🍢', price: 85, diff: 63 },
-    { id: 'g13', labelAr: 'ساندوتش صاروخ شيش طاووق 🌯', labelEn: 'Sarookh Shish Wrap 🌯', price: 10, diff: -12 }
+    { id: 'g7', labelAr: 'نفر شيش طاووق (4 أسياخ)', labelEn: 'Shish Portion (4 Skewers)', price: 22, diff: 0 },
+    { id: 'g7_half', labelAr: 'نصف كيلو شيش طاووق (8 أسياخ)', labelEn: 'Half Kilo Shish (8 Skewers)', price: 45, diff: 23 },
+    { id: 'g9', labelAr: 'كيلو كامل شيش (16 سيخ)', labelEn: 'Kilo Shish (16 Skewers)', price: 85, diff: 63 }
   ],
   g10: [ // اوصال لحم نفر
-    { id: 'g10', labelAr: 'نفر أوصال لحم (4 أسياخ) 🍢', labelEn: 'Awsal Portion (4 Skewers) 🍢', price: 35, diff: 0 },
-    { id: 'g10_half', labelAr: 'نصف كيلو أوصال لحم (8 أسياخ) 🥩', labelEn: 'Half Kilo Awsal (8 Skewers) 🥩', price: 75, diff: 40 },
-    { id: 'g4', labelAr: 'كيلو كامل أوصال لحم (16 سيخ) 🥩', labelEn: 'Kilo Awsal (16 Skewers) 🥩', price: 140, diff: 105 },
-    { id: 'g11', labelAr: 'ساندوتش صاروخ أوصال لحم 🌯', labelEn: 'Sarookh Awsal Wrap 🌯', price: 18, diff: -17 }
+    { id: 'g10', labelAr: 'نفر أوصال لحم (4 أسياخ)', labelEn: 'Awsal Portion (4 Skewers)', price: 35, diff: 0 },
+    { id: 'g10_half', labelAr: 'نصف كيلو أوصال لحم (8 أسياخ)', labelEn: 'Half Kilo Awsal (8 Skewers)', price: 75, diff: 40 },
+    { id: 'g4', labelAr: 'كيلو كامل أوصال لحم (16 سيخ)', labelEn: 'Kilo Awsal (16 Skewers)', price: 140, diff: 105 }
   ]
 };
 
@@ -138,20 +134,20 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   // Smart Prebuilt Notes based on item type
   const smartNotesList = isFries
     ? [
-        { ar: 'بهارات', en: 'Spices', displayAr: '🌶️ بهارات مجانية', displayEn: 'Free Spices 🌶️' },
-        { ar: 'زيادة ملح', en: 'Extra Salt', displayAr: '🧂 زيادة ملح', displayEn: 'Extra Salt 🧂' },
-        { ar: 'ملح خفيف', en: 'Light Salt', displayAr: '🧂 ملح خفيف', displayEn: 'Light Salt 🧂' }
+        { ar: 'بهارات', en: 'Spices', displayAr: 'بهارات مجانية', displayEn: 'Free Spices' },
+        { ar: 'زيادة ملح', en: 'Extra Salt', displayAr: 'زيادة ملح', displayEn: 'Extra Salt' },
+        { ar: 'ملح خفيف', en: 'Light Salt', displayAr: 'ملح خفيف', displayEn: 'Light Salt' }
       ]
     : isShawarma 
       ? [
-          { ar: 'بدون ثوم', en: 'No Garlic', displayAr: '🧄 بدون ثوم', displayEn: 'No Garlic 🧄' },
-          { ar: 'بدون مخلل', en: 'No Pickles', displayAr: '🥒 بدون مخلل', displayEn: 'No Pickles 🥒' },
-          { ar: 'بدون بطاطس', en: 'No Fries', displayAr: '🍟 بدون بطاطس داخل السندوتش', displayEn: 'No Fries Inside 🍟' }
+          { ar: 'بدون ثوم', en: 'No Garlic', displayAr: 'بدون ثوم', displayEn: 'No Garlic' },
+          { ar: 'بدون مخلل', en: 'No Pickles', displayAr: 'بدون مخلل', displayEn: 'No Pickles' },
+          { ar: 'بدون بطاطس', en: 'No Fries', displayAr: 'بدون بطاطس داخل السندوتش', displayEn: 'No Fries Inside' }
         ]
       : [
-          { ar: 'مع حمص', en: 'With Hummus', displayAr: '🥣 مع حمص', displayEn: 'With Hummus 🥣' },
-          { ar: 'مع متبل', en: 'With Mutabbal', displayAr: '🫕 مع متبل', displayEn: 'With Mutabbal 🫕' },
-          { ar: 'بدون بصل وبقدونس', en: 'No Onion & Parsley', displayAr: '🌿 بدون بصل وبقدونس', displayEn: 'No Onion/Parsley 🌿' }
+          { ar: 'مع حمص', en: 'With Hummus', displayAr: 'مع حمص', displayEn: 'With Hummus' },
+          { ar: 'مع متبل', en: 'With Mutabbal', displayAr: 'مع متبل', displayEn: 'With Mutabbal' },
+          { ar: 'بدون بصل وبقدونس', en: 'No Onion & Parsley', displayAr: 'بدون بصل وبقدونس', displayEn: 'No Onion/Parsley' }
         ];
 
   // Dynamic Sauces from 'sauces' category in menuItems + Extra toppings
@@ -159,12 +155,12 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   
   // Default sauces if category empty
   const defaultSauceList = [
-    { id: 'sauce1', nameAr: 'ثومية سبيشال طازجة 🧄', nameEn: 'Special Garlic Dip 🧄', price: 3 },
-    { id: 'sauce2', nameAr: 'ثومية حارة بالسبايسي 🌶️', nameEn: 'Spicy Garlic Dip 🌶️', price: 3 },
-    { id: 'sauce3', nameAr: 'صوص الجبنة الذائبة 🧀', nameEn: 'Melted Cheese Sauce 🧀', price: 4 },
-    { id: 'sauce4', nameAr: 'صوص شواء الخاص 🍖', nameEn: 'Signature BBQ Sauce 🍖', price: 3 },
-    { id: 'sauce5', nameAr: 'صوص الطحينة الفاخرة 🥣', nameEn: 'Premium Tahini Dip 🥣', price: 2 },
-    { id: 'sauce6', nameAr: 'صوص دبس الرمان 🍯', nameEn: 'Pomegranate Molasses 🍯', price: 3 },
+    { id: 'sauce1', nameAr: 'إضافة ثومية', nameEn: 'Garlic Sauce', price: 0 },
+    { id: 'sauce2', nameAr: 'ثومية حارة', nameEn: 'Spicy Garlic Dip', price: 0 },
+    { id: 'sauce3', nameAr: 'إضافة جبن', nameEn: 'Extra Cheese', price: 1 },
+    { id: 'sauce4', nameAr: 'دبس الرمان', nameEn: 'Pomegranate Molasses', price: 1 },
+    { id: 'sauce5', nameAr: 'كتشب', nameEn: 'Ketchup', price: 0 },
+    { id: 'sauce6', nameAr: 'مايونيز', nameEn: 'Mayonnaise', price: 0 },
   ];
 
   const availableSauces = sauceCategoryItems.length > 0 
@@ -179,10 +175,11 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
 
   // Additional toppings
   const extraToppingsList = [
-    { id: 'top_cheese', nameAr: 'إضافة جبن شيدر ذائب 🧀', nameEn: 'Extra Melted Cheddar 🧀', price: 2 },
-    { id: 'top_garlic', nameAr: 'علبة ثومية إضافية 🧄', nameEn: 'Extra Garlic Tub 🧄', price: 2 },
-    { id: 'top_ketchup', nameAr: 'صلصة كاتشب 🍅', nameEn: 'Ketchup Portion 🍅', price: 0 },
-    { id: 'top_molasses', nameAr: 'رشة دبس رمان فاخر 🍯', nameEn: 'Pomegranate Molasses 🍯', price: 1 }
+    { id: 'top_cheese', nameAr: 'إضافة جبن', nameEn: 'Extra Cheese', price: 1 },
+    { id: 'top_garlic', nameAr: 'إضافة ثومية', nameEn: 'Garlic Sauce', price: 0 },
+    { id: 'top_ketchup', nameAr: 'كتشب', nameEn: 'Ketchup Portion', price: 0 },
+    { id: 'top_mayo', nameAr: 'مايونيز', nameEn: 'Mayonnaise Portion', price: 0 },
+    { id: 'top_molasses', nameAr: 'دبس الرمان', nameEn: 'Pomegranate Molasses', price: 1 }
   ];
 
   const handleToggleNote = (noteAr: string) => {
@@ -515,7 +512,6 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                 <div className="space-y-3.5 pt-1 text-start">
                   <div className="flex justify-between items-center flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-amber-500" />
                       <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
                         {language === 'ar' ? 'قسم الصوصات والإضافات المميزة' : 'Sauces & Premium Addons'}
                       </h4>
@@ -534,7 +530,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                   <div className="space-y-2.5 pt-1">
                     {/* Section A: All Available Sauces */}
                     <div className="text-xs font-extrabold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/60 flex items-center gap-1.5">
-                      <span>✨ {language === 'ar' ? 'جميع الصوصات المتاحة:' : 'Available Sauces:'}</span>
+                      <span>{language === 'ar' ? 'جميع الصوصات المتاحة:' : 'Available Sauces:'}</span>
                     </div>
 
                     <div className="grid grid-cols-1 gap-2.5">
@@ -560,14 +556,14 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                                   referrerPolicy="no-referrer"
                                 />
                               ) : (
-                                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-lg shrink-0">
-                                  🥣
+                                <div className="w-10 h-10 rounded-xl bg-amber-100/80 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
+                                  {sauceName.substring(0, 2)}
                                 </div>
                               )}
                               <div className="text-start">
                                 <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{sauceName}</span>
                                 <span className="text-[11px] font-bold text-amber-700 font-mono">
-                                  +{sauce.price.toFixed(1)} {language === 'ar' ? 'ريال' : 'SAR'}
+                                  {sauce.price > 0 ? `+${sauce.price.toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}` : (language === 'ar' ? 'مجاني' : 'Free')}
                                 </span>
                               </div>
                             </div>
@@ -607,7 +603,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
 
                     {/* Section B: Additional Toppings */}
                     <div className="text-xs font-extrabold text-stone-800 bg-stone-100 px-3 py-1.5 rounded-xl border border-black/5 flex items-center gap-1.5 mt-3">
-                      <span>🧀 {language === 'ar' ? 'إضافات طعام أخرى:' : 'Extra Toppings:'}</span>
+                      <span>{language === 'ar' ? 'إضافات طعام أخرى:' : 'Extra Toppings:'}</span>
                     </div>
 
                     <div className="grid grid-cols-1 gap-2.5">
@@ -685,7 +681,6 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
 
                     {isBbqMeal ? (
                       <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 font-extrabold text-xs sm:text-sm">
-                        <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span>
                           {language === 'ar' 
                             ? 'وجبة رحلة شواء تتضمن مشروب غازي واحد مجاناً مع الوجبة!' 

@@ -94,13 +94,25 @@ function MenuAndOrdersApp() {
     if (saved) {
       try {
         const parsed: MenuItem[] = JSON.parse(saved);
-        return parsed.map(item => {
-          const def = INITIAL_MENU_ITEMS.find(d => d.id === item.id);
-          if (def && !item.isCustomImage) {
-            return { ...item, image: def.image };
+        const map = new Map<string, MenuItem>();
+        parsed.forEach(item => map.set(item.id, item));
+        
+        INITIAL_MENU_ITEMS.forEach(def => {
+          const existing = map.get(def.id);
+          if (!existing) {
+            map.set(def.id, def);
+          } else {
+            map.set(def.id, {
+              ...existing,
+              category: def.category,
+              nameAr: existing.nameAr || def.nameAr,
+              name: existing.name || def.name,
+              image: existing.isCustomImage ? existing.image : def.image
+            });
           }
-          return item;
         });
+        
+        return Array.from(map.values());
       } catch {
         return INITIAL_MENU_ITEMS;
       }
@@ -859,12 +871,7 @@ function MenuAndOrdersApp() {
   const filteredMenuItems = menuItems.filter((item) => {
     // Exclude redundant merged items from display
     const MERGED_IDS_TO_EXCLUDE = new Set([
-      's1', 's5',
-      'g2', 'g6',
-      'g8', 'g12',
-      'g9', 'g13',
-      'g4', 'g11',
-      'dr1', 'dr2', 'dr3', 'dr4', 'dr5', 'dr5d', 'dr6'
+      'g2', 'g8', 'g9', 'g4', 's5'
     ]);
     if (MERGED_IDS_TO_EXCLUDE.has(item.id)) return false;
 

@@ -158,9 +158,8 @@ export const WelcomePortalModal: React.FC<WelcomePortalModalProps> = ({ isOpen, 
                 <img src={businessSettings?.logoUrl || '/pwa-icon.jpg'} alt="Rehla Grill App Icon" className="w-full h-full object-cover rounded-xl" />
               </div>
               <div className="space-y-0.5">
-                <div className="flex items-center gap-1.5 bg-white/20 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full w-max">
-                  <Sparkles className="w-3 h-3 text-yellow animate-pulse" />
-                  <span>{language === 'ar' ? 'تطبيق رحلة شواء الذكي' : 'Rehla BBQ Smart App'}</span>
+                <div className="flex items-center gap-1.5 bg-white/20 text-[9px] uppercase font-bold tracking-widest px-2.5 py-0.5 rounded-full w-max">
+                  <span>{language === 'ar' ? 'تطبيق رحلة شواء الرسمي' : 'Rehla BBQ Official App'}</span>
                 </div>
                 <h3 className="text-xl font-serif font-black tracking-wide leading-tight mt-1">
                   {language === 'ar' ? 'مرحباً بك في مطعم رحلة شواء' : 'Welcome to Rehla BBQ'}
