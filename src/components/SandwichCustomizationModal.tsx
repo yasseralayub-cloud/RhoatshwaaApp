@@ -125,6 +125,20 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   const isShawarma = item.category === 'shawarma' || item.nameAr.includes('شاورما') || item.name.toLowerCase().includes('shawarma');
   const isFries = isFriesItem(item);
 
+  const nameArLower = item.nameAr.toLowerCase();
+  const nameEnLower = item.name.toLowerCase();
+
+  // Check if item is a sandwich (vs plates / dishes / portions)
+  const isSandwich = 
+    nameArLower.includes('سندوتش') || 
+    nameArLower.includes('سندويش') || 
+    nameArLower.includes('صاروخ') || 
+    nameArLower.includes('صغير') ||
+    nameEnLower.includes('sandwich') || 
+    nameEnLower.includes('wrap') || 
+    nameEnLower.includes('sarookh') ||
+    ['s1', 's2', 's3', 'g6', 'g11', 'g12', 'g13'].includes(item.id);
+
   // Special check for BBQ Shawarma Meal (وجبة رحلة شواء)
   const isBbqMeal = item.id === 's3' || item.nameAr.includes('شاورما شواء وجبة') || item.nameAr.includes('وجبة رحلة شواء') || item.name === 'BBQ Shawarma Meal';
 
@@ -508,159 +522,161 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                   </div>
                 </div>
 
-                {/* 2. Sauces & Extra Addons with Individual Quantity Controls */}
-                <div className="space-y-3.5 pt-1 text-start">
-                  <div className="flex justify-between items-center flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
-                        {language === 'ar' ? 'قسم الصوصات والإضافات المميزة' : 'Sauces & Premium Addons'}
-                      </h4>
-                    </div>
-                    <span className="text-[11px] sm:text-xs text-stone-500 font-bold whitespace-nowrap bg-stone-100 px-2.5 py-1 rounded-full border border-black/5">
-                      {language === 'ar' ? 'حدد العدد المطلوب لجميع الصوصات' : 'Select quantity for sauces'}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-stone-500 leading-relaxed">
-                    {language === 'ar' 
-                      ? 'يمكنك اختيار أي عدد ترغبه من الصوصات والإضافات وسيتم احتساب الإجمالي مباشرة:' 
-                      : 'Choose any quantity of sauces & extras. Extra price is calculated instantly:'}
-                  </p>
-                  
-                  <div className="space-y-2.5 pt-1">
-                    {/* Section A: All Available Sauces */}
-                    <div className="text-xs font-extrabold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/60 flex items-center gap-1.5">
-                      <span>{language === 'ar' ? 'جميع الصوصات المتاحة:' : 'Available Sauces:'}</span>
+                {/* 2. Sauces & Extra Addons with Individual Quantity Controls - Only for Sandwiches */}
+                {isSandwich && (
+                  <div className="space-y-3.5 pt-1 text-start">
+                    <div className="flex justify-between items-center flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
+                          {language === 'ar' ? 'قسم الصوصات والإضافات المميزة' : 'Sauces & Premium Addons'}
+                        </h4>
+                      </div>
+                      <span className="text-[11px] sm:text-xs text-stone-500 font-bold whitespace-nowrap bg-stone-100 px-2.5 py-1 rounded-full border border-black/5">
+                        {language === 'ar' ? 'حدد العدد المطلوب لجميع الصوصات' : 'Select quantity for sauces'}
+                      </span>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-2.5">
-                      {availableSauces.map((sauce) => {
-                        const qty = addonQuantities[sauce.id] || 0;
-                        const sauceName = language === 'ar' ? sauce.nameAr : sauce.nameEn;
-                        
-                        return (
-                          <div
-                            key={sauce.id}
-                            className={`p-3 rounded-2xl border transition-all flex items-center justify-between text-start ${
-                              qty > 0 
-                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-xs' 
-                                : 'bg-stone-50 hover:bg-stone-100/80 border-black/5'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3 pr-1">
-                              {sauce.image ? (
-                                <img 
-                                  src={sauce.image} 
-                                  alt={sauceName} 
-                                  className="w-10 h-10 rounded-xl object-cover border border-black/5 bg-white shadow-xs shrink-0" 
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded-xl bg-amber-100/80 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
-                                  {sauceName.substring(0, 2)}
+                    <p className="text-xs text-stone-500 leading-relaxed">
+                      {language === 'ar' 
+                        ? 'يمكنك اختيار أي عدد ترغبه من الصوصات والإضافات وسيتم احتساب الإجمالي مباشرة:' 
+                        : 'Choose any quantity of sauces & extras. Extra price is calculated instantly:'}
+                    </p>
+                    
+                    <div className="space-y-2.5 pt-1">
+                      {/* Section A: All Available Sauces */}
+                      <div className="text-xs font-extrabold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/60 flex items-center gap-1.5">
+                        <span>{language === 'ar' ? 'جميع الصوصات المتاحة:' : 'Available Sauces:'}</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2.5">
+                        {availableSauces.map((sauce) => {
+                          const qty = addonQuantities[sauce.id] || 0;
+                          const sauceName = language === 'ar' ? sauce.nameAr : sauce.nameEn;
+                          
+                          return (
+                            <div
+                              key={sauce.id}
+                              className={`p-3 rounded-2xl border transition-all flex items-center justify-between text-start ${
+                                qty > 0 
+                                  ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-xs' 
+                                  : 'bg-stone-50 hover:bg-stone-100/80 border-black/5'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 pr-1">
+                                {sauce.image ? (
+                                  <img 
+                                    src={sauce.image} 
+                                    alt={sauceName} 
+                                    className="w-10 h-10 rounded-xl object-cover border border-black/5 bg-white shadow-xs shrink-0" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-xl bg-amber-100/80 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
+                                    {sauceName.substring(0, 2)}
+                                  </div>
+                                )}
+                                <div className="text-start">
+                                  <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{sauceName}</span>
+                                  <span className="text-[11px] font-bold text-amber-700 font-mono">
+                                    {sauce.price > 0 ? `+${sauce.price.toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}` : (language === 'ar' ? 'مجاني' : 'Free')}
+                                  </span>
                                 </div>
-                              )}
-                              <div className="text-start">
-                                <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{sauceName}</span>
-                                <span className="text-[11px] font-bold text-amber-700 font-mono">
-                                  {sauce.price > 0 ? `+${sauce.price.toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}` : (language === 'ar' ? 'مجاني' : 'Free')}
-                                </span>
+                              </div>
+
+                              {/* Quantity Controls */}
+                              <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs">
+                                {qty > 0 ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateAddonQuantity(sauce.id, -1)}
+                                      className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
+                                    >
+                                      <Minus className="w-3 h-3" />
+                                    </button>
+                                    <span className="w-6 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
+                                  </>
+                                ) : null}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateAddonQuantity(sauce.id, 1)}
+                                  className={`h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
+                                    qty > 0 
+                                      ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                                      : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
+                                  }`}
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  {qty === 0 && <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>}
+                                </button>
                               </div>
                             </div>
+                          );
+                        })}
+                      </div>
 
-                            {/* Quantity Controls */}
-                            <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs">
-                              {qty > 0 ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUpdateAddonQuantity(sauce.id, -1)}
-                                    className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
-                                  >
-                                    <Minus className="w-3 h-3" />
-                                  </button>
-                                  <span className="w-6 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
-                                </>
-                              ) : null}
+                      {/* Section B: Additional Toppings */}
+                      <div className="text-xs font-extrabold text-stone-800 bg-stone-100 px-3 py-1.5 rounded-xl border border-black/5 flex items-center gap-1.5 mt-3">
+                        <span>{language === 'ar' ? 'إضافات طعام أخرى:' : 'Extra Toppings:'}</span>
+                      </div>
 
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateAddonQuantity(sauce.id, 1)}
-                                className={`h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
-                                  qty > 0 
-                                    ? 'bg-amber-500 text-white hover:bg-amber-600' 
-                                    : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
-                                }`}
-                              >
-                                <Plus className="w-3 h-3" />
-                                {qty === 0 && <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>}
-                              </button>
+                      <div className="grid grid-cols-1 gap-2.5">
+                        {extraToppingsList.map((top) => {
+                          const qty = addonQuantities[top.id] || 0;
+                          const topName = language === 'ar' ? top.nameAr : top.nameEn;
+                          
+                          return (
+                            <div
+                              key={top.id}
+                              className={`p-3 rounded-2xl border transition-all flex items-center justify-between text-start ${
+                                qty > 0 
+                                  ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-xs' 
+                                  : 'bg-stone-50 hover:bg-stone-100/80 border-black/5'
+                              }`}
+                            >
+                              <div className="text-start pr-1">
+                                <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{topName}</span>
+                                <span className="text-[11px] font-bold text-amber-700 font-mono">
+                                  {top.price > 0 ? `+${top.price.toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}` : (language === 'ar' ? 'مجاني' : 'Free')}
+                                </span>
+                              </div>
+
+                              {/* Quantity Controls */}
+                              <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs">
+                                {qty > 0 ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateAddonQuantity(top.id, -1)}
+                                      className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
+                                    >
+                                      <Minus className="w-3 h-3" />
+                                    </button>
+                                    <span className="w-6 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
+                                  </>
+                                ) : null}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateAddonQuantity(top.id, 1)}
+                                  className={`h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
+                                    qty > 0 
+                                      ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                                      : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
+                                  }`}
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  {qty === 0 && <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>}
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Section B: Additional Toppings */}
-                    <div className="text-xs font-extrabold text-stone-800 bg-stone-100 px-3 py-1.5 rounded-xl border border-black/5 flex items-center gap-1.5 mt-3">
-                      <span>{language === 'ar' ? 'إضافات طعام أخرى:' : 'Extra Toppings:'}</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-2.5">
-                      {extraToppingsList.map((top) => {
-                        const qty = addonQuantities[top.id] || 0;
-                        const topName = language === 'ar' ? top.nameAr : top.nameEn;
-                        
-                        return (
-                          <div
-                            key={top.id}
-                            className={`p-3 rounded-2xl border transition-all flex items-center justify-between text-start ${
-                              qty > 0 
-                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-xs' 
-                                : 'bg-stone-50 hover:bg-stone-100/80 border-black/5'
-                            }`}
-                          >
-                            <div className="text-start pr-1">
-                              <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{topName}</span>
-                              <span className="text-[11px] font-bold text-amber-700 font-mono">
-                                {top.price > 0 ? `+${top.price.toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}` : (language === 'ar' ? 'مجاني' : 'Free')}
-                              </span>
-                            </div>
-
-                            {/* Quantity Controls */}
-                            <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs">
-                              {qty > 0 ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUpdateAddonQuantity(top.id, -1)}
-                                    className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
-                                  >
-                                    <Minus className="w-3 h-3" />
-                                  </button>
-                                  <span className="w-6 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
-                                </>
-                              ) : null}
-
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateAddonQuantity(top.id, 1)}
-                                className={`h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
-                                  qty > 0 
-                                    ? 'bg-amber-500 text-white hover:bg-amber-600' 
-                                    : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
-                                }`}
-                              >
-                                <Plus className="w-3 h-3" />
-                                {qty === 0 && <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* 3. Soft Drink Selection */}
                 {menuItems && menuItems.length > 0 && (

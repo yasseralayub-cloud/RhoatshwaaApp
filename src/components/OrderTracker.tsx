@@ -14,6 +14,7 @@ interface OrderTrackerProps {
 
 import { generateZatcaQr } from '../utils/time';
 import { ZatcaFatooraCard } from './ZatcaFatooraCard';
+import { normalizePhone, phonesMatch, getPhoneVariants } from '../utils/phone';
 
 export const OrderTracker: React.FC<OrderTrackerProps> = ({ 
   initialOrderId = '', 
@@ -482,35 +483,28 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
     } catch (e) {}
 
     const loadActiveOrders = (firestoreOrders: Order[] = []) => {
+      // If user is NOT logged in or has no phone number, DO NOT display any active orders list!
+      if (!phone || !normalizePhone(phone)) {
+        setActiveUserOrders([]);
+        setActiveOrdersLoaded(true);
+        return;
+      }
+
       let localOrders: Order[] = [];
       try {
         const stored = localStorage.getItem('simulated_orders');
         if (stored) {
-          localOrders = JSON.parse(stored);
+          const parsed: Order[] = JSON.parse(stored);
+          // Strictly filter local orders to only those belonging to the current logged-in phone
+          localOrders = parsed.filter(o => phonesMatch(o.customerPhone, phone));
         }
       } catch (e) {}
 
-      // Synchronize fresh Firestore order statuses back to local storage
-      if (firestoreOrders.length > 0 && localOrders.length > 0) {
-        let localChanged = false;
-        const updatedLocal = localOrders.map(lo => {
-          const matchingFO = firestoreOrders.find(fo => fo.id === lo.id);
-          if (matchingFO && matchingFO.status !== lo.status) {
-            localChanged = true;
-            return { ...lo, status: matchingFO.status };
-          }
-          return lo;
-        });
-        if (localChanged) {
-          try {
-            localStorage.setItem('simulated_orders', JSON.stringify(updatedLocal));
-            localOrders = updatedLocal;
-          } catch (e) {}
-        }
-      }
+      // Strictly filter firestore orders to only those belonging to the current logged-in phone
+      const filteredFirestoreOrders = firestoreOrders.filter(o => phonesMatch(o.customerPhone, phone));
 
-      // Combine both sources, letting Firestore state override local simulation storage
-      const combined = [...localOrders, ...firestoreOrders];
+      // Combine both sources
+      const combined = [...localOrders, ...filteredFirestoreOrders];
       const uniqueMap = new Map<string, Order>();
       combined.forEach(o => {
         if (o && o.id) {
@@ -520,16 +514,8 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
 
       // Filter only active orders (status is not delivered or cancelled)
       let activeList = Array.from(uniqueMap.values()).filter(o => 
-        o.status !== 'delivered' && o.status !== 'cancelled'
+        o.status !== 'delivered' && o.status !== 'cancelled' && phonesMatch(o.customerPhone, phone)
       );
-
-      // Only show active orders that belong to the user's phone number.
-      // If there's no phone number logged in (public/guest), do not show any active orders list.
-      if (phone) {
-        activeList = activeList.filter(o => o.customerPhone === phone);
-      } else {
-        activeList = [];
-      }
 
       // Sort by createdAt descending
       activeList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -538,9 +524,10 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
       setActiveOrdersLoaded(true);
     };
 
-    if (phone) {
+    const phoneVars = getPhoneVariants(phone);
+    if (phone && phoneVars.length > 0) {
       try {
-        const q = query(collection(db, 'orders'), where('customerPhone', '==', phone));
+        const q = query(collection(db, 'orders'), where('customerPhone', 'in', phoneVars.slice(0, 10)));
         unsubFirestore = onSnapshot(q, (snapshot) => {
           const fOrders: Order[] = [];
           snapshot.forEach(docSnap => {
@@ -564,7 +551,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
         unsubFirestore();
       }
     };
-  }, []);
+  }, [userProfile?.phone]);
 
   // Handle automatic tracking of active orders on mount
   useEffect(() => {
@@ -638,6 +625,23 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
 
     let isFirestoreActive = false;
 
+    // Helper to verify order belongs to currently logged in user
+    const verifyOwnership = (ord: Order): boolean => {
+      let currentPhone = '';
+      try {
+        const saved = localStorage.getItem('rehla_user_profile');
+        if (saved) {
+          const u = JSON.parse(saved);
+          currentPhone = u.phone || '';
+        }
+      } catch (e) {}
+
+      if (currentPhone && !phonesMatch(ord.customerPhone, currentPhone)) {
+        return false;
+      }
+      return true;
+    };
+
     // 1. Establish real-time Firestore document listener
     const unsub = onSnapshot(
       doc(db, 'orders', cleanId),
@@ -646,6 +650,17 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
         isFirestoreActive = true;
         if (docSnap.exists()) {
           const freshOrder = docSnap.data() as Order;
+          
+          if (!verifyOwnership(freshOrder)) {
+            setOrder(null);
+            setErrorMsg(
+              language === 'ar'
+                ? 'عذراً، هذا الطلب غير تابع لرقم جوالك ولا يمكن استعراضه حفاظاً على الخصوصية 🔐'
+                : 'Sorry, this order does not belong to your logged-in mobile number for privacy reasons 🔐'
+            );
+            return;
+          }
+
           setOrder(freshOrder);
           
           // ALWAYS sync the fresh order back to local storage so they are both in perfect alignment!
@@ -669,6 +684,15 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
           // Check local simulated orders fallback
           const localOrder = findLocalOrder(cleanId);
           if (localOrder) {
+            if (!verifyOwnership(localOrder)) {
+              setOrder(null);
+              setErrorMsg(
+                language === 'ar'
+                  ? 'عذراً، هذا الطلب غير تابع لرقم جوالك ولا يمكن استعراضه حفاظاً على الخصوصية 🔐'
+                  : 'Sorry, this order does not belong to your logged-in mobile number for privacy reasons 🔐'
+              );
+              return;
+            }
             setOrder(localOrder);
           } else {
             setOrder(null);
@@ -681,6 +705,15 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
         isFirestoreActive = false;
         const localOrder = findLocalOrder(cleanId);
         if (localOrder) {
+          if (!verifyOwnership(localOrder)) {
+            setOrder(null);
+            setErrorMsg(
+              language === 'ar'
+                ? 'عذراً، هذا الطلب غير تابع لرقم جوالك ولا يمكن استعراضه حفاظاً على الخصوصية 🔐'
+                : 'Sorry, this order does not belong to your logged-in mobile number for privacy reasons 🔐'
+            );
+            return;
+          }
           setOrder(localOrder);
         } else {
           setErrorMsg(t('orderNotFound'));
@@ -854,40 +887,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
         </button>
       </div>
 
-      {/* Multiple Active Orders Bar */}
-      {activeUserOrders.length > 0 && (
-        <div className="max-w-lg mx-auto bg-neutral-50/50 rounded-2xl p-3 border border-black/5 space-y-2">
-          <span className="text-[10px] font-black text-dark/40 uppercase tracking-wider block px-1 text-center sm:text-start">
-            {language === 'ar' ? '🔄 الطلبات النشطة حالياً (اختر للمتابعة):' : '🔄 Active orders (choose one to track):'}
-          </span>
-          <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
-            {activeUserOrders.map((actOrder) => (
-              <button
-                key={actOrder.id}
-                onClick={() => {
-                  setSearchId(actOrder.id);
-                  handleTrack(actOrder.id);
-                }}
-                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 ${
-                  order?.id === actOrder.id
-                    ? 'bg-yellow text-black border-yellow shadow-xs'
-                    : 'bg-white text-dark/70 border-black/5 hover:bg-neutral-50'
-                }`}
-              >
-                <span className="font-mono text-[11px] font-bold">#{actOrder.id.substring(0, 8)}...</span>
-                <span className="text-[10px] bg-black/5 px-1.5 py-0.5 rounded-md font-medium">
-                  {actOrder.tableOrDelivery === 'delivery' 
-                    ? (language === 'ar' ? 'توصيل' : 'Delivery') 
-                    : actOrder.tableOrDelivery === 'takeaway'
-                      ? (language === 'ar' ? 'استلام' : 'Pick up')
-                      : (language === 'ar' ? 'محلي' : 'Dine-In')
-                  }
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+
 
       {/* Interactive Web Notification Authorization Request Banner */}
       {notifPermission === 'default' && (

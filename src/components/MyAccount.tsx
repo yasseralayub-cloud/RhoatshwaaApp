@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MapPicker from './MapPicker';
+import { normalizePhone, phonesMatch, getPhoneVariants } from '../utils/phone';
 
 interface SavedAddress {
   id: string;
@@ -162,22 +163,27 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
 
   // Setup live orders subscription when logged in
   useEffect(() => {
-    if (!user?.phone) {
+    if (!user?.phone || !normalizePhone(user.phone)) {
       setOrders([]);
       return;
     }
 
     setOrdersLoading(true);
+    const phoneVars = getPhoneVariants(user.phone);
+
     // Query orders for this specific customer phone
     const ordersQuery = query(
       collection(db, 'orders'),
-      where('customerPhone', '==', user.phone)
+      where('customerPhone', 'in', phoneVars.slice(0, 10))
     );
 
     const unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
       const fetchedOrders: Order[] = [];
       snapshot.forEach((doc) => {
-        fetchedOrders.push({ id: doc.id, ...doc.data() } as Order);
+        const o = { id: doc.id, ...doc.data() } as Order;
+        if (phonesMatch(o.customerPhone, user.phone)) {
+          fetchedOrders.push(o);
+        }
       });
 
       // Sort by createdAt descending
@@ -190,7 +196,7 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
       const cachedOrders = localStorage.getItem('simulated_orders');
       if (cachedOrders) {
         const parsed: Order[] = JSON.parse(cachedOrders);
-        const filtered = parsed.filter(o => o.customerPhone === user.phone);
+        const filtered = parsed.filter(o => phonesMatch(o.customerPhone, user.phone));
         filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setOrders(filtered);
       }
@@ -202,21 +208,26 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
 
   // Setup support tickets subscription
   useEffect(() => {
-    if (!user?.phone) {
+    if (!user?.phone || !normalizePhone(user.phone)) {
       setSupportTickets([]);
       return;
     }
 
     setLoadingSupportTickets(true);
+    const phoneVars = getPhoneVariants(user.phone);
+
     const ticketsQuery = query(
       collection(db, 'support_tickets'),
-      where('customerPhone', '==', user.phone)
+      where('customerPhone', 'in', phoneVars.slice(0, 10))
     );
 
     const unsubscribe = onSnapshot(ticketsQuery, (snapshot) => {
       const fetched: any[] = [];
       snapshot.forEach((doc) => {
-        fetched.push({ id: doc.id, ...doc.data() });
+        const t = { id: doc.id, ...doc.data() } as any;
+        if (phonesMatch(t.customerPhone, user.phone)) {
+          fetched.push(t);
+        }
       });
       // Sort by createdAt desc
       fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -227,7 +238,7 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
       const cached = localStorage.getItem('simulated_support_tickets');
       if (cached) {
         const parsed = JSON.parse(cached);
-        const filtered = parsed.filter((t: any) => t.customerPhone === user.phone);
+        const filtered = parsed.filter((t: any) => phonesMatch(t.customerPhone, user.phone));
         filtered.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setSupportTickets(filtered);
       }

@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { MenuItem, Order, CartItem } from '../types';
 import { useLanguage } from './LanguageContext';
 import { X, Trash2, MapPin, Store, CreditCard, ChevronLeft, Plus, Minus, Send, PhoneCall, ShoppingBag, Clock, AlertTriangle, Copy, Check, Landmark, Wallet, User, Phone, AlertCircle, Loader2, Bell } from 'lucide-react';
-import { collection, doc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, query, where, getDocs, limit } from 'firebase/firestore';
 import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { isRestaurantOpen, formatTime12h } from '../utils/time';
 import MapPicker from './MapPicker';
+import { normalizePhone, getPhoneVariants, phonesMatch } from '../utils/phone';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -240,6 +241,30 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         if (userSnap && userSnap.exists()) {
           existingData = userSnap.data();
           found = true;
+        } else {
+          // If user doc doesn't exist yet, check previous Firestore orders for this phone number
+          try {
+            const phoneVars = getPhoneVariants(cleanPhone);
+            if (phoneVars.length > 0) {
+              const q = query(collection(db, 'orders'), where('customerPhone', 'in', phoneVars.slice(0, 10)), limit(1));
+              const ordersSnap = await withTimeout(getDocs(q));
+              if (ordersSnap && !ordersSnap.empty) {
+                const orderData = ordersSnap.docs[0].data();
+                if (orderData.customerName && orderData.customerName.trim()) {
+                  existingData = {
+                    name: orderData.customerName.trim(),
+                    phone: cleanPhone,
+                    addresses: []
+                  };
+                  found = true;
+                  // Auto-save user profile document in Firestore for future logins
+                  setDoc(userRef, existingData).catch(() => {});
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('Fallback order lookup failed in CartDrawer:', e);
+          }
         }
       } catch (dbErr) {
         console.warn('Firebase query failed (likely quota exceeded), using local cache:', dbErr);
@@ -248,7 +273,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         if (cachedStr) {
           try {
             const cached = JSON.parse(cachedStr);
-            if (cached && cached.phone === cleanPhone) {
+            if (cached && phonesMatch(cached.phone, cleanPhone)) {
               existingData = cached;
               found = true;
             }
