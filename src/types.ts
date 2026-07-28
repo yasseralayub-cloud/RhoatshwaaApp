@@ -147,6 +147,9 @@ export interface BusinessSettings {
   telegramChatId?: string;
   telegramBotEnabled?: boolean;
   commercialRegistration?: string;
+  crCertificateUrl?: string;
+  taxCertificateUrl?: string;
+  sbcCertificateUrl?: string;
   sbcNumber?: string;
   sbcVerificationUrl?: string;
   appVersion?: string;

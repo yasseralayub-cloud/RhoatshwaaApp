@@ -1463,22 +1463,29 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
 
               {/* Math Computations Receipt Footer */}
               <div className="pt-1 space-y-2 font-mono text-xs border-b border-dashed border-black/10 pb-4 print:border-black/30">
-                <div className="flex justify-between text-dark/60 print:text-black">
-                  <span>{language === 'ar' ? 'المجموع الخاضع للضريبة:' : 'Taxable Subtotal:'}</span>
-                  <span>{(order.subtotal - (order.promoDiscount || 0)).toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
-                </div>
+                {businessSettings.taxEnabled ? (
+                  <>
+                    <div className="flex justify-between text-dark/60 print:text-black">
+                      <span>{language === 'ar' ? 'المجموع غير شامل الضريبة:' : 'Subtotal (Excl. VAT):'}</span>
+                      <span>{(order.total - order.tax - (order.deliveryFee || 0)).toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
+                    </div>
 
-                {order.promoDiscount > 0 && (
-                  <div className="flex justify-between text-red-650 font-bold print:text-black print:font-bold">
-                    <span>{language === 'ar' ? 'التخفيض المطبق:' : 'Applied Discount:'}</span>
-                    <span>-{order.promoDiscount.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
-                  </div>
-                )}
+                    {order.promoDiscount > 0 && (
+                      <div className="flex justify-between text-red-650 font-bold print:text-black print:font-bold">
+                        <span>{language === 'ar' ? 'التخفيض المطبق:' : 'Applied Discount:'}</span>
+                        <span>-{order.promoDiscount.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
+                      </div>
+                    )}
 
-                {businessSettings.taxEnabled && (
+                    <div className="flex justify-between text-dark/60 print:text-black">
+                      <span>{language === 'ar' ? `ضريبة القيمة المضافة (${businessSettings.taxPercent}%):` : `VAT (${businessSettings.taxPercent}%):`}</span>
+                      <span>{order.tax.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
+                    </div>
+                  </>
+                ) : (
                   <div className="flex justify-between text-dark/60 print:text-black">
-                    <span>{language === 'ar' ? `ضريبة القيمة المضافة (${businessSettings.taxPercent}%):` : `VAT (${businessSettings.taxPercent}%):`}</span>
-                    <span>{order.tax.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
+                    <span>{language === 'ar' ? 'المجموع الفرعي:' : 'Subtotal:'}</span>
+                    <span>{order.subtotal.toFixed(2)} {language === 'ar' ? 'ر.س.' : 'SAR'}</span>
                   </div>
                 )}
 
@@ -1493,7 +1500,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
                 <div className="flex justify-between text-dark font-black text-sm print:text-black print:font-extrabold border-b border-dashed border-black/10 pb-2">
                   <span className="text-sm">
                     {language === 'ar'
-                      ? (businessSettings?.taxEnabled ? 'إجمالي الدفع شامل الضريبة:' : 'إجمالي الدفع النهائي:')
+                      ? (businessSettings?.taxEnabled ? 'الإجمالي النهائي شامل الضريبة:' : 'إجمالي الدفع النهائي:')
                       : (businessSettings?.taxEnabled ? 'Total (VAT Inclusive):' : 'Final Total Payment:')
                     }
                   </span>

@@ -162,10 +162,10 @@ export const ZatcaFatooraCard: React.FC<ZatcaFatooraCardProps> = ({
             <div className="flex items-center gap-4">
               <div>
                 <span className="text-[9px] text-emerald-800/60 block font-bold">
-                  {isAr ? 'الخاضع للضريبة' : 'Taxable Subtotal'}
+                  {isAr ? 'المجموع غير شامل الضريبة' : 'Subtotal (Excl. VAT)'}
                 </span>
                 <span className="font-bold text-slate-700 font-mono">
-                  {(order.subtotal - (order.promoDiscount || 0)).toFixed(2)} SAR
+                  {(order.total - order.tax - (order.deliveryFee || 0)).toFixed(2)} SAR
                 </span>
               </div>
               <div className="w-px h-6 bg-emerald-500/10" />

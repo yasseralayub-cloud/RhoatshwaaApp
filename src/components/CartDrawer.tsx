@@ -1091,37 +1091,52 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
               {/* Subtotal list */}
               <div className="border border-black/5 p-4 rounded-2xl bg-neutral-50 space-y-2.5">
-                <div className="flex justify-between text-sm text-dark/70 font-sans">
-                  <span>{t('subtotal')}</span>
-                  <span className="font-semibold text-dark">{subtotal.toFixed(1)} {t('sar')}</span>
-                </div>
-                {hasPromo && (
-                  <div className="flex justify-between text-sm text-red-650 font-semibold bg-red-50 rounded-lg px-2 py-1.5 border border-red-500/10">
-                    <span>{language === 'ar' ? `خصم العرض الترويجي (${activePromo?.discountPercent}%)` : `Promotion Discount (${activePromo?.discountPercent}%)`}</span>
-                    <span>- {promoDiscount.toFixed(1)} {t('sar')}</span>
-                  </div>
-                )}
-                {taxEnabled && (
-                  <div className="flex justify-between text-sm text-dark/50">
-                    <span>
-                      {language === 'ar'
-                        ? `الضريبة (${taxPercent}%)`
-                        : `VAT (${taxPercent}%)`}
-                    </span>
-                    <span className="text-dark/80">{tax.toFixed(2)} {t('sar')}</span>
-                  </div>
+                {taxEnabled ? (
+                  <>
+                    <div className="flex justify-between text-sm text-dark/70 font-sans">
+                      <span>{language === 'ar' ? 'المجموع غير شامل الضريبة' : 'Subtotal (Excl. VAT)'}</span>
+                      <span className="font-semibold text-dark">{(total - tax).toFixed(2)} {t('sar')}</span>
+                    </div>
+                    {hasPromo && (
+                      <div className="flex justify-between text-sm text-red-650 font-semibold bg-red-50 rounded-lg px-2 py-1.5 border border-red-500/10">
+                        <span>{language === 'ar' ? `خصم العرض الترويجي (${activePromo?.discountPercent}%)` : `Promotion Discount (${activePromo?.discountPercent}%)`}</span>
+                        <span>- {promoDiscount.toFixed(2)} {t('sar')}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm text-dark/60 font-sans">
+                      <span>
+                        {language === 'ar'
+                          ? `ضريبة القيمة المضافة (${taxPercent}%)`
+                          : `VAT (${taxPercent}%)`}
+                      </span>
+                      <span className="font-semibold text-dark/80">{tax.toFixed(2)} {t('sar')}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-sm text-dark/70 font-sans">
+                      <span>{t('subtotal')}</span>
+                      <span className="font-semibold text-dark">{subtotal.toFixed(2)} {t('sar')}</span>
+                    </div>
+                    {hasPromo && (
+                      <div className="flex justify-between text-sm text-red-650 font-semibold bg-red-50 rounded-lg px-2 py-1.5 border border-red-500/10">
+                        <span>{language === 'ar' ? `خصم العرض الترويجي (${activePromo?.discountPercent}%)` : `Promotion Discount (${activePromo?.discountPercent}%)`}</span>
+                        <span>- {promoDiscount.toFixed(2)} {t('sar')}</span>
+                      </div>
+                    )}
+                  </>
                 )}
                 {tableOrDelivery === 'delivery' && (
                   <div className="flex justify-between text-sm text-amber-650 font-semibold bg-amber-50 rounded-lg px-2 py-1.5 border border-amber-500/10">
                     <span>{language === 'ar' ? 'رسوم التوصيل' : 'Delivery Fee'}</span>
-                    <span>+ {deliveryFee.toFixed(1)} {t('sar')}</span>
+                    <span>+ {deliveryFee.toFixed(2)} {t('sar')}</span>
                   </div>
                 )}
                 <div className="h-px bg-black/5 my-2" />
                 <div className="flex justify-between text-base font-extrabold text-dark font-sans">
                   <span>
                     {language === 'ar'
-                      ? (taxEnabled ? 'الإجمالي شامل الضريبة' : 'المجموع الإجمالي النهائي')
+                      ? (taxEnabled ? 'الإجمالي النهائي شامل الضريبة' : 'المجموع الإجمالي النهائي')
                       : (taxEnabled ? 'Total (VAT Inclusive)' : 'Final Estimated Total')}
                   </span>
                   <span className="text-lg text-dark font-black">{finalTotal.toFixed(2)} {t('sar')}</span>

@@ -333,6 +333,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Business accreditation & developer attribution variables
   const [commercialRegistration, setCommercialRegistration] = useState('1010789456');
+  const [crCertificateUrl, setCrCertificateUrl] = useState('');
+  const [taxCertificateUrl, setTaxCertificateUrl] = useState('');
+  const [sbcCertificateUrl, setSbcCertificateUrl] = useState('');
   const [sbcNumber, setSbcNumber] = useState('0000084721');
   const [sbcVerificationUrl, setSbcVerificationUrl] = useState('https://sbc.gov.sa');
   const [appVersion, setAppVersion] = useState('v1.0.0');
@@ -371,6 +374,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [currentPrintSubMode, setCurrentPrintSubMode] = useState<'all' | 'customer' | 'kitchen'>('all');
   const [clearingOrders, setClearingOrders] = useState(false);
   const [isDraggingQr, setIsDraggingQr] = useState(false);
+
+  const handleCertificateFileUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      showNotification(language === 'ar' ? 'حجم الملف كبير جداً (الأقصى 15 ميجابايت)' : 'File size too large (max 15MB)', 'warning');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setter(reader.result);
+        showNotification(language === 'ar' ? 'تم تحميل المستند بنجاح!' : 'Document uploaded successfully!', 'success');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Driver Management States
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -573,6 +595,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setKitchenPrinterPort(businessSettings.kitchenPrinterPort ?? 12212);
       setPrintRoutingMode(businessSettings.printRoutingMode || 'unified');
       setCommercialRegistration(businessSettings.commercialRegistration || '1010789456');
+      setCrCertificateUrl(businessSettings.crCertificateUrl || '');
+      setTaxCertificateUrl(businessSettings.taxCertificateUrl || '');
+      setSbcCertificateUrl(businessSettings.sbcCertificateUrl || '');
       setSbcNumber(businessSettings.sbcNumber || '0000084721');
       setSbcVerificationUrl(businessSettings.sbcVerificationUrl || 'https://sbc.gov.sa');
       setAppVersion(businessSettings.appVersion || 'v1.0.0');
@@ -640,6 +665,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       telegramChatId: telegramChatId,
       telegramBotEnabled: telegramBotEnabled,
       commercialRegistration: commercialRegistration,
+      crCertificateUrl: crCertificateUrl,
+      taxCertificateUrl: taxCertificateUrl,
+      sbcCertificateUrl: sbcCertificateUrl,
       sbcNumber: sbcNumber,
       sbcVerificationUrl: sbcVerificationUrl,
       appVersion: appVersion,
@@ -3846,6 +3874,172 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 placeholder="https://sbc.gov.sa"
                 className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono text-slate-600"
               />
+            </div>
+
+            {/* Document & Certificate PDF / Image Upload Section */}
+            <div className="col-span-1 md:col-span-2 mt-4 pt-4 border-t border-slate-200">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="p-1.5 bg-amber-500/10 text-amber-600 rounded-lg">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">
+                    {language === 'ar' ? 'تحميل الشهادات والوثائق الرسمية (PDF / صورة)' : 'Official Certificates & Documents Upload (PDF / Image)'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    {language === 'ar' ? 'رفع ملفات PDF أو صور للشهادات ليتم عرضها تلقائياً كشهادات رقمية أسفل الموقع مع إمكانية استعراضها وتحميلها للعملاء' : 'Upload PDF or Image files for CR, VAT Tax, and SBC Platform certificates to display at bottom of website.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mt-3">
+                {/* 1. Commercial Registration Certificate */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col justify-between relative hover:border-amber-400 transition">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                        <Landmark className="w-3.5 h-3.5 text-amber-600" />
+                        {language === 'ar' ? 'شهادة السجل التجاري' : 'CR Certificate'}
+                      </span>
+                      {crCertificateUrl && (
+                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          {crCertificateUrl.startsWith('data:application/pdf') ? 'PDF' : 'صورة'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mb-2">
+                      {language === 'ar' ? 'ملف PDF أو صورة السجل التجاري الرسمي' : 'Official CR PDF document or image'}
+                    </p>
+
+                    {crCertificateUrl ? (
+                      <div className="relative group my-2 rounded-xl overflow-hidden border border-slate-300 bg-white p-2">
+                        {crCertificateUrl.startsWith('data:application/pdf') ? (
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 py-3 px-2 bg-slate-100 rounded-lg">
+                            <Zap className="w-5 h-5 text-red-500 shrink-0" />
+                            <span className="truncate">{language === 'ar' ? 'مستند PDF مرفق' : 'PDF Document Attached'}</span>
+                          </div>
+                        ) : (
+                          <img src={crCertificateUrl} alt="CR Certificate" className="w-full h-24 object-cover rounded-lg" />
+                        )}
+                        <div className="mt-2 flex items-center gap-2">
+                          <a href={crCertificateUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-amber-600 font-bold hover:underline flex items-center gap-1">
+                            <Eye className="w-3 h-3" /> {language === 'ar' ? 'معاينة' : 'Preview'}
+                          </a>
+                          <button type="button" onClick={() => setCrCertificateUrl('')} className="text-[11px] text-red-600 font-bold hover:underline ml-auto flex items-center gap-1">
+                            <Trash2 className="w-3 h-3" /> {language === 'ar' ? 'حذف' : 'Remove'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="border-2 border-dashed border-slate-300 hover:border-amber-500 bg-white rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition text-center my-2">
+                        <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                        <span className="text-[11px] font-bold text-slate-700">{language === 'ar' ? 'اختر ملف PDF أو صورة' : 'Upload PDF / Image'}</span>
+                        <span className="text-[9px] text-slate-400">{language === 'ar' ? 'أقصى حجم: 15MB' : 'Max size 15MB'}</span>
+                        <input type="file" accept=".pdf,image/*" onChange={(e) => handleCertificateFileUpload(e, setCrCertificateUrl)} className="hidden" />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Tax Certificate */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col justify-between relative hover:border-amber-400 transition">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-amber-600" />
+                        {language === 'ar' ? 'شهادة الضريبة (ZATCA)' : 'VAT Tax Certificate'}
+                      </span>
+                      {taxCertificateUrl && (
+                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          {taxCertificateUrl.startsWith('data:application/pdf') ? 'PDF' : 'صورة'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mb-2">
+                      {language === 'ar' ? 'ملف PDF أو صورة شهادة ضريبة القيمة المضافة' : 'VAT Tax Registration PDF or Image'}
+                    </p>
+
+                    {taxCertificateUrl ? (
+                      <div className="relative group my-2 rounded-xl overflow-hidden border border-slate-300 bg-white p-2">
+                        {taxCertificateUrl.startsWith('data:application/pdf') ? (
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 py-3 px-2 bg-slate-100 rounded-lg">
+                            <Zap className="w-5 h-5 text-red-500 shrink-0" />
+                            <span className="truncate">{language === 'ar' ? 'مستند PDF مرفق' : 'PDF Document Attached'}</span>
+                          </div>
+                        ) : (
+                          <img src={taxCertificateUrl} alt="Tax Certificate" className="w-full h-24 object-cover rounded-lg" />
+                        )}
+                        <div className="mt-2 flex items-center gap-2">
+                          <a href={taxCertificateUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-amber-600 font-bold hover:underline flex items-center gap-1">
+                            <Eye className="w-3 h-3" /> {language === 'ar' ? 'معاينة' : 'Preview'}
+                          </a>
+                          <button type="button" onClick={() => setTaxCertificateUrl('')} className="text-[11px] text-red-600 font-bold hover:underline ml-auto flex items-center gap-1">
+                            <Trash2 className="w-3 h-3" /> {language === 'ar' ? 'حذف' : 'Remove'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="border-2 border-dashed border-slate-300 hover:border-amber-500 bg-white rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition text-center my-2">
+                        <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                        <span className="text-[11px] font-bold text-slate-700">{language === 'ar' ? 'اختر ملف PDF أو صورة' : 'Upload PDF / Image'}</span>
+                        <span className="text-[9px] text-slate-400">{language === 'ar' ? 'أقصى حجم: 15MB' : 'Max size 15MB'}</span>
+                        <input type="file" accept=".pdf,image/*" onChange={(e) => handleCertificateFileUpload(e, setTaxCertificateUrl)} className="hidden" />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. SBC Platform Certificate */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col justify-between relative hover:border-amber-400 transition">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        {language === 'ar' ? 'شهادة توثيق منصة الأعمال' : 'SBC Accreditation Certificate'}
+                      </span>
+                      {sbcCertificateUrl && (
+                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          {sbcCertificateUrl.startsWith('data:application/pdf') ? 'PDF' : 'صورة'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mb-2">
+                      {language === 'ar' ? 'ملف PDF أو صورة شهادة اعتماد منصة الأعمال' : 'Saudi Business Center License PDF or Image'}
+                    </p>
+
+                    {sbcCertificateUrl ? (
+                      <div className="relative group my-2 rounded-xl overflow-hidden border border-slate-300 bg-white p-2">
+                        {sbcCertificateUrl.startsWith('data:application/pdf') ? (
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 py-3 px-2 bg-slate-100 rounded-lg">
+                            <Zap className="w-5 h-5 text-red-500 shrink-0" />
+                            <span className="truncate">{language === 'ar' ? 'مستند PDF مرفق' : 'PDF Document Attached'}</span>
+                          </div>
+                        ) : (
+                          <img src={sbcCertificateUrl} alt="SBC Certificate" className="w-full h-24 object-cover rounded-lg" />
+                        )}
+                        <div className="mt-2 flex items-center gap-2">
+                          <a href={sbcCertificateUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-amber-600 font-bold hover:underline flex items-center gap-1">
+                            <Eye className="w-3 h-3" /> {language === 'ar' ? 'معاينة' : 'Preview'}
+                          </a>
+                          <button type="button" onClick={() => setSbcCertificateUrl('')} className="text-[11px] text-red-600 font-bold hover:underline ml-auto flex items-center gap-1">
+                            <Trash2 className="w-3 h-3" /> {language === 'ar' ? 'حذف' : 'Remove'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="border-2 border-dashed border-slate-300 hover:border-amber-500 bg-white rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition text-center my-2">
+                        <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                        <span className="text-[11px] font-bold text-slate-700">{language === 'ar' ? 'اختر ملف PDF أو صورة' : 'Upload PDF / Image'}</span>
+                        <span className="text-[9px] text-slate-400">{language === 'ar' ? 'أقصى حجم: 15MB' : 'Max size 15MB'}</span>
+                        <input type="file" accept=".pdf,image/*" onChange={(e) => handleCertificateFileUpload(e, setSbcCertificateUrl)} className="hidden" />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Application Version */}

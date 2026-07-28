@@ -12,7 +12,7 @@ import { CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_BUSINESS_SETTINGS } from './ini
 import { MenuItem, Promotion, BusinessSettings, CartItem, CartItemOption } from './types';
 import { collection, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { Flame, Star, Coffee, AlertCircle, Building2, ShieldCheck, CheckCircle2, ExternalLink, Code2, Sparkles, Globe } from 'lucide-react';
+import { Flame, Star, Coffee, AlertCircle, Building2, ShieldCheck, CheckCircle2, ExternalLink, Code2, Sparkles, Globe, FileText, Eye, Download, X, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PromotionCountdown } from './components/PromotionCountdown';
 import { WelcomePortalModal } from './components/WelcomePortalModal';
@@ -33,6 +33,14 @@ function MenuAndOrdersApp() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [showIosPrompt, setShowIosPrompt] = useState(false);
+
+  // Certificate Lightbox Modal state
+  const [activeCertificateModal, setActiveCertificateModal] = useState<{
+    title: string;
+    number: string;
+    url?: string;
+    type: 'cr' | 'tax' | 'sbc';
+  } | null>(null);
 
   // PWA & iOS install prompt detectors
   useEffect(() => {
@@ -970,35 +978,6 @@ function MenuAndOrdersApp() {
         
         {activeTab === 'menu' && (
           <div className="space-y-6">
-            
-            {/* Heritage Welcome Hero Card */}
-            <div className="bg-neutral-50 border border-black/5 p-8 rounded-[2rem] text-dark relative overflow-hidden shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6 text-start">
-              <div className="absolute -bottom-16 -end-16 w-64 h-64 bg-yellow/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute -top-16 -start-16 w-64 h-64 bg-yellow/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="z-10 space-y-2 md:max-w-xl">
-                <div className="flex items-center gap-1.5 text-yellow-600 font-mono text-[10px] uppercase font-bold tracking-widest">
-                  <Star className="w-3.5 h-3.5 fill-yellow text-yellow" />
-                  <span>{language === 'ar' ? 'طاقة إيجابية وهويّة أصيلة' : 'Authentic Saudi Hospitality'}</span>
-                </div>
-                <h2 className="text-2xl md:text-3xl font-serif font-bold text-dark tracking-wide leading-tight">
-                  {language === 'ar' ? (businessSettings?.restaurantNameAr || 'رحلة شواء') : (businessSettings?.restaurantNameEn || 'Grill Journey')}
-                </h2>
-                <p className="text-xs text-dark/60 leading-relaxed max-w-lg">
-                  {language === 'ar'
-                    ? (businessSettings?.taglineAr || 'استمتع بأشهى قطع المشويات المحمرة على جمر الغضا الطازج.')
-                    : (businessSettings?.taglineEn || 'Savor premium flame-grilled skewers over organic charcoal.')}
-                </p>
-              </div>
-
-              {/* Decorative side badge */}
-              <div className="bg-white border border-black/5 p-4 rounded-xl flex items-center gap-3 z-10 shrink-0 font-mono text-xs shadow-sm">
-                <Coffee className="w-5 h-5 text-yellow shrink-0" />
-                <div className="text-start">
-                  <span className="block font-bold text-dark">{language === 'ar' ? 'الرّحلة دائماً دافئة' : 'Warm & Fresh'}</span>
-                  <span className="text-[10px] text-dark/40">{language === 'ar' ? 'لحوم محلية ١٠٠٪' : '100% Local Meats'}</span>
-                </div>
-              </div>
-            </div>
 
             {/* Active Promotion Countdown bar */}
             {activePromo && activePromo.isActive && (
@@ -1132,67 +1111,185 @@ function MenuAndOrdersApp() {
       <footer className="bg-stone-900 text-stone-300 py-10 px-4 mt-20 border-t border-stone-800 text-start sm:text-center font-sans shadow-inner">
         <div className="max-w-6xl mx-auto space-y-6">
           
-          {/* Section 1: Business Credentials & Official Verification Badges */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 text-xs">
-            
-            {/* Commercial Registration Badge */}
-            <div className="bg-stone-800/80 border border-stone-700/60 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm hover:border-amber-500/40 transition">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
-                <Building2 className="w-4.5 h-4.5" />
+          {/* Section 1: Business Credentials & Official Certificates Gallery */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Award className="w-5 h-5 text-amber-400" />
+                <h3 className="text-xs sm:text-sm font-extrabold text-stone-100 tracking-wide">
+                  {language === 'ar' ? 'الشهادات والاعتمادات الرسمية' : 'Official Certificates & Licenses'}
+                </h3>
               </div>
-              <div className="text-start">
-                <span className="text-[10px] text-stone-400 font-bold block uppercase tracking-wider">
-                  {language === 'ar' ? 'السجل التجاري' : 'Commercial Reg.'}
-                </span>
-                <span className="font-mono font-extrabold text-xs sm:text-sm text-stone-100">
-                  {businessSettings?.commercialRegistration || '1010789456'}
-                </span>
-              </div>
+              <span className="text-[10px] text-stone-400 font-bold bg-stone-800 px-2.5 py-1 rounded-full border border-stone-700">
+                {language === 'ar' ? 'معتمدة وموثقة' : 'Officially Verified'}
+              </span>
             </div>
 
-            {/* ZATCA Tax Certificate Badge */}
-            {businessSettings?.taxEnabled && (
-              <div className="bg-stone-800/80 border border-stone-700/60 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm hover:border-amber-500/40 transition">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
-                  <ShieldCheck className="w-4.5 h-4.5" />
-                </div>
-                <div className="text-start">
-                  <span className="text-[10px] text-stone-400 font-bold block uppercase tracking-wider">
-                    {language === 'ar' ? 'الشهادة الضريبية' : 'VAT Registration'}
-                  </span>
-                  <span className="font-mono font-extrabold text-xs sm:text-sm text-amber-300">
-                    {businessSettings?.vatNumber || '310123456700003'}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Saudi Business Center Verification Badge */}
-            <a 
-              href={businessSettings?.sbcVerificationUrl || 'https://sbc.gov.sa'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-emerald-950/40 border border-emerald-800/60 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-sm hover:border-emerald-500/80 transition group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
-                  <CheckCircle2 className="w-4.5 h-4.5" />
-                </div>
-                <div className="text-start">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider block">
-                      {language === 'ar' ? 'معتمد في منصة الأعمال' : 'Saudi Business Center'}
-                    </span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+              {/* 1. Commercial Registration Certificate Image Card */}
+              <div 
+                onClick={() => setActiveCertificateModal({
+                  title: language === 'ar' ? 'شهادة السجل التجاري الرسمية' : 'Commercial Registration Certificate',
+                  number: businessSettings?.commercialRegistration || '1010789456',
+                  url: businessSettings?.crCertificateUrl,
+                  type: 'cr'
+                })}
+                className="bg-stone-800/90 border border-stone-700/70 rounded-2xl p-3.5 flex flex-col justify-between gap-3 shadow-md hover:border-amber-500/60 hover:scale-[1.01] transition cursor-pointer group relative overflow-hidden"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                      <Building2 className="w-4 h-4" />
+                    </div>
+                    <div className="text-start">
+                      <span className="text-[10px] text-stone-400 font-bold block uppercase tracking-wider">
+                        {language === 'ar' ? 'السجل التجاري' : 'Commercial Reg.'}
+                      </span>
+                      <span className="font-mono font-extrabold text-xs text-stone-100">
+                        {businessSettings?.commercialRegistration || '1010789456'}
+                      </span>
+                    </div>
                   </div>
-                  <span className="font-mono font-bold text-xs text-stone-200">
-                    {language === 'ar' ? `رقم التوثيق: ${businessSettings?.sbcNumber || '0000084721'}` : `ID: ${businessSettings?.sbcNumber || '0000084721'}`}
-                  </span>
+                  <Eye className="w-4 h-4 text-stone-500 group-hover:text-amber-400 transition" />
+                </div>
+
+                {/* Certificate Image Thumbnail or Visual Document Card */}
+                <div className="relative rounded-xl overflow-hidden border border-stone-700/60 bg-stone-900/80 h-28 flex items-center justify-center">
+                  {businessSettings?.crCertificateUrl ? (
+                    businessSettings.crCertificateUrl.startsWith('data:application/pdf') ? (
+                      <div className="flex flex-col items-center justify-center text-center p-2">
+                        <FileText className="w-8 h-8 text-red-400 mb-1" />
+                        <span className="text-[10px] font-bold text-stone-300">{language === 'ar' ? 'شهادة السجل التجاري (PDF)' : 'CR Certificate PDF'}</span>
+                        <span className="text-[9px] text-amber-400 underline mt-1">{language === 'ar' ? 'انقر للعرض والاستعراض' : 'Click to view PDF'}</span>
+                      </div>
+                    ) : (
+                      <img src={businessSettings.crCertificateUrl} alt="Commercial Registration Certificate" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                    )
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-center p-2 bg-gradient-to-br from-stone-800 to-stone-900 w-full h-full">
+                      <Building2 className="w-7 h-7 text-amber-400/80 mb-1" />
+                      <span className="text-[10px] font-bold text-stone-200">{language === 'ar' ? 'شهادة السجل التجاري' : 'CR Registration Card'}</span>
+                      <span className="text-[9px] text-amber-400/90 font-medium mt-0.5">{language === 'ar' ? 'انقر لاستعراض الوثيقة الرسمية' : 'Click to inspect document'}</span>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                    <span className="text-[10px] font-bold bg-amber-500 text-stone-950 px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
+                      <Eye className="w-3 h-3" /> {language === 'ar' ? 'معاينة الشهادة' : 'Inspect Certificate'}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <ExternalLink className="w-4 h-4 text-emerald-400/60 group-hover:text-emerald-300 transition shrink-0" />
-            </a>
 
+              {/* 2. ZATCA VAT Tax Certificate Image Card */}
+              {businessSettings?.taxEnabled && (
+                <div 
+                  onClick={() => setActiveCertificateModal({
+                    title: language === 'ar' ? 'شهادة تسجيل ضريبة القيمة المضافة (ZATCA)' : 'VAT Registration Certificate',
+                    number: businessSettings?.vatNumber || '310123456700003',
+                    url: businessSettings?.taxCertificateUrl,
+                    type: 'tax'
+                  })}
+                  className="bg-stone-800/90 border border-stone-700/70 rounded-2xl p-3.5 flex flex-col justify-between gap-3 shadow-md hover:border-amber-500/60 hover:scale-[1.01] transition cursor-pointer group relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div className="text-start">
+                        <span className="text-[10px] text-stone-400 font-bold block uppercase tracking-wider">
+                          {language === 'ar' ? 'الشهادة الضريبية' : 'VAT Registration'}
+                        </span>
+                        <span className="font-mono font-extrabold text-xs text-amber-300">
+                          {businessSettings?.vatNumber || '310123456700003'}
+                        </span>
+                      </div>
+                    </div>
+                    <Eye className="w-4 h-4 text-stone-500 group-hover:text-amber-400 transition" />
+                  </div>
+
+                  {/* Certificate Image Thumbnail or Visual Document Card */}
+                  <div className="relative rounded-xl overflow-hidden border border-stone-700/60 bg-stone-900/80 h-28 flex items-center justify-center">
+                    {businessSettings?.taxCertificateUrl ? (
+                      businessSettings.taxCertificateUrl.startsWith('data:application/pdf') ? (
+                        <div className="flex flex-col items-center justify-center text-center p-2">
+                          <FileText className="w-8 h-8 text-red-400 mb-1" />
+                          <span className="text-[10px] font-bold text-stone-300">{language === 'ar' ? 'شهادة الضريبة المضافة (PDF)' : 'VAT Certificate PDF'}</span>
+                          <span className="text-[9px] text-amber-400 underline mt-1">{language === 'ar' ? 'انقر للعرض والاستعراض' : 'Click to view PDF'}</span>
+                        </div>
+                      ) : (
+                        <img src={businessSettings.taxCertificateUrl} alt="VAT Tax Certificate" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                      )
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-center p-2 bg-gradient-to-br from-stone-800 to-stone-900 w-full h-full">
+                        <ShieldCheck className="w-7 h-7 text-amber-400/80 mb-1" />
+                        <span className="text-[10px] font-bold text-stone-200">{language === 'ar' ? 'شهادة ضريبة القيمة المضافة' : 'VAT Certificate Card'}</span>
+                        <span className="text-[9px] text-amber-400/90 font-medium mt-0.5">{language === 'ar' ? 'انقر لاستعراض الوثيقة الرسمية' : 'Click to inspect document'}</span>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                      <span className="text-[10px] font-bold bg-amber-500 text-stone-950 px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
+                        <Eye className="w-3 h-3" /> {language === 'ar' ? 'معاينة الشهادة' : 'Inspect Certificate'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. SBC Saudi Business Platform Accreditation Certificate Image Card */}
+              <div 
+                onClick={() => setActiveCertificateModal({
+                  title: language === 'ar' ? 'شهادة توثيق منصة الأعمال (SBC)' : 'Saudi Business Center Accreditation',
+                  number: businessSettings?.sbcNumber || '0000084721',
+                  url: businessSettings?.sbcCertificateUrl,
+                  type: 'sbc'
+                })}
+                className="bg-stone-800/90 border border-stone-700/70 rounded-2xl p-3.5 flex flex-col justify-between gap-3 shadow-md hover:border-emerald-500/60 hover:scale-[1.01] transition cursor-pointer group relative overflow-hidden"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                      <CheckCircle2 className="w-4 h-4" />
+                    </div>
+                    <div className="text-start">
+                      <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider block">
+                        {language === 'ar' ? 'توثيق منصة الأعمال' : 'SBC Accreditation'}
+                      </span>
+                      <span className="font-mono font-bold text-xs text-stone-200">
+                        {language === 'ar' ? `رقم التوثيق: ${businessSettings?.sbcNumber || '0000084721'}` : `ID: ${businessSettings?.sbcNumber || '0000084721'}`}
+                      </span>
+                    </div>
+                  </div>
+                  <Eye className="w-4 h-4 text-stone-500 group-hover:text-emerald-400 transition" />
+                </div>
+
+                {/* Certificate Image Thumbnail or Visual Document Card */}
+                <div className="relative rounded-xl overflow-hidden border border-stone-700/60 bg-stone-900/80 h-28 flex items-center justify-center">
+                  {businessSettings?.sbcCertificateUrl ? (
+                    businessSettings.sbcCertificateUrl.startsWith('data:application/pdf') ? (
+                      <div className="flex flex-col items-center justify-center text-center p-2">
+                        <FileText className="w-8 h-8 text-red-400 mb-1" />
+                        <span className="text-[10px] font-bold text-stone-300">{language === 'ar' ? 'شهادة منصة الأعمال (PDF)' : 'SBC Certificate PDF'}</span>
+                        <span className="text-[9px] text-emerald-400 underline mt-1">{language === 'ar' ? 'انقر للعرض والاستعراض' : 'Click to view PDF'}</span>
+                      </div>
+                    ) : (
+                      <img src={businessSettings.sbcCertificateUrl} alt="SBC Platform Accreditation Certificate" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                    )
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-center p-2 bg-gradient-to-br from-stone-800 to-stone-900 w-full h-full">
+                      <CheckCircle2 className="w-7 h-7 text-emerald-400/80 mb-1" />
+                      <span className="text-[10px] font-bold text-stone-200">{language === 'ar' ? 'شهادة توثيق منصة الأعمال' : 'SBC Business Certificate'}</span>
+                      <span className="text-[9px] text-emerald-400/90 font-medium mt-0.5">{language === 'ar' ? 'انقر لاستعراض الوثيقة الرسمية' : 'Click to inspect document'}</span>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                    <span className="text-[10px] font-bold bg-emerald-500 text-stone-950 px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
+                      <Eye className="w-3 h-3" /> {language === 'ar' ? 'معاينة الشهادة' : 'Inspect Certificate'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="border-t border-stone-800 pt-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-400">
@@ -1219,23 +1316,23 @@ function MenuAndOrdersApp() {
                 href="https://luxcod.online" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 hover:from-amber-500/20 hover:to-amber-500/30 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 font-mono font-black text-xs px-3 py-1.5 rounded-xl transition-all shadow-xs group cursor-pointer"
+                className="inline-flex items-center gap-2.5 bg-gradient-to-r from-[#03162e] via-[#0a294f] to-[#03162e] hover:from-[#062042] hover:to-[#062042] border border-amber-400/60 hover:border-cyan-400 text-amber-300 font-mono font-black text-xs px-3.5 py-1.5 rounded-xl transition-all duration-300 shadow-[0_0_12px_rgba(245,158,11,0.15)] hover:shadow-[0_0_18px_rgba(6,182,212,0.35)] group cursor-pointer"
                 title="luxcod.online"
               >
                 {(businessSettings?.developerLogoUrl || '/luxcod-logo.jpg') ? (
                   <img 
                     src={businessSettings?.developerLogoUrl || '/luxcod-logo.jpg'} 
                     alt="luxcod.online" 
-                    className="w-5 h-5 object-cover rounded-md shrink-0 shadow-xs border border-amber-400/40 group-hover:scale-105 transition" 
+                    className="w-6 h-6 object-cover rounded-lg shrink-0 shadow-sm border border-amber-400/70 group-hover:border-cyan-400 group-hover:scale-110 transition duration-300" 
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="w-5 h-5 rounded-md bg-amber-500/20 flex items-center justify-center shrink-0 border border-amber-400/30 text-amber-300 group-hover:scale-105 transition">
-                    <Code2 className="w-3.5 h-3.5" />
+                  <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0 border border-amber-400/50 text-amber-300 group-hover:scale-110 transition">
+                    <Code2 className="w-4 h-4 text-cyan-400" />
                   </div>
                 )}
-                <span className="tracking-tight">luxcod.online</span>
-                <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100 transition" />
+                <span className="tracking-tight bg-gradient-to-r from-amber-300 via-amber-200 to-cyan-300 bg-clip-text text-transparent group-hover:from-amber-200 group-hover:to-cyan-200">luxcod.online</span>
+                <ExternalLink className="w-3.5 h-3.5 text-cyan-400/80 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition" />
               </a>
             </div>
 
@@ -1269,6 +1366,92 @@ function MenuAndOrdersApp() {
           setIsPrivacyOpen(false);
         }}
       />
+
+      {/* Official Certificate Lightbox Modal */}
+      {activeCertificateModal && (
+        <div className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-2xl w-full p-5 sm:p-6 text-stone-100 shadow-2xl relative flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center border border-amber-500/20 shrink-0">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div className="text-start">
+                  <h3 className="text-sm sm:text-base font-extrabold text-stone-100">
+                    {activeCertificateModal.title}
+                  </h3>
+                  <span className="text-xs font-mono text-amber-400">
+                    {language === 'ar' ? 'رقم التوثيق / الوثيقة: ' : 'Doc ID: '}{activeCertificateModal.number}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveCertificateModal(null)}
+                className="w-9 h-9 rounded-full bg-stone-800 text-stone-400 hover:text-white flex items-center justify-center hover:bg-stone-700 transition shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto bg-stone-950 rounded-2xl p-3 border border-stone-800 flex items-center justify-center min-h-[320px]">
+              {activeCertificateModal.url ? (
+                activeCertificateModal.url.startsWith('data:application/pdf') ? (
+                  <iframe
+                    src={activeCertificateModal.url}
+                    title={activeCertificateModal.title}
+                    className="w-full h-[60vh] rounded-xl border border-stone-800 bg-white"
+                  />
+                ) : (
+                  <img
+                    src={activeCertificateModal.url}
+                    alt={activeCertificateModal.title}
+                    className="max-h-[60vh] w-auto max-w-full object-contain rounded-xl shadow-lg"
+                  />
+                )
+              ) : (
+                <div className="text-center p-8 max-w-md space-y-3">
+                  <div className="w-16 h-16 rounded-3xl bg-amber-500/10 text-amber-400 mx-auto flex items-center justify-center border border-amber-500/20">
+                    <Award className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-sm font-bold text-stone-200">
+                    {activeCertificateModal.title}
+                  </h4>
+                  <p className="text-xs text-stone-400 leading-relaxed">
+                    {language === 'ar'
+                      ? `وثيقة رسمية رقم (${activeCertificateModal.number}) موثقة ومسجلة في النظام لـ ${businessSettings?.restaurantNameAr || 'رحلة شواء'}. يمكنك تحميل وثيقة جديدة بملف PDF أو صورة من لوحة التحكم.`
+                      : `Official certificate No (${activeCertificateModal.number}) registered for ${businessSettings?.restaurantNameEn || 'Rehla BBQ'}. You can upload a PDF or image in Admin Panel.`}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-stone-800 flex items-center justify-between">
+              {activeCertificateModal.url ? (
+                <a
+                  href={activeCertificateModal.url}
+                  download={`certificate_${activeCertificateModal.type}.pdf`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-bold bg-amber-500 text-stone-950 hover:bg-amber-400 px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-md"
+                >
+                  <Download className="w-4 h-4" />
+                  {language === 'ar' ? 'تحميل / فتح المستند الأصلي' : 'Download / View Full File'}
+                </a>
+              ) : (
+                <span className="text-[11px] text-stone-500 font-medium">
+                  {language === 'ar' ? 'شهادة رقمية موثقة' : 'Verified Digital Document'}
+                </span>
+              )}
+              <button
+                onClick={() => setActiveCertificateModal(null)}
+                className="text-xs font-bold bg-stone-800 text-stone-300 hover:bg-stone-700 px-4 py-2.5 rounded-xl transition"
+              >
+                {language === 'ar' ? 'إغلاق' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Standard PWA Install Promo Overlay */}
       <AnimatePresence>
