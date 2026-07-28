@@ -146,6 +146,11 @@ export interface BusinessSettings {
   telegramBotToken?: string;
   telegramChatId?: string;
   telegramBotEnabled?: boolean;
+  commercialRegistration?: string;
+  sbcNumber?: string;
+  sbcVerificationUrl?: string;
+  appVersion?: string;
+  developerLogoUrl?: string;
 }
 
 export interface Category {

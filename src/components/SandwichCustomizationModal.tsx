@@ -130,14 +130,17 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
 
   // Check if item is a sandwich (vs plates / dishes / portions)
   const isSandwich = 
-    nameArLower.includes('سندوتش') || 
-    nameArLower.includes('سندويش') || 
-    nameArLower.includes('صاروخ') || 
-    nameArLower.includes('صغير') ||
-    nameEnLower.includes('sandwich') || 
-    nameEnLower.includes('wrap') || 
-    nameEnLower.includes('sarookh') ||
-    ['s1', 's2', 's3', 'g6', 'g11', 'g12', 'g13'].includes(item.id);
+    (nameArLower.includes('سندوتش') || 
+     nameArLower.includes('سندويش') || 
+     nameArLower.includes('صاروخ') || 
+     nameArLower.includes('صغير') ||
+     nameEnLower.includes('sandwich') || 
+     nameEnLower.includes('wrap') || 
+     nameEnLower.includes('sarookh') ||
+     ['s1', 's2', 's3', 'g6', 'g11', 'g12', 'g13'].includes(item.id)) &&
+    !nameArLower.includes('صحن') &&
+    !nameArLower.includes('نفر') &&
+    !nameArLower.includes('كيلو');
 
   // Special check for BBQ Shawarma Meal (وجبة رحلة شواء)
   const isBbqMeal = item.id === 's3' || item.nameAr.includes('شاورما شواء وجبة') || item.nameAr.includes('وجبة رحلة شواء') || item.name === 'BBQ Shawarma Meal';
@@ -145,24 +148,27 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   // Sizing choices for this item
   const availableSizes = SIZE_UPGRADES_BY_ITEM[item.id] || [];
 
-  // Smart Prebuilt Notes based on item type
+  // Smart Prebuilt Notes based on item type - Only for Sandwiches and Fries, NEVER for plates/dishes (الصحون)
   const smartNotesList = isFries
     ? [
         { ar: 'بهارات', en: 'Spices', displayAr: 'بهارات مجانية', displayEn: 'Free Spices' },
         { ar: 'زيادة ملح', en: 'Extra Salt', displayAr: 'زيادة ملح', displayEn: 'Extra Salt' },
         { ar: 'ملح خفيف', en: 'Light Salt', displayAr: 'ملح خفيف', displayEn: 'Light Salt' }
       ]
-    : isShawarma 
-      ? [
-          { ar: 'بدون ثوم', en: 'No Garlic', displayAr: 'بدون ثوم', displayEn: 'No Garlic' },
-          { ar: 'بدون مخلل', en: 'No Pickles', displayAr: 'بدون مخلل', displayEn: 'No Pickles' },
-          { ar: 'بدون بطاطس', en: 'No Fries', displayAr: 'بدون بطاطس داخل السندوتش', displayEn: 'No Fries Inside' }
-        ]
-      : [
-          { ar: 'مع حمص', en: 'With Hummus', displayAr: 'مع حمص', displayEn: 'With Hummus' },
-          { ar: 'مع متبل', en: 'With Mutabbal', displayAr: 'مع متبل', displayEn: 'With Mutabbal' },
-          { ar: 'بدون بصل وبقدونس', en: 'No Onion & Parsley', displayAr: 'بدون بصل وبقدونس', displayEn: 'No Onion/Parsley' }
-        ];
+    : isSandwich
+      ? (isShawarma 
+          ? [
+              { ar: 'بدون ثوم', en: 'No Garlic', displayAr: 'بدون ثوم', displayEn: 'No Garlic' },
+              { ar: 'بدون مخلل', en: 'No Pickles', displayAr: 'بدون مخلل', displayEn: 'No Pickles' },
+              { ar: 'بدون بطاطس', en: 'No Fries', displayAr: 'بدون بطاطس داخل السندوتش', displayEn: 'No Fries Inside' }
+            ]
+          : [
+              { ar: 'مع حمص', en: 'With Hummus', displayAr: 'مع حمص', displayEn: 'With Hummus' },
+              { ar: 'مع متبل', en: 'With Mutabbal', displayAr: 'مع متبل', displayEn: 'With Mutabbal' },
+              { ar: 'بدون بصل وبقدونس', en: 'No Onion & Parsley', displayAr: 'بدون بصل وبقدونس', displayEn: 'No Onion/Parsley' },
+              { ar: 'بدون ثوم', en: 'No Garlic', displayAr: 'بدون ثوم', displayEn: 'No Garlic' }
+            ])
+      : [];
 
   // Dynamic Sauces from 'sauces' category in menuItems + Extra toppings
   const sauceCategoryItems = menuItems.filter(mi => mi.category === 'sauces' && mi.isAvailable !== false);
@@ -186,15 +192,6 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
         image: s.image
       }))
     : defaultSauceList;
-
-  // Additional toppings
-  const extraToppingsList = [
-    { id: 'top_cheese', nameAr: 'إضافة جبن', nameEn: 'Extra Cheese', price: 1 },
-    { id: 'top_garlic', nameAr: 'إضافة ثومية', nameEn: 'Garlic Sauce', price: 0 },
-    { id: 'top_ketchup', nameAr: 'كتشب', nameEn: 'Ketchup Portion', price: 0 },
-    { id: 'top_mayo', nameAr: 'مايونيز', nameEn: 'Mayonnaise Portion', price: 0 },
-    { id: 'top_molasses', nameAr: 'دبس الرمان', nameEn: 'Pomegranate Molasses', price: 1 }
-  ];
 
   const handleToggleNote = (noteAr: string) => {
     if (isFries) {
@@ -225,15 +222,27 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
     });
   };
 
+  const handleUpdateSodaQuantity = (id: string, delta: number) => {
+    setSodaQuantities(prev => {
+      const current = prev[id] || 0;
+      const next = Math.max(0, current + delta);
+      if (next === 0) {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [id]: next };
+    });
+  };
+
   // Compute calculated values
   const drinkPrice = (selectedDrink && !isBbqMeal) ? selectedDrink.price : 0;
   
   // Sizing upgrade difference
   const sizeDiff = selectedSize ? selectedSize.diff : 0;
   
-  // Soft drinks sum for group
+  // Soft drinks sum for group or custom items
   let sodasTotal = 0;
-  if (isSodasGroup) {
+  if (isSodasGroup || (!isBbqMeal && Object.keys(sodaQuantities).length > 0)) {
     sodasTotal = Object.entries(sodaQuantities).reduce((sum: number, [sodaId, qty]: [string, number]) => {
       const match = menuItems.find(m => m.id === sodaId);
       const pr = match ? match.price : 2.5;
@@ -242,7 +251,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   }
 
   // Calculate sum of selected sauces & additions
-  const saucesAndAddonsSum = [...availableSauces, ...extraToppingsList].reduce((sum, item) => {
+  const saucesAndAddonsSum = availableSauces.reduce((sum, item) => {
     const qty = addonQuantities[item.id] || 0;
     return sum + (qty * item.price);
   }, 0);
@@ -260,7 +269,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
     if (isAddButtonDisabled) return;
 
     const sodasFromMenu = menuItems.filter(mi => mi.category === 'drinks' && mi.id !== 'drinks-soft-group' && mi.id !== 'dr7' && mi.id !== 'dr8');
-    const selectedSoftDrinks = isSodasGroup
+    const selectedSoftDrinks = isSodasGroup || (!isBbqMeal && Object.keys(sodaQuantities).length > 0)
       ? sodasFromMenu
           .filter(s => (sodaQuantities[s.id] || 0) > 0)
           .map(s => ({
@@ -274,12 +283,12 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
 
     // Convert addonQuantities map to array
     const compiledAddons: { nameAr: string; nameEn: string; price: number; quantity: number }[] = [];
-    [...availableSauces, ...extraToppingsList].forEach(add => {
+    availableSauces.forEach(add => {
       const qty = addonQuantities[add.id] || 0;
       if (qty > 0) {
         compiledAddons.push({
           nameAr: add.nameAr,
-          nameEn: add.nameEn,
+          nameEn: add.nameEn || add.nameAr,
           price: add.price,
           quantity: qty
         });
@@ -484,43 +493,45 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                   </div>
                 )}
 
-                {/* 1. Smart notes/Quick triggers */}
-                <div className="space-y-3.5 text-start">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600">
-                      <Plus className="w-4.5 h-4.5" />
+                {/* 1. Smart notes/Quick triggers - Only for Sandwiches & Fries, hidden on Plates/Dishes */}
+                {smartNotesList.length > 0 && (
+                  <div className="space-y-3.5 text-start">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600">
+                        <Plus className="w-4.5 h-4.5" />
+                      </div>
+                      <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
+                        {language === 'ar' ? 'خيارات مجانية وملاحظات' : 'Free Preferences'}
+                      </h4>
                     </div>
-                    <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
-                      {language === 'ar' ? 'خيارات مجانية وملاحظات' : 'Free Preferences'}
-                    </h4>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                      {smartNotesList.map((note) => {
+                        const label = language === 'ar' ? note.displayAr : note.displayEn;
+                        const isSelected = selectedNotes.includes(note.ar);
+                        return (
+                          <motion.button
+                            key={note.ar}
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => handleToggleNote(note.ar)}
+                            className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start cursor-pointer active:scale-95 shadow-xs ${
+                              isSelected 
+                                ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold' 
+                                : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10'
+                            }`}
+                          >
+                            <span className="flex-1 text-start">{label}</span>
+                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0 ${
+                              isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
+                            }`}>
+                              {isSelected ? <Check className="w-3 h-3 stroke-[3]" /> : null}
+                            </div>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                    {smartNotesList.map((note) => {
-                      const label = language === 'ar' ? note.displayAr : note.displayEn;
-                      const isSelected = selectedNotes.includes(note.ar);
-                      return (
-                        <motion.button
-                          key={note.ar}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() => handleToggleNote(note.ar)}
-                          className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start cursor-pointer active:scale-95 shadow-xs ${
-                            isSelected 
-                              ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold' 
-                              : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10'
-                          }`}
-                        >
-                          <span className="flex-1 text-start">{label}</span>
-                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0 ${
-                            isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
-                          }`}>
-                            {isSelected ? <Check className="w-3 h-3 stroke-[3]" /> : null}
-                          </div>
-                        </motion.button>
-                      );
-                    })}
-                  </div>
-                </div>
+                )}
 
                 {/* 2. Sauces & Extra Addons with Individual Quantity Controls - Only for Sandwiches */}
                 {isSandwich && (
@@ -615,65 +626,6 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                           );
                         })}
                       </div>
-
-                      {/* Section B: Additional Toppings */}
-                      <div className="text-xs font-extrabold text-stone-800 bg-stone-100 px-3 py-1.5 rounded-xl border border-black/5 flex items-center gap-1.5 mt-3">
-                        <span>{language === 'ar' ? 'إضافات طعام أخرى:' : 'Extra Toppings:'}</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-2.5">
-                        {extraToppingsList.map((top) => {
-                          const qty = addonQuantities[top.id] || 0;
-                          const topName = language === 'ar' ? top.nameAr : top.nameEn;
-                          
-                          return (
-                            <div
-                              key={top.id}
-                              className={`p-3 rounded-2xl border transition-all flex items-center justify-between text-start ${
-                                qty > 0 
-                                  ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-xs' 
-                                  : 'bg-stone-50 hover:bg-stone-100/80 border-black/5'
-                              }`}
-                            >
-                              <div className="text-start pr-1">
-                                <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{topName}</span>
-                                <span className="text-[11px] font-bold text-amber-700 font-mono">
-                                  {top.price > 0 ? `+${top.price.toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}` : (language === 'ar' ? 'مجاني' : 'Free')}
-                                </span>
-                              </div>
-
-                              {/* Quantity Controls */}
-                              <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs">
-                                {qty > 0 ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUpdateAddonQuantity(top.id, -1)}
-                                      className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
-                                    >
-                                      <Minus className="w-3 h-3" />
-                                    </button>
-                                    <span className="w-6 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
-                                  </>
-                                ) : null}
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateAddonQuantity(top.id, 1)}
-                                  className={`h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
-                                    qty > 0 
-                                      ? 'bg-amber-500 text-white hover:bg-amber-600' 
-                                      : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
-                                  }`}
-                                >
-                                  <Plus className="w-3 h-3" />
-                                  {qty === 0 && <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
                     </div>
                   </div>
                 )}
@@ -685,107 +637,180 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                       <div className="flex items-center gap-2">
                         <span className="text-xl">🥤</span>
                         <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
-                          {language === 'ar' ? 'اختر المشروب الغازي المصاحب' : 'Select Accompanying Soft Drink'}
+                          {isBbqMeal
+                            ? (language === 'ar' ? 'اختر المشروب المجاني مع الوجبة' : 'Select Free Soft Drink')
+                            : (language === 'ar' ? 'اختر المشروبات الغازية (تحديد العدد)' : 'Select Soft Drinks (With Quantity)')}
                         </h4>
                       </div>
                       <span className="text-[11px] sm:text-xs text-stone-500 font-bold whitespace-nowrap bg-stone-100 px-2.5 py-1 rounded-full border border-black/5">
                         {isBbqMeal 
                           ? (language === 'ar' ? 'مشروب مجاني مع الوجبة 🎁' : 'Free Drink with Meal 🎁')
-                          : (language === 'ar' ? 'اختياري' : 'Optional')}
+                          : (language === 'ar' ? 'اختياري بالعدد' : 'Optional Multi-Select')}
                       </span>
                     </div>
 
                     {isBbqMeal ? (
-                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 font-extrabold text-xs sm:text-sm">
-                        <span>
-                          {language === 'ar' 
-                            ? 'وجبة رحلة شواء تتضمن مشروب غازي واحد مجاناً مع الوجبة!' 
-                            : 'BBQ Shawarma Meal includes 1 free soft drink with your order!'}
-                        </span>
-                      </div>
-                    ) : null}
-                    
-                    <p className="text-xs sm:text-sm text-stone-500 text-start leading-normal pl-1">
-                      {language === 'ar' ? 'اختر مشروبك المفضل مع الوجبة:' : 'Select your favorite soft drink:'}
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                      {/* Option for No Drink */}
-                      <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => setSelectedDrink(null)}
-                        className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start cursor-pointer active:scale-95 shadow-xs ${
-                          selectedDrink === null
-                            ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold'
-                            : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10'
-                        }`}
-                      >
-                        <span className="flex-1 text-start">{language === 'ar' ? '❌ بدون مشروب' : '❌ No Drink'}</span>
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0 ${
-                          selectedDrink === null ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
-                        }`}>
-                          {selectedDrink === null ? <Check className="w-3 h-3 stroke-[3]" /> : null}
+                      <>
+                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 font-extrabold text-xs sm:text-sm">
+                          <span>
+                            {language === 'ar' 
+                              ? 'وجبة رحلة شواء تتضمن مشروب غازي واحد مجاناً مع الوجبة!' 
+                              : 'BBQ Shawarma Meal includes 1 free soft drink with your order!'}
+                          </span>
                         </div>
-                      </motion.button>
+                        
+                        <p className="text-xs sm:text-sm text-stone-500 text-start leading-normal pl-1">
+                          {language === 'ar' ? 'اختر مشروبك المفضل مع الوجبة:' : 'Select your favorite soft drink:'}
+                        </p>
 
-                      {/* Dynamic Drinks from menuItems */}
-                      {menuItems
-                        .filter(mi => mi.category === 'drinks' && mi.id !== 'drinks-soft-group' && mi.id !== 'dr7' && mi.id !== 'dr8')
-                        .map((drink) => {
-                          const drinkLabel = language === 'ar' ? drink.nameAr : drink.name;
-                          const isSelected = selectedDrink?.id === drink.id;
-                          const isDrinkAvailable = drink.isAvailable !== false;
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                          {/* Option for No Drink */}
+                          <motion.button
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => setSelectedDrink(null)}
+                            className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start cursor-pointer active:scale-95 shadow-xs ${
+                              selectedDrink === null
+                                ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold'
+                                : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10'
+                            }`}
+                          >
+                            <span className="flex-1 text-start">{language === 'ar' ? '❌ بدون مشروب' : '❌ No Drink'}</span>
+                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0 ${
+                              selectedDrink === null ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
+                            }`}>
+                              {selectedDrink === null ? <Check className="w-3 h-3 stroke-[3]" /> : null}
+                            </div>
+                          </motion.button>
 
-                          return (
-                            <motion.button
-                              key={drink.id}
-                              disabled={!isDrinkAvailable}
-                              whileTap={isDrinkAvailable ? { scale: 0.97 } : undefined}
-                              onClick={() => {
-                                if (isDrinkAvailable) {
-                                  setSelectedDrink({
-                                    id: drink.id,
-                                    nameAr: drink.nameAr,
-                                    nameEn: drink.name,
-                                    price: drink.price
-                                  });
-                                }
-                              }}
-                              className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start shadow-xs relative ${
-                                !isDrinkAvailable
-                                  ? 'bg-stone-100 border-stone-200 text-stone-400 opacity-65 cursor-not-allowed'
-                                  : isSelected
-                                  ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold cursor-pointer active:scale-95'
-                                  : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10 cursor-pointer active:scale-95'
-                              }`}
-                            >
-                              <div className="flex flex-col text-start flex-1 pr-2">
-                                <span>{drinkLabel}</span>
-                                <span className={`text-[10px] font-extrabold ${isBbqMeal ? 'text-emerald-600 font-bold' : 'text-stone-500'}`}>
-                                  {isBbqMeal 
-                                    ? (language === 'ar' ? '🎁 مجاني مع وجبة رحلة شواء' : 'Free with BBQ Meal') 
-                                    : `+${drink.price}.0 ${language === 'ar' ? 'ريال' : 'SAR'}`}
-                                </span>
-                              </div>
-                              
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {!isDrinkAvailable && (
-                                  <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md">
-                                    {language === 'ar' ? 'غير متوفر' : 'Unavailable'}
-                                  </span>
-                                )}
-                                {isDrinkAvailable && (
-                                  <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
-                                    isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
-                                  }`}>
-                                    {isSelected ? <Check className="w-3 h-3 stroke-[3]" /> : null}
+                          {/* Dynamic Drinks from menuItems */}
+                          {menuItems
+                            .filter(mi => mi.category === 'drinks' && mi.id !== 'drinks-soft-group' && mi.id !== 'dr7' && mi.id !== 'dr8')
+                            .map((drink) => {
+                              const drinkLabel = language === 'ar' ? drink.nameAr : drink.name;
+                              const isSelected = selectedDrink?.id === drink.id;
+                              const isDrinkAvailable = drink.isAvailable !== false;
+
+                              return (
+                                <motion.button
+                                  key={drink.id}
+                                  disabled={!isDrinkAvailable}
+                                  whileTap={isDrinkAvailable ? { scale: 0.97 } : undefined}
+                                  onClick={() => {
+                                    if (isDrinkAvailable) {
+                                      setSelectedDrink({
+                                        id: drink.id,
+                                        nameAr: drink.nameAr,
+                                        nameEn: drink.name,
+                                        price: drink.price
+                                      });
+                                    }
+                                  }}
+                                  className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start shadow-xs relative ${
+                                    !isDrinkAvailable
+                                      ? 'bg-stone-100 border-stone-200 text-stone-400 opacity-65 cursor-not-allowed'
+                                      : isSelected
+                                      ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold cursor-pointer active:scale-95'
+                                      : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10 cursor-pointer active:scale-95'
+                                  }`}
+                                >
+                                  <div className="flex flex-col text-start flex-1 pr-2">
+                                    <span>{drinkLabel}</span>
+                                    <span className="text-[10px] font-extrabold text-emerald-600 font-bold">
+                                      {language === 'ar' ? '🎁 مجاني مع وجبة رحلة شواء' : 'Free with BBQ Meal'}
+                                    </span>
                                   </div>
-                                )}
-                              </div>
-                            </motion.button>
-                          );
-                        })}
-                    </div>
+                                  
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {!isDrinkAvailable && (
+                                      <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                                        {language === 'ar' ? 'غير متوفر' : 'Unavailable'}
+                                      </span>
+                                    )}
+                                    {isDrinkAvailable && (
+                                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                                        isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
+                                      }`}>
+                                        {isSelected ? <Check className="w-3 h-3 stroke-[3]" /> : null}
+                                      </div>
+                                    )}
+                                  </div>
+                                </motion.button>
+                              );
+                            })}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs sm:text-sm text-stone-500 text-start leading-normal pl-1">
+                          {language === 'ar' ? 'اختر المشروبات وحدد العدد لكل منها:' : 'Click on drinks to choose quantity:'}
+                        </p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                          {menuItems
+                            .filter(mi => mi.category === 'drinks' && mi.id !== 'drinks-soft-group' && mi.id !== 'dr7' && mi.id !== 'dr8')
+                            .map((drink) => {
+                              const drinkLabel = language === 'ar' ? drink.nameAr : drink.name;
+                              const qty = sodaQuantities[drink.id] || 0;
+                              const isDrinkAvailable = drink.isAvailable !== false;
+
+                              return (
+                                <div
+                                  key={drink.id}
+                                  className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start shadow-xs relative ${
+                                    !isDrinkAvailable
+                                      ? 'bg-stone-100 border-stone-200 text-stone-400 opacity-65'
+                                      : qty > 0
+                                      ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-2 ring-amber-500/20 font-extrabold'
+                                      : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700'
+                                  }`}
+                                >
+                                  <div className="flex flex-col text-start flex-1 pr-2">
+                                    <span>{drinkLabel}</span>
+                                    <span className="text-[10px] font-extrabold text-stone-500">
+                                      +{drink.price}.0 {language === 'ar' ? 'ريال' : 'SAR'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {!isDrinkAvailable ? (
+                                      <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                                        {language === 'ar' ? 'غير متوفر' : 'Unavailable'}
+                                      </span>
+                                    ) : (
+                                      <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs">
+                                        {qty > 0 && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUpdateSodaQuantity(drink.id, -1)}
+                                              className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
+                                            >
+                                              <Minus className="w-3 h-3" />
+                                            </button>
+                                            <span className="w-5 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
+                                          </>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateSodaQuantity(drink.id, 1)}
+                                          className={`h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
+                                            qty > 0 
+                                              ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                                              : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
+                                          }`}
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                          {qty === 0 && <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </>

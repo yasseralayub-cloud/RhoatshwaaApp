@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, MapPin, Loader2, Navigation, AlertCircle } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
+import { getHighAccuracyLocation } from '../utils/geolocation';
 
 interface MapPickerProps {
   latitude?: number;
@@ -457,56 +458,33 @@ export default function MapPicker({ latitude, longitude, onChange, onAddressSele
   };
 
   const handleLocateMe = () => {
-    if (!navigator.geolocation) {
-      alert(language === 'ar' ? 'تحديد الموقع غير مدعوم في هذا المتصفح' : 'Geolocation is not supported by this browser');
-      return;
-    }
     setLocating(true);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        setLocalLat(lat);
-        setLocalLng(lng);
-        onChange(lat, lng);
-        fetchAddress(lat, lng);
+    getHighAccuracyLocation(
+      (result) => {
+        setLocalLat(result.latitude);
+        setLocalLng(result.longitude);
+        onChange(result.latitude, result.longitude);
+        fetchAddress(result.latitude, result.longitude);
         setLocating(false);
       },
-      (error) => {
-        console.warn('Locate me high-accuracy error, trying low-accuracy fallback:', error);
+      (error: any) => {
+        console.warn('High accuracy geolocation error:', error);
+        setLocating(false);
         if (error.code === 1) { // PERMISSION_DENIED
-          setLocating(false);
           alert(
             language === 'ar'
-              ? 'تنبيه لأجهزة الآيفون: يرجى الذهاب إلى الإعدادات ثم الخصوصية والأمن ثم خدمات الموقع، وتأكد من تفعيل خدمات الموقع والسماح لمتصفحك بالوصول للموقع، أو يمكنك البحث عن موقعك يدوياً.'
-              : 'For iPhone & iOS users: Please go to Settings then Privacy & Security then Location Services, ensure they are enabled, and allow your browser to access your location, or search manually.'
+              ? 'تنبيه: يرجى تفعيل إذونات الموقع في إعدادات متصفحك للوصول لموقعك بدقة، أو ابحث باسم الحي يدوياً.'
+              : 'For iPhone & iOS users: Please enable location permissions in browser settings, or search manually.'
           );
         } else {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const lat = position.coords.latitude;
-              const lng = position.coords.longitude;
-              setLocalLat(lat);
-              setLocalLng(lng);
-              onChange(lat, lng);
-              fetchAddress(lat, lng);
-              setLocating(false);
-            },
-            (fallbackErr) => {
-              console.error('All locate attempts failed:', fallbackErr);
-              setLocating(false);
-              alert(
-                language === 'ar'
-                  ? 'تعذر تحديد موقعك تلقائياً. يرجى البحث بكتابة اسم الحي في خانة البحث بالأعلى، أو لصق رابط قوقل ماب.'
-                  : 'Unable to locate you automatically. Please type your neighborhood name in the search bar above, or paste a Google Maps link.'
-              );
-            },
-            { enableHighAccuracy: false, timeout: 12000, maximumAge: 30000 }
+          alert(
+            language === 'ar'
+              ? 'تعذر تحديد موقعك بدقة تلقائياً. يرجى البحث بكتابة اسم الحي في خانة البحث بالأعلى، أو تحريك الخريطة لتحديد المنزل.'
+              : 'Unable to locate you accurately. Please type neighborhood name or drag the map pin.'
           );
         }
-      },
-      { enableHighAccuracy: true, timeout: 4500, maximumAge: 10000 }
+      }
     );
   };
 

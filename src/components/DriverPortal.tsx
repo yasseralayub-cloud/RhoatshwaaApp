@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import InteractiveOrderMap from './InteractiveOrderMap';
 import { db } from '../firebase';
 import { collection, onSnapshot, doc, updateDoc, addDoc, query, where, orderBy, deleteDoc } from 'firebase/firestore';
 import { Order, Driver } from '../types';
@@ -1983,32 +1984,18 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
                         </div>
                       )}
 
-                      {/* OSM Iframe Embed */}
-                      <div className="relative aspect-video w-full rounded-3xl overflow-hidden border border-black/5 shadow-xs bg-neutral-100">
-                        {coords ? (
-                          <iframe
-                            title="OSM Live Tracker"
-                            width="100%"
-                            height="100%"
-                            frameBorder="0"
-                            scrolling="no"
-                            marginHeight={0}
-                            marginWidth={0}
-                            src={`https://www.openstreetmap.org/export/embed.html?bbox=${coords.lng - 0.015}%2C${coords.lat - 0.015}%2C${coords.lng + 0.015}%2C${coords.lat + 0.015}&layer=mapnik&marker=${coords.lat}%2C${coords.lng}`}
-                            className="absolute inset-0"
-                          />
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center text-dark/40 font-bold text-xs">
-                            {isAr ? 'جاري تحديد موقعك الجغرافي...' : 'Awaiting GPS coordinates...'}
-                          </div>
-                        )}
-                        
-                        {/* Live Overlay Beacon */}
-                        <div className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-xs text-white text-[9.5px] px-3 py-1.5 rounded-full font-mono font-black flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                          <span>{isAr ? 'البث المباشر للموقع: نشط' : 'GPS TRANSMITTING LIVE'}</span>
-                        </div>
-                      </div>
+                      {/* Interactive Map Component */}
+                      <InteractiveOrderMap
+                        customerLat={activeDeliveries[0]?.latitude}
+                        customerLng={activeDeliveries[0]?.longitude}
+                        customerAddress={activeDeliveries[0]?.deliveryAddress}
+                        driverLat={coords?.lat}
+                        driverLng={coords?.lng}
+                        driverName={selectedDriver?.name}
+                        driverPhone={selectedDriver?.phone}
+                        orderStatus={activeDeliveries[0]?.status || 'on_the_way'}
+                        language={isAr ? 'ar' : 'en'}
+                      />
 
                       {/* Navigation hints */}
                       <div className="bg-neutral-50 rounded-2xl p-4 border border-black/5 text-start text-[11px] leading-relaxed text-dark/60 space-y-1">

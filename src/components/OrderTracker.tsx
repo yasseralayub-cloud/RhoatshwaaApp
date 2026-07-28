@@ -15,6 +15,7 @@ interface OrderTrackerProps {
 import { generateZatcaQr } from '../utils/time';
 import { ZatcaFatooraCard } from './ZatcaFatooraCard';
 import { normalizePhone, phonesMatch, getPhoneVariants } from '../utils/phone';
+import InteractiveOrderMap from './InteractiveOrderMap';
 
 export const OrderTracker: React.FC<OrderTrackerProps> = ({ 
   initialOrderId = '', 
@@ -98,37 +99,35 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Subscribe to real-time driver coordinates from Firestore if order has an assigned driver and is in transit
+  // Subscribe to real-time driver coordinates from Firestore if order has an assigned driver
   useEffect(() => {
-    if (!order || !order.driverId || order.driverId === 'broadcast' || order.tableOrDelivery !== 'delivery') {
+    if (!order || order.tableOrDelivery !== 'delivery') {
       setDriverCoords(null);
       return;
     }
 
-    // Live tracking is active for preparing, ready, driver_assigned, driver_picked_up, and on_the_way statuses
-    const activeStatuses = ['preparing', 'ready', 'driver_assigned', 'driver_picked_up', 'on_the_way'];
-    if (!activeStatuses.includes(order.status)) {
-      setDriverCoords(null);
-      return;
-    }
-
-    const unsubDriver = onSnapshot(
-      doc(db, 'drivers', order.driverId),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (data && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
-            setDriverCoords({ lat: data.latitude, lng: data.longitude });
+    if (order.driverId && order.driverId !== 'broadcast') {
+      const unsubDriver = onSnapshot(
+        doc(db, 'drivers', order.driverId),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            if (data && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+              setDriverCoords({ lat: data.latitude, lng: data.longitude });
+            }
           }
+        },
+        (error) => {
+          console.warn('Could not subscribe to driver location updates:', error);
         }
-      },
-      (error) => {
-        console.warn('Could not subscribe to driver location updates:', error);
-      }
-    );
-
-    return () => unsubDriver();
-  }, [order?.driverId, order?.status, order?.tableOrDelivery]);
+      );
+      return () => unsubDriver();
+    } else if ((order as any)?.driverLat && (order as any)?.driverLng) {
+      setDriverCoords({ lat: (order as any).driverLat, lng: (order as any).driverLng });
+    } else {
+      setDriverCoords(null);
+    }
+  }, [order?.driverId, order?.status, order?.tableOrDelivery, (order as any)?.driverLat, (order as any)?.driverLng]);
 
   // Active ticking countdown effect to maintain accuracy of grace period
   useEffect(() => {
@@ -1122,74 +1121,74 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
               </div>
             )}
 
-            {/* Driver Assigned Card Info */}
-            {order.tableOrDelivery === 'delivery' && order.driverName && order.driverId !== 'broadcast' && (
-              <div className="bg-neutral-50 border border-black/5 rounded-3xl p-4.5 space-y-3.5 text-start shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">
-                    {language === 'ar' ? '🚴 مندوب التوصيل المكلف بالطلب:' : '🚴 Assigned Delivery Driver:'}
-                  </span>
-                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
-                    order.status === 'delivered' 
-                      ? 'bg-green-500/10 text-green-700' 
-                      : order.status === 'on_the_way'
-                      ? 'bg-blue-500/10 text-blue-700 animate-pulse'
-                      : order.status === 'driver_picked_up'
-                      ? 'bg-amber-500/10 text-amber-700 animate-pulse'
-                      : 'bg-yellow/15 text-yellow-800 animate-pulse'
-                  }`}>
-                    {getDriverStatusLabel(order.status)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-full bg-yellow/15 flex items-center justify-center shrink-0">
-                      <User className="w-5 h-5 text-yellow-750" />
+            {/* Delivery Live Tracking Map Section (Always rendered for delivery orders) */}
+            {order.tableOrDelivery === 'delivery' && (
+              <div className="bg-stone-50 border border-stone-200/80 rounded-3xl p-4 sm:p-5 space-y-4 text-start shadow-2xs">
+                {/* Driver Assigned Card Info */}
+                {order.driverName && order.driverId !== 'broadcast' ? (
+                  <div className="bg-white border border-stone-200 rounded-2xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-dark/50 uppercase tracking-wider">
+                        {language === 'ar' ? '🚴 مندوب التوصيل المكلف بالطلب:' : '🚴 Assigned Delivery Driver:'}
+                      </span>
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                        order.status === 'delivered' 
+                          ? 'bg-green-500/10 text-green-700' 
+                          : order.status === 'on_the_way'
+                          ? 'bg-blue-500/10 text-blue-700 animate-pulse'
+                          : order.status === 'driver_picked_up'
+                          ? 'bg-amber-500/10 text-amber-700 animate-pulse'
+                          : 'bg-yellow/15 text-yellow-800 animate-pulse'
+                      }`}>
+                        {getDriverStatusLabel(order.status)}
+                      </span>
                     </div>
-                    <div>
-                      <h4 className="font-extrabold text-sm text-dark">{order.driverName}</h4>
-                      <p className="font-mono text-xs text-dark/60 font-semibold mt-0.5">{order.driverPhone}</p>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center shrink-0">
+                          <User className="w-5 h-5 text-amber-700" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-sm text-stone-900">{order.driverName}</h4>
+                          <p className="font-mono text-xs text-stone-500 font-semibold mt-0.5">{order.driverPhone}</p>
+                        </div>
+                      </div>
+                      {order.driverPhone && (
+                        <a
+                          href={`tel:${order.driverPhone}`}
+                          className="bg-amber-500 hover:bg-amber-600 text-stone-950 font-extrabold text-xs px-3.5 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>{language === 'ar' ? 'اتصال بالمندوب' : 'Call'}</span>
+                        </a>
+                      )}
                     </div>
                   </div>
-                  {order.driverPhone && (
-                    <a
-                      href={`tel:${order.driverPhone}`}
-                      className="bg-yellow hover:bg-yellow/90 text-black font-extrabold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                      <span>{language === 'ar' ? 'اتصال بالمندوب' : 'Call'}</span>
-                    </a>
-                  )}
-                </div>
-
-                {/* Driver Live Tracking Map */}
-                {driverCoords && (
-                  <div className="space-y-2 pt-3 border-t border-black/5">
-                    <span className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block">
-                      {language === 'ar' ? '📍 موقع المندوب المباشر (تتبع حي):' : '📍 Live Driver Position (Real-Time Tracking):'}
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3 text-amber-900 text-xs font-bold flex items-center gap-2">
+                    <span className="text-base animate-pulse">🚚</span>
+                    <span>
+                      {language === 'ar'
+                        ? 'جاري تجهيز طلبك بالمطعم وتعيين المندوب، وقريباً ستظهر حركته المباشرة على الخريطة'
+                        : 'Your order is being prepared and a driver will be assigned shortly for real-time tracking.'}
                     </span>
-                    <div className="relative aspect-video w-full rounded-2xl overflow-hidden border border-black/5 shadow-xs bg-neutral-100">
-                      <iframe
-                        title="Driver Live Tracking"
-                        width="100%"
-                        height="100%"
-                        style={{ border: 0 }}
-                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${driverCoords.lng - 0.008}%2C${driverCoords.lat - 0.008}%2C${driverCoords.lng + 0.008}%2C${driverCoords.lat + 0.008}&layer=mapnik&marker=${driverCoords.lat}%2C${driverCoords.lng}`}
-                      />
-                    </div>
-                    <div className="text-[10px] text-emerald-600 font-bold flex items-center gap-1.5 bg-emerald-500/5 p-2 rounded-xl border border-emerald-500/10 justify-center">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                      </span>
-                      <span>
-                        {language === 'ar' 
-                          ? 'يتلقى التطبيق الآن إحداثيات المندوب مباشرة كل 10 ثوانٍ' 
-                          : 'Receiving live driver coordinates from GPS every 10 seconds'}
-                      </span>
-                    </div>
                   </div>
                 )}
+
+                {/* Interactive Map */}
+                <InteractiveOrderMap
+                  customerLat={order.latitude}
+                  customerLng={order.longitude}
+                  customerAddress={order.deliveryAddress}
+                  driverLat={driverCoords?.lat || (order as any).driverLat}
+                  driverLng={driverCoords?.lng || (order as any).driverLng}
+                  driverName={order.driverName}
+                  driverPhone={order.driverPhone}
+                  orderStatus={order.status}
+                  restaurantNameAr={businessSettings?.restaurantNameAr}
+                  restaurantNameEn={businessSettings?.restaurantNameEn}
+                  language={language}
+                />
               </div>
             )}
 

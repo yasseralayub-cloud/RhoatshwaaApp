@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { isRestaurantOpen, formatTime12h } from '../utils/time';
 import MapPicker from './MapPicker';
 import { normalizePhone, getPhoneVariants, phonesMatch } from '../utils/phone';
+import { getHighAccuracyLocation } from '../utils/geolocation';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -466,24 +467,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   }, [tableOrDelivery]);
 
   const handleGetLocation = () => {
-    if (!navigator.geolocation) {
-      alert(language === 'ar' ? 'خدمة تحديد الموقع غير مدعومة في متصفحك' : 'Geolocation is not supported by your browser');
-      return;
-    }
     setLocating(true);
     setLocSuccess(false);
 
-    // Try high accuracy first, fall back to low accuracy for faster/indoor cellular lock
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+    getHighAccuracyLocation(
+      (result) => {
+        const lat = result.latitude;
+        const lng = result.longitude;
         setLatitude(lat);
         setLongitude(lng);
         setLocating(false);
         setLocSuccess(true);
         
-        // Auto-populate delivery address with Google Maps link as a fallback
         const mapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
         const fallbackAddress = language === 'ar' ? `الموقع المحدد: ${mapsLink}` : `Selected Location: ${mapsLink}`;
         setDeliveryAddress(fallbackAddress);
@@ -504,40 +499,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             console.error("Failed to reverse-geocode GPS coordinates:", err);
           });
       },
-      (error) => {
-        console.warn("High accuracy GPS failed or timed out, trying low-accuracy network fallback...", error);
-        
-        // If it's a permission denied error, or if fallback fails too, show iOS helper instructions
+      (error: any) => {
+        console.warn("High accuracy GPS error:", error);
+        setLocating(false);
         if (error.code === 1) { // PERMISSION_DENIED
-          setLocating(false);
           alert(language === 'ar' 
-            ? 'لأجهزة الآيفون والـ iOS:\nيرجى الذهاب إلى الإعدادات ⚙️ -> الخصوصية والأمن -> خدمات الموقع، وتأكد من تفعيلها والسماح لمتصفحك (سافاري أو كروم) بالوصول للموقع أثناء استخدام التطبيق.'
-            : 'For iPhone & iOS users:\nPlease go to Settings ⚙️ -> Privacy & Security -> Location Services, ensure they are enabled, and allow your browser (Safari/Chrome) to access your location.');
+            ? 'يرجى تفعيل خدمات الموقع وسماح المتصفح بالوصول لموقعك للحصول على الدقة العالية.'
+            : 'Please enable location permissions in browser settings for accurate positioning.');
         } else {
-          // Low-accuracy fallback
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const lat = position.coords.latitude;
-              const lng = position.coords.longitude;
-              setLatitude(lat);
-              setLongitude(lng);
-              setLocating(false);
-              setLocSuccess(true);
-              const mapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
-              setDeliveryAddress(language === 'ar' ? `الموقع المحدد: ${mapsLink}` : `Selected Location: ${mapsLink}`);
-            },
-            (fallbackErr) => {
-              console.error("All geolocation attempts failed:", fallbackErr);
-              setLocating(false);
-              alert(language === 'ar' 
-                ? 'فشل تحديد الموقع. للتفعيل على الآيفون: الإعدادات ⚙️ -> الخصوصية -> خدمات الموقع، وتأكد من السماح لمتصفحك بالوصول للموقع، أو أدخل عنوانك يدوياً بالأسفل.' 
-                : 'Failed to locate. To fix on iPhone: Settings ⚙️ -> Privacy -> Location Services, verify browser access is allowed, or type your address manually below.');
-            },
-            { enableHighAccuracy: false, timeout: 12000, maximumAge: 30000 }
-          );
+          alert(language === 'ar' 
+            ? 'تعذر جلب الموقع بدقة تلقائياً. يمكنك اختيار الموقع يدوياً عبر الخريطة بالأسفل.' 
+            : 'Unable to pinpoint position. Please pick your address on the map below.');
         }
-      },
-      { enableHighAccuracy: true, timeout: 4500, maximumAge: 10000 }
+      }
     );
   };
   
@@ -564,7 +538,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     const sizeDiff = current.customizations?.selectedSize ? current.customizations.selectedSize.diff : 0;
     
     let sodasTotal = 0;
-    if (current.item.id === 'drinks-soft-group' && current.customizations?.selectedSoftDrinks) {
+    if (current.customizations?.selectedSoftDrinks) {
       sodasTotal = current.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
     }
     
@@ -717,7 +691,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       
       const sizeDiff = c.customizations?.selectedSize ? c.customizations.selectedSize.diff : 0;
       let sodasTotal = 0;
-      if (c.item.id === 'drinks-soft-group' && c.customizations?.selectedSoftDrinks) {
+      if (c.customizations?.selectedSoftDrinks) {
         sodasTotal = c.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
       }
       
@@ -1021,7 +995,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   
                   const sizeDiff = c.customizations?.selectedSize ? c.customizations.selectedSize.diff : 0;
                   let sodasTotal = 0;
-                  if (item.id === 'drinks-soft-group' && c.customizations?.selectedSoftDrinks) {
+                  if (c.customizations?.selectedSoftDrinks) {
                     sodasTotal = c.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
                   }
                   

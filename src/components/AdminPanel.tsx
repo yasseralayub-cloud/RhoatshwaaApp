@@ -331,6 +331,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [telegramChatId, setTelegramChatId] = useState('');
   const [telegramBotEnabled, setTelegramBotEnabled] = useState(false);
 
+  // Business accreditation & developer attribution variables
+  const [commercialRegistration, setCommercialRegistration] = useState('1010789456');
+  const [sbcNumber, setSbcNumber] = useState('0000084721');
+  const [sbcVerificationUrl, setSbcVerificationUrl] = useState('https://sbc.gov.sa');
+  const [appVersion, setAppVersion] = useState('v1.0.0');
+  const [developerLogoUrl, setDeveloperLogoUrl] = useState('/luxcod-logo.jpg');
+
   // Bank transfer state variables
   const [bankNameAr, setBankNameAr] = useState('مصرف الراجحي');
   const [bankNameEn, setBankNameEn] = useState('Al Rajhi Bank');
@@ -565,6 +572,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setKitchenPrinterIp(businessSettings.kitchenPrinterIp || 'localhost');
       setKitchenPrinterPort(businessSettings.kitchenPrinterPort ?? 12212);
       setPrintRoutingMode(businessSettings.printRoutingMode || 'unified');
+      setCommercialRegistration(businessSettings.commercialRegistration || '1010789456');
+      setSbcNumber(businessSettings.sbcNumber || '0000084721');
+      setSbcVerificationUrl(businessSettings.sbcVerificationUrl || 'https://sbc.gov.sa');
+      setAppVersion(businessSettings.appVersion || 'v1.0.0');
+      setDeveloperLogoUrl(businessSettings.developerLogoUrl || '/luxcod-logo.jpg');
     }
   }, [businessSettings]);
 
@@ -626,7 +638,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onlinePaymentMerchantId: onlinePaymentMerchantId,
       telegramBotToken: telegramBotToken,
       telegramChatId: telegramChatId,
-      telegramBotEnabled: telegramBotEnabled
+      telegramBotEnabled: telegramBotEnabled,
+      commercialRegistration: commercialRegistration,
+      sbcNumber: sbcNumber,
+      sbcVerificationUrl: sbcVerificationUrl,
+      appVersion: appVersion,
+      developerLogoUrl: developerLogoUrl
     };
 
     if (onSettingsUpdate) {
@@ -3786,6 +3803,76 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 value={setVatNumber}
                 onChange={(e) => setSetVatNumber(e.target.value)}
                 className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono font-bold"
+              />
+            </div>
+
+            {/* Commercial Registration Number */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                {language === 'ar' ? 'رقم السجل التجاري' : 'Commercial Registration No (CR)'}
+              </label>
+              <input
+                type="text"
+                value={commercialRegistration}
+                onChange={(e) => setCommercialRegistration(e.target.value)}
+                placeholder="1010789456"
+                className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono font-bold"
+              />
+            </div>
+
+            {/* Saudi Business Center Number */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                {language === 'ar' ? 'رقم التوثيق بمركز الأعمال السعودي (SBC)' : 'Saudi Business Center (SBC) ID'}
+              </label>
+              <input
+                type="text"
+                value={sbcNumber}
+                onChange={(e) => setSbcNumber(e.target.value)}
+                placeholder="0000084721"
+                className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono font-bold"
+              />
+            </div>
+
+            {/* Saudi Business Center Verification URL */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                {language === 'ar' ? 'رابط صفحة الاعتماد والتوثيق بمركز الأعمال' : 'SBC Verification Link'}
+              </label>
+              <input
+                type="url"
+                value={sbcVerificationUrl}
+                onChange={(e) => setSbcVerificationUrl(e.target.value)}
+                placeholder="https://sbc.gov.sa"
+                className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono text-slate-600"
+              />
+            </div>
+
+            {/* Application Version */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                {language === 'ar' ? 'رقم إصدار تطبيق رحلة شواء' : 'Rehla BBQ App Version'}
+              </label>
+              <input
+                type="text"
+                value={appVersion}
+                onChange={(e) => setAppVersion(e.target.value)}
+                placeholder="v1.0.0"
+                className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono font-bold"
+              />
+            </div>
+
+            {/* Developer Custom Logo URL */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                {language === 'ar' ? 'رابط الشعار المخصص للمطور (luxcod.online)' : 'Developer Custom Logo URL (luxcod.online)'}
+              </label>
+              <input
+                type="url"
+                value={developerLogoUrl}
+                onChange={(e) => setDeveloperLogoUrl(e.target.value)}
+                placeholder="https://example.com/luxcod-icon.png"
+                className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono text-slate-600"
               />
             </div>
 

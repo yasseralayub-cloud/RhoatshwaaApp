@@ -718,5 +718,10 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   onlinePaymentEnabled: true,
   onlinePaymentGateway: 'sandbox',
   onlinePaymentApiKey: 'sk_test_mock_key',
-  onlinePaymentMerchantId: 'merchant.sa.rehla'
+  onlinePaymentMerchantId: 'merchant.sa.rehla',
+  commercialRegistration: "1010789456",
+  sbcNumber: "0000084721",
+  sbcVerificationUrl: "https://sbc.gov.sa",
+  appVersion: "v1.0.0",
+  developerLogoUrl: "/luxcod-logo.jpg"
 };

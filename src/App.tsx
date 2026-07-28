@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LanguageProvider, useLanguage } from './components/LanguageContext';
 import { Header } from './components/Header';
 import { CategoryNav } from './components/CategoryNav';
@@ -12,7 +12,7 @@ import { CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_BUSINESS_SETTINGS } from './ini
 import { MenuItem, Promotion, BusinessSettings, CartItem, CartItemOption } from './types';
 import { collection, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { Flame, Star, Coffee, AlertCircle } from 'lucide-react';
+import { Flame, Star, Coffee, AlertCircle, Building2, ShieldCheck, CheckCircle2, ExternalLink, Code2, Sparkles, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PromotionCountdown } from './components/PromotionCountdown';
 import { WelcomePortalModal } from './components/WelcomePortalModal';
@@ -171,20 +171,32 @@ function MenuAndOrdersApp() {
     };
   }, []);
 
+  const isManualScrolling = useRef(false);
+
   // Smooth scroll click handler for Categories selection
   const handleSelectCategory = (categoryId: string) => {
     setSelectedCategory(categoryId);
-    const element = document.getElementById(`category-sec-${categoryId}`);
-    if (element) {
-      const headerOffset = window.innerWidth < 768 ? 190 : 160;
-      const elementPosition = element.getBoundingClientRect().top;
-      const offsetPosition = elementPosition + window.scrollY - headerOffset;
-      
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: 'smooth'
-      });
+    if (searchTerm) {
+      setSearchTerm('');
     }
+    isManualScrolling.current = true;
+
+    // Scroll category button into view in the horizontal nav
+    const btn = document.getElementById(`cat-btn-${categoryId}`);
+    if (btn) {
+      btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+
+    setTimeout(() => {
+      const element = document.getElementById(`category-sec-${categoryId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 20);
+
+    setTimeout(() => {
+      isManualScrolling.current = false;
+    }, 850);
   };
 
   // Scroll spy listener to auto-highlight categories as user scrolls
@@ -192,6 +204,8 @@ function MenuAndOrdersApp() {
     if (activeTab !== 'menu') return;
 
     const handleScroll = () => {
+      if (isManualScrolling.current) return;
+
       // Find all rendered category sections
       const categorySections = allCategories.map(cat => ({
         id: cat.id,
@@ -1020,7 +1034,7 @@ function MenuAndOrdersApp() {
                     <div
                       key={category.id}
                       id={`category-sec-${category.id}`}
-                      className="space-y-6 pt-6 scroll-mt-[220px] md:scroll-mt-[200px]"
+                      className="space-y-6 pt-6 scroll-mt-[175px] md:scroll-mt-[190px]"
                     >
                       <div className="flex justify-between items-center text-dark border-b border-black/5 pb-2 text-start">
                         <div>
@@ -1114,10 +1128,120 @@ function MenuAndOrdersApp() {
         businessSettings={businessSettings}
       />
 
-      {/* Decorative footer with independent access ports */}
-      <footer className="bg-neutral-50 border-t border-black/5 text-dark/60 py-8 text-center text-xs mt-16 font-mono">
-        <p className="text-dark/80 uppercase tracking-widest font-semibold">{t('appName')} • Traditional Taste</p>
-        <p className="text-dark/40 mt-2">© {new Date().getFullYear()} {t('appName')} Co. All rights reserved.</p>
+      {/* Official Business Accreditation & Developer Attribution Footer */}
+      <footer className="bg-stone-900 text-stone-300 py-10 px-4 mt-20 border-t border-stone-800 text-start sm:text-center font-sans shadow-inner">
+        <div className="max-w-6xl mx-auto space-y-6">
+          
+          {/* Section 1: Business Credentials & Official Verification Badges */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 text-xs">
+            
+            {/* Commercial Registration Badge */}
+            <div className="bg-stone-800/80 border border-stone-700/60 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm hover:border-amber-500/40 transition">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                <Building2 className="w-4.5 h-4.5" />
+              </div>
+              <div className="text-start">
+                <span className="text-[10px] text-stone-400 font-bold block uppercase tracking-wider">
+                  {language === 'ar' ? 'السجل التجاري' : 'Commercial Reg.'}
+                </span>
+                <span className="font-mono font-extrabold text-xs sm:text-sm text-stone-100">
+                  {businessSettings?.commercialRegistration || '1010789456'}
+                </span>
+              </div>
+            </div>
+
+            {/* ZATCA Tax Certificate Badge */}
+            {businessSettings?.taxEnabled && (
+              <div className="bg-stone-800/80 border border-stone-700/60 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm hover:border-amber-500/40 transition">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                  <ShieldCheck className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-start">
+                  <span className="text-[10px] text-stone-400 font-bold block uppercase tracking-wider">
+                    {language === 'ar' ? 'الشهادة الضريبية' : 'VAT Registration'}
+                  </span>
+                  <span className="font-mono font-extrabold text-xs sm:text-sm text-amber-300">
+                    {businessSettings?.vatNumber || '310123456700003'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Saudi Business Center Verification Badge */}
+            <a 
+              href={businessSettings?.sbcVerificationUrl || 'https://sbc.gov.sa'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-emerald-950/40 border border-emerald-800/60 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-sm hover:border-emerald-500/80 transition group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                  <CheckCircle2 className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-start">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider block">
+                      {language === 'ar' ? 'معتمد في منصة الأعمال' : 'Saudi Business Center'}
+                    </span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  </div>
+                  <span className="font-mono font-bold text-xs text-stone-200">
+                    {language === 'ar' ? `رقم التوثيق: ${businessSettings?.sbcNumber || '0000084721'}` : `ID: ${businessSettings?.sbcNumber || '0000084721'}`}
+                  </span>
+                </div>
+              </div>
+              <ExternalLink className="w-4 h-4 text-emerald-400/60 group-hover:text-emerald-300 transition shrink-0" />
+            </a>
+
+          </div>
+
+          <div className="border-t border-stone-800 pt-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-400">
+            
+            {/* Section 2: Copyright & App Version for Rehla BBQ */}
+            <div className="flex flex-col sm:flex-row items-center gap-2 text-center sm:text-start">
+              <span className="font-bold text-stone-200">
+                {language === 'ar' 
+                  ? `جميع الحقوق محفوظة © ${new Date().getFullYear()} لـ ${businessSettings?.restaurantNameAr || 'رحلة شواء'}`
+                  : `© ${new Date().getFullYear()} All Rights Reserved - ${businessSettings?.restaurantNameEn || 'Rehla BBQ'}`}
+              </span>
+              <span className="hidden sm:inline text-stone-600">•</span>
+              <span className="font-mono text-[11px] bg-stone-800 px-2.5 py-0.5 rounded-full border border-stone-700 text-stone-300 font-semibold">
+                {language === 'ar' ? `الإصدار ${businessSettings?.appVersion || 'v1.0.0'}` : `Version ${businessSettings?.appVersion || 'v1.0.0'}`}
+              </span>
+            </div>
+
+            {/* Section 3: Developer Attribution & Clickable Link to luxcod.online */}
+            <div className="flex items-center gap-2">
+              <span className="text-stone-400 font-medium text-[11px]">
+                {language === 'ar' ? 'تم الإعداد بواسطة' : 'Prepared by'}
+              </span>
+              <a 
+                href="https://luxcod.online" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 hover:from-amber-500/20 hover:to-amber-500/30 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 font-mono font-black text-xs px-3 py-1.5 rounded-xl transition-all shadow-xs group cursor-pointer"
+                title="luxcod.online"
+              >
+                {(businessSettings?.developerLogoUrl || '/luxcod-logo.jpg') ? (
+                  <img 
+                    src={businessSettings?.developerLogoUrl || '/luxcod-logo.jpg'} 
+                    alt="luxcod.online" 
+                    className="w-5 h-5 object-cover rounded-md shrink-0 shadow-xs border border-amber-400/40 group-hover:scale-105 transition" 
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-5 h-5 rounded-md bg-amber-500/20 flex items-center justify-center shrink-0 border border-amber-400/30 text-amber-300 group-hover:scale-105 transition">
+                    <Code2 className="w-3.5 h-3.5" />
+                  </div>
+                )}
+                <span className="tracking-tight">luxcod.online</span>
+                <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100 transition" />
+              </a>
+            </div>
+
+          </div>
+
+        </div>
       </footer>
 
       {/* Welcome & PWA Onboarding Modal Wizard */}
