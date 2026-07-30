@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { useLanguage } from './LanguageContext';
-import { ShieldCheck, CheckSquare, Square, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, CheckSquare, Square, ArrowLeft, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PrivacyPolicyModalProps {
   isOpen: boolean;
   onAccept: () => void;
+  onClose?: () => void;
   gracePeriod?: number;
 }
 
-export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onAccept, gracePeriod = 30 }) => {
+export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onAccept, onClose, gracePeriod = 30 }) => {
   const { language } = useLanguage();
   const [isChecked, setIsChecked] = useState(false);
 
@@ -24,6 +25,14 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-black/5 overflow-hidden text-start font-sans"
         >
+          {onClose && (
+            <button 
+              onClick={onClose}
+              className={`absolute top-4 ${language === 'ar' ? 'left-4' : 'right-4'} z-10 p-2 bg-white/20 hover:bg-white/30 text-white rounded-full transition-colors`}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
           {/* Header Banner */}
           <div className="bg-gradient-to-br from-neutral-900 to-amber-950 p-6 text-white relative">
             <div className="absolute -top-12 -right-12 w-32 h-32 bg-yellow/10 rounded-full blur-2xl" />

@@ -25,18 +25,18 @@ export function ChatBot({ menuItems, businessSettings, language }: ChatBotProps)
   const [inputValue, setInputValue] = useState('');
   const [showNotification, setShowNotification] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Monitor scroll for floating helper opacity
+  // Monitor scroll for floating helper opacity and hiding at bottom
   useEffect(() => {
     const handleScroll = () => {
-      if (window.scrollY > 80) {
-        setIsScrolled(true);
-      } else {
-        setIsScrolled(false);
-      }
+      setIsScrolled(window.scrollY > 80);
+      const bottomThreshold = document.documentElement.scrollHeight - window.innerHeight - 250;
+      setIsAtBottom(window.scrollY >= bottomThreshold);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll(); // Initial check
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -461,8 +461,8 @@ export function ChatBot({ menuItems, businessSettings, language }: ChatBotProps)
   return (
     <>
       {/* Floating Chat Button Toggle */}
-      <div className={`fixed bottom-6 ${language === 'ar' ? 'left-6' : 'right-6'} z-[999] flex flex-col items-end gap-2 transition-all duration-300 ${
-        isScrolled && !isOpen ? 'opacity-30 hover:opacity-100' : 'opacity-100'
+      <div className={`fixed bottom-6 ${language === 'ar' ? 'left-6' : 'right-6'} z-[999] flex flex-col items-end gap-2 transition-all duration-500 ${
+        isAtBottom && !isOpen ? 'opacity-0 translate-y-24 pointer-events-none' : isScrolled && !isOpen ? 'opacity-30 hover:opacity-100' : 'opacity-100'
       }`}>
         {/* Floating Notification Promo Badge */}
         <AnimatePresence>

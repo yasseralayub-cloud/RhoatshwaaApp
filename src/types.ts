@@ -145,11 +145,18 @@ export interface BusinessSettings {
   onlinePaymentMerchantId?: string;
   telegramBotToken?: string;
   telegramChatId?: string;
+  socialInstagram?: string;
+  socialSnapchat?: string;
+  socialTiktok?: string;
+  socialX?: string;
   telegramBotEnabled?: boolean;
   commercialRegistration?: string;
   crCertificateUrl?: string;
+  showCrCertificate?: boolean;
   taxCertificateUrl?: string;
+  showTaxCertificate?: boolean;
   sbcCertificateUrl?: string;
+  showSbcCertificate?: boolean;
   sbcNumber?: string;
   sbcVerificationUrl?: string;
   appVersion?: string;
