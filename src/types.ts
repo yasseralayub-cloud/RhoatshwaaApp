@@ -159,8 +159,6 @@ export interface BusinessSettings {
   showSbcCertificate?: boolean;
   sbcNumber?: string;
   sbcVerificationUrl?: string;
-  appVersion?: string;
-  developerLogoUrl?: string;
 }
 
 export interface Category {

@@ -63,7 +63,8 @@ import {
   ExternalLink,
   Bell,
   CreditCard,
-  Send
+  Send,
+  Globe
 } from 'lucide-react';
 import {
   BarChart,
@@ -347,8 +348,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showSbcCertificate, setShowSbcCertificate] = useState(true);
   const [sbcNumber, setSbcNumber] = useState('0000084721');
   const [sbcVerificationUrl, setSbcVerificationUrl] = useState('https://sbc.gov.sa');
-  const [appVersion, setAppVersion] = useState('v2.8.4');
-  const [developerLogoUrl, setDeveloperLogoUrl] = useState('/luxcod-logo.jpg');
 
   // Bank transfer state variables
   const [bankNameAr, setBankNameAr] = useState('مصرف الراجحي');
@@ -652,8 +651,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setShowSbcCertificate(businessSettings.showSbcCertificate ?? true);
       setSbcNumber(businessSettings.sbcNumber || '0000084721');
       setSbcVerificationUrl(businessSettings.sbcVerificationUrl || 'https://sbc.gov.sa');
-      setAppVersion(businessSettings.appVersion || 'v2.8.4');
-      setDeveloperLogoUrl(businessSettings.developerLogoUrl || '/luxcod-logo.jpg');
     }
   }, [businessSettings]);
 
@@ -729,9 +726,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       sbcCertificateUrl: sbcCertificateUrl,
       showSbcCertificate: showSbcCertificate,
       sbcNumber: sbcNumber,
-      sbcVerificationUrl: sbcVerificationUrl,
-      appVersion: appVersion,
-      developerLogoUrl: developerLogoUrl
+      sbcVerificationUrl: sbcVerificationUrl
     };
 
     if (onSettingsUpdate) {
@@ -4132,35 +4127,77 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
-            {/* System Release Version (Auto-synced & Protected) */}
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">
-                {language === 'ar' ? 'رقم إصدار النظام (تحديث تلقائي)' : 'System Release Version (Auto-synced)'}
-              </label>
-              <div className="w-full text-xs bg-slate-100 border border-slate-200 rounded-xl p-2.5 flex items-center justify-between font-mono font-bold text-slate-700">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  {CURRENT_APP_VERSION}
-                </span>
-                <span className="text-[10px] text-slate-400 font-sans font-medium">
-                  {language === 'ar' ? 'تحديث تلقائي مع كل إصدار' : 'Auto-updated on build'}
-                </span>
-              </div>
-            </div>
-
-            {/* Developer Logo Signature (Fixed & Protected) */}
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">
-                {language === 'ar' ? 'شعار المطور المعتمد (luxcod.online)' : 'Developer Signature Logo (luxcod.online)'}
-              </label>
-              <div className="w-full text-xs bg-slate-900 border border-slate-800 rounded-xl p-2 flex items-center justify-between text-amber-300 font-mono">
-                <div className="flex items-center gap-2">
-                  <img src="/luxcod-logo.jpg" alt="luxcod" className="w-6 h-6 object-cover rounded-lg border border-amber-400/60" />
-                  <span className="font-bold text-xs bg-gradient-to-r from-amber-300 to-cyan-300 bg-clip-text text-transparent">luxcod.online</span>
+            {/* Social Media Channels Section (حسابات التواصل الاجتماعي) */}
+            <div className="col-span-1 md:col-span-2 mt-4 pt-6 border-t border-slate-200 text-start animate-none">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-amber-500" />
+                {language === 'ar' ? 'روابط حسابات التواصل الاجتماعي (أسفل الموقع)' : 'Social Media Channels Links (Footer)'}
+              </h4>
+              <p className="text-[11px] text-slate-500 mb-4">
+                {language === 'ar' 
+                  ? 'ضع روابط حساباتك الرسمية ليتم توجيه الزوار إليها عند الضغط على أيقونات التواصل أسفل الموقع. الحسابات غير المسجلة ستظهر للعميل رسالة "سوف يتم إنشاؤه قريباً".' 
+                  : 'Set official links for social media icons in footer. Empty links will show "Will be created soon" when clicked.'}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/50">
+                {/* Snapchat */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                    <span>👻</span>
+                    {language === 'ar' ? 'رابط حساب سناب شات (Snapchat)' : 'Snapchat Profile URL'}
+                  </label>
+                  <input
+                    type="url"
+                    value={socialSnapchat}
+                    onChange={(e) => setSocialSnapchat(e.target.value)}
+                    placeholder="https://snapchat.com/add/..."
+                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                  />
                 </div>
-                <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md font-sans">
-                  {language === 'ar' ? 'شعار ثابت معتمد' : 'Verified Logo'}
-                </span>
+
+                {/* TikTok */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                    <span>🎵</span>
+                    {language === 'ar' ? 'رابط حساب تيك توك (TikTok)' : 'TikTok Profile URL'}
+                  </label>
+                  <input
+                    type="url"
+                    value={socialTiktok}
+                    onChange={(e) => setSocialTiktok(e.target.value)}
+                    placeholder="https://tiktok.com/@..."
+                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                  />
+                </div>
+
+                {/* Instagram */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                    <span>📷</span>
+                    {language === 'ar' ? 'رابط حساب إنستغرام (Instagram)' : 'Instagram Profile URL'}
+                  </label>
+                  <input
+                    type="url"
+                    value={socialInstagram}
+                    onChange={(e) => setSocialInstagram(e.target.value)}
+                    placeholder="https://instagram.com/..."
+                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                  />
+                </div>
+
+                {/* X / Twitter */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                    <span>𝕏</span>
+                    {language === 'ar' ? 'رابط حساب إكس / تويتر (X / Twitter)' : 'X / Twitter Profile URL'}
+                  </label>
+                  <input
+                    type="url"
+                    value={socialX}
+                    onChange={(e) => setSocialX(e.target.value)}
+                    placeholder="https://x.com/..."
+                    className="w-full text-xs bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                  />
+                </div>
               </div>
             </div>
 

@@ -727,7 +727,5 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   sbcCertificateUrl: "",
   showSbcCertificate: true,
   sbcNumber: "0000084721",
-  sbcVerificationUrl: "https://sbc.gov.sa",
-  appVersion: "v1.0.0",
-  developerLogoUrl: "/luxcod-logo.jpg"
+  sbcVerificationUrl: "https://sbc.gov.sa"
 };

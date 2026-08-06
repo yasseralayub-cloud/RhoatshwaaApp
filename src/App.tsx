@@ -281,6 +281,18 @@ function MenuAndOrdersApp() {
   });
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
+  const [socialAlertMessage, setSocialAlertMessage] = useState<string | null>(null);
+
+  const handleSocialClick = (e: React.MouseEvent, url?: string) => {
+    if (!url || url.trim() === '' || url.trim() === '#') {
+      e.preventDefault();
+      const msg = language === 'ar' ? 'سوف يتم إنشاؤه قريباً' : 'Coming soon';
+      setSocialAlertMessage(msg);
+      setTimeout(() => {
+        setSocialAlertMessage((prev) => (prev === msg ? null : prev));
+      }, 3500);
+    }
+  };
   
   // Tracked last placed order to automatically show status tracking screen
   const [lastPlacedOrderId, setLastPlacedOrderId] = useState('');
@@ -1136,31 +1148,61 @@ function MenuAndOrdersApp() {
             {/* Social Icons */}
             <div className="flex items-center justify-center gap-5">
               {/* WhatsApp */}
-              <a href={`https://wa.me/${businessSettings?.whatsappNumber || ''}`} target="_blank" rel="noopener noreferrer" className="text-white hover:opacity-80 transition hover:scale-110">
+              <a 
+                href={businessSettings?.whatsappNumber ? `https://wa.me/${businessSettings.whatsappNumber}` : '#'} 
+                onClick={(e) => handleSocialClick(e, businessSettings?.whatsappNumber ? `https://wa.me/${businessSettings.whatsappNumber}` : '')}
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-white hover:opacity-80 transition hover:scale-110"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
                   <path d="M12.031 0C5.385 0 0 5.388 0 12.031c0 2.128.552 4.195 1.603 6.015L.141 23.4l5.52-1.449A11.967 11.967 0 0012.031 24c6.643 0 12.028-5.387 12.028-12.03S18.674 0 12.031 0zM12.03 21.96c-1.802 0-3.568-.485-5.116-1.402l-.367-.217-3.8.997 1.018-3.704-.239-.38C2.502 15.541 1.95 13.805 1.95 12.032 1.95 6.47 6.467 1.95 12.03 1.95c5.565 0 10.082 4.52 10.082 10.082 0 5.562-4.517 10.08-10.082 10.08zm5.534-7.56c-.303-.153-1.796-.887-2.074-.988-.278-.102-.482-.153-.684.153-.203.306-.783.988-.961 1.192-.178.204-.356.23-.66.077-1.838-.925-3.32-2.315-4.226-4.237-.15-.316.143-.294.437-.872.102-.204.051-.383-.025-.536-.076-.153-.684-1.646-.938-2.254-.247-.591-.498-.51-.684-.52-.177-.008-.382-.01-.586-.01-.204 0-.535.076-.814.382C6.012 7.03 5.15 7.846 5.15 9.502c0 1.656 1.144 3.261 1.303 3.475.158.214 2.373 3.621 5.751 5.08.803.346 1.43.553 1.918.708.805.257 1.538.22 2.115.133.645-.097 1.796-.734 2.05-1.442.254-.709.254-1.317.178-1.443-.077-.126-.28-.203-.584-.356z"/>
                 </svg>
               </a>
               {/* Snapchat */}
-              <a href={businessSettings?.socialSnapchat || '#'} target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition hover:scale-110">
+              <a 
+                href={businessSettings?.socialSnapchat || '#'} 
+                onClick={(e) => handleSocialClick(e, businessSettings?.socialSnapchat)}
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="hover:opacity-80 transition hover:scale-110"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-153.591 -252.05 1331.122 1512.3" fill="currentColor" className="h-8 w-auto text-white">
                   <path d="M1020.263 737.6c-7.1-19.4-20.7-29.7-36.1-38.3-2.9-1.7-5.6-3.1-7.8-4.1-4.6-2.4-9.3-4.7-14-7.1-48.1-25.5-85.7-57.7-111.7-95.8-8.8-12.9-14.9-24.5-19.2-34-2.2-6.4-2.1-10-.5-13.3 1.2-2.5 4.4-5.1 6.2-6.4 8.3-5.5 16.8-11 22.6-14.7 10.3-6.7 18.5-12 23.7-15.6 19.8-13.8 33.6-28.5 42.2-44.9 12.2-23.1 13.7-49.5 4.3-74.3-13-34.4-45.6-55.8-85-55.8-8.2 0-16.5.9-24.7 2.7-2.2.5-4.3 1-6.4 1.5.4-23.4-.2-48.4-2.3-72.8-7.4-86-37.5-131.1-68.9-167-13.1-15-35.9-36.9-70.1-56.5-47.7-27.4-101.7-41.2-160.6-41.2-58.7 0-112.7 13.8-160.4 41.1-34.4 19.6-57.2 41.6-70.2 56.5-31.4 35.9-61.5 81-68.9 167-2.1 24.4-2.6 49.4-2.3 72.8-2.1-.5-4.3-1-6.4-1.5-8.2-1.8-16.6-2.7-24.7-2.7-39.4 0-72 21.4-85 55.8-9.4 24.8-7.9 51.2 4.3 74.3 8.6 16.4 22.5 31.1 42.2 44.9 5.3 3.7 13.4 9 23.7 15.6 5.6 3.6 13.7 8.9 21.7 14.2 1.2.8 5.5 4 7 7 1.7 3.4 1.7 7.1-.8 13.9-4.2 9.3-10.3 20.7-18.9 33.3-25.5 37.3-62 68.9-108.5 94.1-24.7 13.1-50.3 21.8-61.1 51.2-8.2 22.2-2.8 47.5 17.9 68.8 6.8 7.3 15.4 13.8 26.2 19.8 25.4 14 47 20.9 64 25.6 3 .9 9.9 3.1 12.9 5.8 7.6 6.6 6.5 16.6 16.6 31.2 6.1 9.1 13.1 15.3 18.9 19.3 21.1 14.6 44.9 15.5 70.1 16.5 22.7.9 48.5 1.9 77.9 11.6 12.2 4 24.9 11.8 39.5 20.8 35.2 21.7 83.5 51.3 164.2 51.3 80.8 0 129.3-29.8 164.8-51.5 14.6-8.9 27.2-16.7 39-20.6 29.4-9.7 55.2-10.7 77.9-11.6 25.2-1 48.9-1.9 70.1-16.5 6.6-4.6 15-12.1 21.6-23.5 7.2-12.3 7.1-21 13.9-26.9 2.8-2.4 8.9-4.5 12.2-5.5 17.1-4.7 39-11.6 64.9-25.9 11.5-6.3 20.4-13.2 27.5-21.1l.3-.3c19.3-21 24.2-45.5 16.2-67.2zm-71.7 38.5c-43.8 24.2-72.9 21.6-95.5 36.1-19.2 12.4-7.9 39.1-21.8 48.7-17.2 11.9-67.9-.8-133.4 20.8-54 17.9-88.5 69.2-185.8 69.2-97.5 0-131-51.1-185.8-69.2-65.5-21.6-116.3-8.9-133.4-20.8-13.9-9.6-2.6-36.3-21.8-48.7-22.6-14.6-51.7-12-95.5-36.1-27.9-15.4-12.1-24.9-2.8-29.4 158.6-76.7 183.8-195.3 185-204.2 1.4-10.6 2.9-19-8.8-29.9-11.3-10.5-61.6-41.6-75.5-51.3-23.1-16.1-33.2-32.2-25.7-52 5.2-13.7 18-18.8 31.5-18.8 4.2 0 8.5.5 12.6 1.4 25.3 5.5 49.9 18.2 64.1 21.6 2 .5 3.7.7 5.2.7 7.6 0 10.2-3.8 9.7-12.5-1.6-27.7-5.6-81.7-1.2-132.2 6-69.4 28.4-103.8 55-134.3 12.8-14.6 72.8-78 187.5-78 115 0 174.7 63.4 187.5 78 26.6 30.4 49 64.8 55 134.3 4.4 50.5.6 104.5-1.2 132.2-.6 9.1 2.2 12.5 9.7 12.5 1.5 0 3.3-.2 5.2-.7 14.2-3.4 38.8-16.1 64.1-21.6 4.1-.9 8.4-1.4 12.6-1.4 13.5 0 26.3 5.2 31.5 18.8 7.5 19.8-2.7 35.9-25.7 52-13.9 9.7-64.2 40.8-75.5 51.3-11.7 10.8-10.2 19.2-8.8 29.9 1.1 8.9 26.4 127.5 185 204.2 9 4.5 24.9 14-3 29.4z" />
                 </svg>
               </a>
               {/* Tiktok */}
-              <a href={businessSettings?.socialTiktok || '#'} target="_blank" rel="noopener noreferrer" className="text-white hover:opacity-80 transition hover:scale-110">
+              <a 
+                href={businessSettings?.socialTiktok || '#'} 
+                onClick={(e) => handleSocialClick(e, businessSettings?.socialTiktok)}
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-white hover:opacity-80 transition hover:scale-110"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
                   <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 2.23-1.02 4.41-2.62 5.91-1.74 1.63-4.22 2.39-6.57 2.06-2.52-.35-4.81-1.95-5.91-4.2-1.08-2.22-1.02-4.93.18-7.08 1.18-2.12 3.31-3.6 5.67-4.04 1.05-.19 2.13-.19 3.19-.05v4.21c-.81-.11-1.65-.04-2.43.25-1.13.43-2.07 1.34-2.45 2.47-.39 1.18-.28 2.53.31 3.63.63 1.18 1.83 2.04 3.14 2.27 1.29.23 2.68-.05 3.73-.83 1.07-.81 1.76-2.11 1.81-3.48.06-2.08.03-4.16.03-6.24V.02z"/>
                 </svg>
               </a>
               {/* Instagram */}
-              <a href={businessSettings?.socialInstagram || '#'} target="_blank" rel="noopener noreferrer" className="text-white hover:opacity-80 transition hover:scale-110">
+              <a 
+                href={businessSettings?.socialInstagram || '#'} 
+                onClick={(e) => handleSocialClick(e, businessSettings?.socialInstagram)}
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-white hover:opacity-80 transition hover:scale-110"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
                   <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/>
                 </svg>
               </a>
               {/* X / Twitter */}
-              <a href={businessSettings?.socialX || '#'} target="_blank" rel="noopener noreferrer" className="text-white hover:opacity-80 transition hover:scale-110">
+              <a 
+                href={businessSettings?.socialX || '#'} 
+                onClick={(e) => handleSocialClick(e, businessSettings?.socialX)}
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-white hover:opacity-80 transition hover:scale-110"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
                   <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                 </svg>
@@ -1196,7 +1238,7 @@ function MenuAndOrdersApp() {
           <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] sm:text-xs font-semibold px-6">
             
             <div className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2 text-center sm:text-start">
-              <span className="text-[#888] text-[10px]">{language === 'ar' ? 'تم الإعداد بواسطة' : 'Developed by'}</span>
+              <span className="text-[#888] text-[10px]">{language === 'ar' ? 'مدعوم بـ' : 'Powered by'}</span>
               <a 
                 href="https://luxcod.online" 
                 target="_blank" 
@@ -1207,7 +1249,7 @@ function MenuAndOrdersApp() {
                 <img 
                   src="/luxcod-logo.jpg" 
                   alt="luxcod.online" 
-                  className="w-3.5 h-3.5 object-contain rounded-sm shrink-0 shadow-sm border border-amber-400/50 group-hover:border-cyan-400 transition duration-300" 
+                  className="w-4 h-4 object-cover rounded shrink-0 shadow border border-amber-400/60 group-hover:border-cyan-400 group-hover:scale-110 transition duration-300" 
                   referrerPolicy="no-referrer"
                 />
                 <span className="tracking-tight bg-gradient-to-r from-amber-300 via-amber-200 to-cyan-300 bg-clip-text text-transparent group-hover:from-amber-200 group-hover:to-cyan-200 text-[9px] leading-none">luxcod.online</span>
@@ -1433,6 +1475,26 @@ function MenuAndOrdersApp() {
         <ChatBot menuItems={menuItems} businessSettings={businessSettings} language={language} />
       )}
 
+      {/* Social Media Link Alert Toast */}
+      <AnimatePresence>
+        {socialAlertMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[99999] bg-[#1a1c1e] text-white border border-amber-500/40 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-xs sm:text-sm font-bold text-center"
+          >
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span>{socialAlertMessage}</span>
+            <button
+              onClick={() => setSocialAlertMessage(null)}
+              className="text-slate-400 hover:text-white mr-1 text-xs font-bold p-1"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
