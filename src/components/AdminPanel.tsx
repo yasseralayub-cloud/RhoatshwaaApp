@@ -590,8 +590,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSetTaglineAr(businessSettings.taglineAr || '');
       setSetTaglineEn(businessSettings.taglineEn || '');
       setSetLogoUrl(businessSettings.logoUrl || '');
-      setSetPhone(businessSettings.phone || '');
-      setSetWhatsappNumber(businessSettings.whatsappNumber || '');
+      setSetPhone(businessSettings.phone || '0502163363');
+      setSetWhatsappNumber(businessSettings.whatsappNumber || '0502163363');
       setSetAddressAr(businessSettings.addressAr || '');
       setSetAddressEn(businessSettings.addressEn || '');
       setSetVatNumber(businessSettings.vatNumber || '');
@@ -3832,12 +3832,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'رقم استقبال طلبات الواتساب (توصيل)' : 'WhatsApp Dispatch Number'}</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'رقم استقبال طلبات الواتساب والارتباط' : 'WhatsApp Dispatch & Contact Number'}</label>
               <input
                 type="text"
                 value={setWhatsappNumber}
                 onChange={(e) => setSetWhatsappNumber(e.target.value)}
-                placeholder="9665..."
+                placeholder="0502163363"
                 className="w-full text-xs bg-slate-50/50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
               />
             </div>

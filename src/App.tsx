@@ -293,6 +293,14 @@ function MenuAndOrdersApp() {
       }, 3500);
     }
   };
+
+  const getFormattedWaUrl = (rawNumber?: string) => {
+    if (!rawNumber || rawNumber.trim() === '') return '';
+    const cleanNum = rawNumber.replace(/\D/g, '');
+    if (!cleanNum) return '';
+    const formatted = cleanNum.startsWith('0') ? '966' + cleanNum.slice(1) : cleanNum;
+    return `https://wa.me/${formatted}`;
+  };
   
   // Tracked last placed order to automatically show status tracking screen
   const [lastPlacedOrderId, setLastPlacedOrderId] = useState('');
@@ -1149,8 +1157,8 @@ function MenuAndOrdersApp() {
             <div className="flex items-center justify-center gap-5">
               {/* WhatsApp */}
               <a 
-                href={businessSettings?.whatsappNumber ? `https://wa.me/${businessSettings.whatsappNumber}` : '#'} 
-                onClick={(e) => handleSocialClick(e, businessSettings?.whatsappNumber ? `https://wa.me/${businessSettings.whatsappNumber}` : '')}
+                href={getFormattedWaUrl(businessSettings?.whatsappNumber || '0502163363')} 
+                onClick={(e) => handleSocialClick(e, getFormattedWaUrl(businessSettings?.whatsappNumber || '0502163363'))}
                 target="_blank" 
                 rel="noopener noreferrer" 
                 className="text-white hover:opacity-80 transition hover:scale-110"
