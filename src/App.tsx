@@ -162,14 +162,80 @@ function MenuAndOrdersApp() {
     return [...CATEGORIES, ...newOnes];
   }, [customCategories]);
 
+  const checkInitialDriverPortal = () => {
+    if (typeof window === 'undefined') return false;
+    const urlParams = new URLSearchParams(window.location.search);
+    const portalParam = urlParams.get('portal');
+    const tabParam = urlParams.get('tab');
+    const hash = window.location.hash;
+    const savedTab = localStorage.getItem('saved_active_tab');
+
+    if (portalParam === 'driver' || tabParam === 'driver' || hash === '#driver' || savedTab === 'driver') {
+      return true;
+    }
+    return false;
+  };
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('main');
-  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver' | 'account'>('menu');
+  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver' | 'account'>(() => {
+    if (typeof window !== 'undefined') {
+      const isDriver = checkInitialDriverPortal();
+      if (isDriver) return 'driver';
+      const savedTab = localStorage.getItem('saved_active_tab');
+      if (savedTab === 'admin' || savedTab === 'tracker' || savedTab === 'account') {
+        return savedTab as any;
+      }
+    }
+    return 'menu';
+  });
   const [quotaExceeded, setQuotaExceeded] = useState(() => {
     return (window as any).firestoreQuotaExceeded === true;
   });
+
+  const [showAdminTab, setShowAdminTab] = useState(() => {
+    return localStorage.getItem('show_admin_tab') === 'true';
+  });
+  const [showDriverTab, setShowDriverTab] = useState(() => {
+    const isDriverRoute = checkInitialDriverPortal();
+    if (isDriverRoute) {
+      localStorage.setItem('show_driver_tab', 'true');
+      return true;
+    }
+    return localStorage.getItem('show_driver_tab') === 'true';
+  });
+
+  // Dynamic PWA Manifest & Driver Portal route synchronization
+  useEffect(() => {
+    localStorage.setItem('saved_active_tab', activeTab);
+    const manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
+    const appleIcon = document.querySelector('link[rel="apple-touch-icon"]') as HTMLLinkElement | null;
+    const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]') as HTMLMetaElement | null;
+
+    if (activeTab === 'driver') {
+      setShowDriverTab(true);
+      localStorage.setItem('show_driver_tab', 'true');
+      document.title = "مناديب رحلة شواء - تطبيق التوصيل";
+      if (manifestLink) manifestLink.href = "/driver-manifest.json";
+      if (appleIcon) appleIcon.href = "/driver-icon.jpg";
+      if (appleTitle) appleTitle.content = "مناديب رحلة شواء";
+
+      if (window.location.hash !== '#driver' && !window.location.search.includes('portal=driver')) {
+        window.history.replaceState(null, '', '/?portal=driver#driver');
+      }
+    } else {
+      document.title = "مطعم رحلة شواء - تتبع وتوصيل فوري";
+      if (manifestLink) manifestLink.href = "/manifest.json";
+      if (appleIcon) appleIcon.href = "/pwa-icon.jpg";
+      if (appleTitle) appleTitle.content = "رحلة شواء";
+
+      if (window.location.hash === '#driver') {
+        window.history.replaceState(null, '', '/');
+      }
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     const handleQuota = () => {
@@ -273,12 +339,6 @@ function MenuAndOrdersApp() {
       window.removeEventListener('scroll', handleScroll);
     };
   }, [activeTab, menuItems, searchTerm]);
-  const [showAdminTab, setShowAdminTab] = useState(() => {
-    return localStorage.getItem('show_admin_tab') === 'true';
-  });
-  const [showDriverTab, setShowDriverTab] = useState(() => {
-    return localStorage.getItem('show_driver_tab') === 'true';
-  });
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [socialAlertMessage, setSocialAlertMessage] = useState<string | null>(null);

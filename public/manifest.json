@@ -20,5 +20,19 @@
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "display": "standalone",
-  "orientation": "portrait"
+  "orientation": "portrait",
+  "shortcuts": [
+    {
+      "name": "مناديب رحلة شواء",
+      "short_name": "المناديب",
+      "description": "الدخول المباشر إلى بوابة تطبيق المناديب",
+      "url": "/?portal=driver#driver",
+      "icons": [
+        {
+          "src": "/driver-icon.jpg",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
 }

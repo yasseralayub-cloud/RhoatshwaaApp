@@ -31,7 +31,8 @@ import {
   Menu,
   X,
   Copy,
-  Check
+  Check,
+  Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -81,6 +82,32 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
   const [activeTab, setActiveTab] = useState<'home' | 'map' | 'earnings' | 'bank' | 'profile'>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [copiedDriverUrl, setCopiedDriverUrl] = useState(false);
+
+  const handleInstallDriverApp = async () => {
+    const promptEvent = (window as any).deferredPrompt;
+    if (promptEvent) {
+      try {
+        promptEvent.prompt();
+        const { outcome } = await promptEvent.userChoice;
+        console.log(`Driver app install choice: ${outcome}`);
+        (window as any).deferredPrompt = null;
+      } catch (err) {
+        console.error("Install prompt error:", err);
+        setShowInstallGuide(true);
+      }
+    } else {
+      setShowInstallGuide(true);
+    }
+  };
+
+  const handleCopyDriverUrl = () => {
+    const driverUrl = `${window.location.origin}/?portal=driver#driver`;
+    navigator.clipboard.writeText(driverUrl);
+    setCopiedDriverUrl(true);
+    setTimeout(() => setCopiedDriverUrl(false), 2500);
+  };
   
   // Geolocation tracking
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -764,6 +791,92 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) 
           >
             {isAr ? 'تغيير الحساب 👤' : 'Change Profile 👤'}
           </button>
+        )}
+      </div>
+
+      {/* PWA Standalone Driver App Banner (مناديب رحلة شواء) */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white border border-amber-500/30 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3 text-start">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="relative shrink-0">
+              <img 
+                src="/driver-icon.jpg" 
+                alt="مناديب رحلة شواء" 
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-amber-400/80 shadow-md"
+              />
+              <span className="absolute -bottom-1 -end-1 bg-amber-400 text-black text-[9px] font-black px-1.5 py-0.5 rounded-full border border-slate-900">
+                PWA
+              </span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-base sm:text-lg text-white tracking-wide">
+                  {isAr ? 'مناديب رحلة شواء 🛵' : 'Grill Journey Drivers 🛵'}
+                </h3>
+                <span className="bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                  {isAr ? 'تطبيق مستقل' : 'Standalone App'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5 max-w-lg leading-relaxed">
+                {isAr 
+                  ? 'قم بتثبيت تطبيق المناديب على شاشة جوالك الرئيسية ليفتح معك مباشرة على لوحة الكابتن بأيقونة الدباب المخصصة دون العودة لصفحة الزبائن.' 
+                  : 'Install the Drivers App on your home screen to launch directly into the Captain Portal with dedicated scooter icon!'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto shrink-0">
+            <button
+              onClick={handleInstallDriverApp}
+              className="flex-1 sm:flex-none py-2.5 px-4 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all transform active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Smartphone className="w-4 h-4 text-slate-950" />
+              <span>{isAr ? 'تثبيت تطبيق المناديب 📱' : 'Install Driver App 📱'}</span>
+            </button>
+
+            <button
+              onClick={handleCopyDriverUrl}
+              className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              title={isAr ? 'نسخ رابط تطبيق المناديب المباشر' : 'Copy Direct Driver Portal Link'}
+            >
+              {copiedDriverUrl ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              <span>{copiedDriverUrl ? (isAr ? 'تم النسخ!' : 'Copied!') : (isAr ? 'نسخ الرابط' : 'Copy Link')}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Step-by-Step Installation Modal/Guide */}
+        {showInstallGuide && (
+          <div className="pt-3 mt-3 border-t border-slate-700/60 text-xs text-slate-300 space-y-2 bg-slate-950/50 p-3.5 rounded-2xl border border-slate-800">
+            <div className="flex items-center justify-between text-amber-300 font-bold text-xs">
+              <span className="flex items-center gap-1.5">
+                <HelpCircle className="w-4 h-4" />
+                {isAr ? 'خطوات إضافة تطبيق (مناديب رحلة شواء) على الجوال:' : 'How to install (Grill Journey Drivers) App:'}
+              </span>
+              <button onClick={() => setShowInstallGuide(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[11px] leading-relaxed">
+              <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                <p className="font-bold text-amber-400 mb-1">📱 أجهزة الآيفون (iPhone / Safari):</p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                  <li>افتح هذا الرابط أو اضغط زر (نسخ الرابط) بالأعلى في متصفح Safari.</li>
+                  <li>اضغط على زر المشاركة أسفل الشاشة <span className="font-mono bg-slate-800 px-1 rounded">⎘ Share</span>.</li>
+                  <li>اختر <span className="font-bold text-white font-mono bg-slate-800 px-1 rounded">الإضافة إلى الشاشة الرئيسية ➕</span>.</li>
+                  <li>اضغط (إضافة) وسيظهر التطبيق بأيقونة الدباب باسم <b>مناديب رحلة شواء</b>.</li>
+                </ol>
+              </div>
+
+              <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                <p className="font-bold text-emerald-400 mb-1">🤖 أجهزة الأندرويد (Android / Chrome):</p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                  <li>اضغط على زر التثبيت بالأعلى أو خيارات المتصفح <span className="font-mono bg-slate-800 px-1 rounded">⋮</span>.</li>
+                  <li>اختر <span className="font-bold text-white font-mono bg-slate-800 px-1 rounded">التثبيت كـ تطبيق 📲</span> أو (إضافة للشاشة الرئيسية).</li>
+                  <li>سيتحمل التطبيق مباشرة على جوالك وتستطيع فتحه كـ تطبيق مستقل بضغطة واحدة!</li>
+                </ol>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
