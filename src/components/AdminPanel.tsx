@@ -1883,6 +1883,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Inline Price change directly from control panel table
+  const handleQuickPriceChange = async (itemId: string, newPriceNum: number) => {
+    if (isNaN(newPriceNum) || newPriceNum < 0) return;
+    const updatedMenu = menuItems.map(item => {
+      if (item.id === itemId) return { ...item, price: newPriceNum };
+      return item;
+    });
+    onMenuUpdate(updatedMenu);
+
+    if (isAdmin) {
+      try {
+        await updateDoc(doc(db, 'menuItems', itemId), { price: newPriceNum });
+        showNotification(language === 'ar' ? 'تم تحديث السعر مباشرة في لوحة التحكم والسحابة! ⚡' : 'Price updated live on cloud!', 'success');
+      } catch (err) {
+        console.error(err);
+        handleFirestoreError(err, OperationType.UPDATE, `menuItems/${itemId}`);
+      }
+    } else if (isSimulated) {
+      localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
+      showNotification(language === 'ar' ? 'تم تحديث السعر بمحاكي لوحة التحكم!' : 'Price updated in control panel simulator!', 'success');
+    }
+  };
+
+  // Sync all menu items & prices to Firestore live
+  const handleSyncAllPricesToCloud = async () => {
+    try {
+      showNotification(language === 'ar' ? 'جاري مزامنة وبث جميع الأسعار من لوحة التحكم مع السحابة...' : 'Syncing all control panel prices live...', 'info');
+      onMenuUpdate([...menuItems]);
+      localStorage.setItem('simulated_menu', JSON.stringify(menuItems));
+
+      if (isAdmin) {
+        for (const item of menuItems) {
+          await setDoc(doc(db, 'menuItems', item.id), item);
+        }
+      }
+      showNotification(language === 'ar' ? 'تمت مزامنة جميع أسعار المنيو بنجاح مع لوحة التحكم والسحابة! ⚡' : 'All menu prices synchronized live with control panel & cloud! ⚡', 'success');
+    } catch (err) {
+      console.error('Failed to sync prices to cloud:', err);
+      showNotification(language === 'ar' ? 'خطأ أثناء مزامنة الأسعار' : 'Error syncing prices', 'error');
+    }
+  };
+
   // Add/Submit new or edited menu item
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -5814,6 +5856,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              id="admin-sync-prices-btn"
+              onClick={handleSyncAllPricesToCloud}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              title={language === 'ar' ? 'مزامنة وحفظ جميع الأسعار بالسحابة والمباشر' : 'Sync & push all menu prices live'}
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{language === 'ar' ? '⚡ مزامنة وحفظ الأسعار' : '⚡ Sync Live Prices'}</span>
+            </button>
+
+            <button
               onClick={() => setShowCategoryForm(!showCategoryForm)}
               className="bg-amber-100 text-amber-900 hover:bg-amber-200 font-bold text-xs py-2 px-3.5 rounded-xl transition border border-amber-300/60"
             >
@@ -6128,7 +6180,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       {/* Price input edit */}
                       <td className="px-4 py-3 text-start">
                         <div className="flex items-center gap-1 font-extrabold text-slate-800 text-sm">
-                          <span>{item.price.toFixed(1)}</span>
+                          <input
+                            id={`quick-price-input-${item.id}`}
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            key={`${item.id}-${item.price}`}
+                            defaultValue={item.price}
+                            onBlur={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (!isNaN(val) && val >= 0 && val !== item.price) {
+                                handleQuickPriceChange(item.id, val);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const val = parseFloat((e.target as HTMLInputElement).value);
+                                if (!isNaN(val) && val >= 0 && val !== item.price) {
+                                  handleQuickPriceChange(item.id, val);
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }
+                            }}
+                            className="w-20 bg-amber-50/60 hover:bg-white focus:bg-white border border-amber-300/80 focus:border-amber-600 rounded-lg px-2 py-1 text-xs font-black text-slate-900 outline-none transition-all shadow-2xs text-start font-mono"
+                            title={language === 'ar' ? 'تعديل السعر مباشرة وتطبيقه في الكنترول' : 'Edit price directly & apply live'}
+                          />
                           <span className="text-[10px] font-normal text-slate-400">{t('sar')}</span>
                         </div>
                       </td>

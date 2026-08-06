@@ -12,35 +12,78 @@ interface SizeUpgradeOption {
   diff: number;
 }
 
-const SIZE_UPGRADES_BY_ITEM: Record<string, SizeUpgradeOption[]> = {
-  s2: [ // شاورما صغير
-    { id: 's2', labelAr: 'صغير', labelEn: 'Small', price: 5, diff: 0 },
-    { id: 's1', labelAr: 'صاروخ', labelEn: 'Sarookh', price: 9, diff: 4 }
-  ],
-  s4: [ // صحن عربي وسط
-    { id: 's4', labelAr: 'صحن عربي وسط', labelEn: 'Medium Arabic Plate', price: 15, diff: 0 },
-    { id: 's5', labelAr: 'صحن عربي كبير عائلي', labelEn: 'Large Arabic Plate Family', price: 20, diff: 5 }
-  ],
-  g1: [ // كباب لحم نفر
-    { id: 'g1', labelAr: 'نفر كباب لحم (4 أسياخ)', labelEn: 'Beef Portion (4 Skewers)', price: 25, diff: 0 },
-    { id: 'g1_half', labelAr: 'نصف كيلو كباب لحم (8 أسياخ)', labelEn: 'Half Kilo Beef Kabab (8 Skewers)', price: 50, diff: 25 },
-    { id: 'g2', labelAr: 'كيلو كامل كباب (16 سيخ)', labelEn: 'Kilo Beef Kabab (16 Skewers)', price: 95, diff: 70 }
-  ],
-  g5: [ // كباب دجاج نفر
-    { id: 'g5', labelAr: 'نفر كباب دجاج (4 أسياخ)', labelEn: 'Chicken Portion (4 Skewers)', price: 23, diff: 0 },
-    { id: 'g5_half', labelAr: 'نصف كيلو كباب دجاج (8 أسياخ)', labelEn: 'Half Kilo Chicken Kabab (8 Skewers)', price: 42, diff: 19 },
-    { id: 'g8', labelAr: 'كيلو كامل كباب دجاج (16 سيخ)', labelEn: 'Kilo Chicken Kabab (16 Skewers)', price: 80, diff: 57 }
-  ],
-  g7: [ // شيش طاووق نفر
-    { id: 'g7', labelAr: 'نفر شيش طاووق (4 أسياخ)', labelEn: 'Shish Portion (4 Skewers)', price: 22, diff: 0 },
-    { id: 'g7_half', labelAr: 'نصف كيلو شيش طاووق (8 أسياخ)', labelEn: 'Half Kilo Shish (8 Skewers)', price: 45, diff: 23 },
-    { id: 'g9', labelAr: 'كيلو كامل شيش (16 سيخ)', labelEn: 'Kilo Shish (16 Skewers)', price: 85, diff: 63 }
-  ],
-  g10: [ // اوصال لحم نفر
-    { id: 'g10', labelAr: 'نفر أوصال لحم (4 أسياخ)', labelEn: 'Awsal Portion (4 Skewers)', price: 35, diff: 0 },
-    { id: 'g10_half', labelAr: 'نصف كيلو أوصال لحم (8 أسياخ)', labelEn: 'Half Kilo Awsal (8 Skewers)', price: 75, diff: 40 },
-    { id: 'g4', labelAr: 'كيلو كامل أوصال لحم (16 سيخ)', labelEn: 'Kilo Awsal (16 Skewers)', price: 140, diff: 105 }
-  ]
+export const getDynamicSizesForItem = (item: MenuItem | null, menuItems: MenuItem[] = []): SizeUpgradeOption[] => {
+  if (!item) return [];
+  const basePrice = item.price;
+  
+  const getItemPrice = (id: string, fallback: number) => {
+    const found = menuItems.find(m => m.id === id);
+    return (found && typeof found.price === 'number' && !isNaN(found.price)) ? found.price : fallback;
+  };
+
+  // 1. Beef Kabab Portion (g1 / كباب لحم نفر)
+  if (item.id === 'g1' || (item.nameAr.includes('كباب لحم') && item.nameAr.includes('نفر'))) {
+    const halfPrice = basePrice * 2; // Portion is 1/4 Kilo (29), so 1/2 Kilo is 2 portions = 58 SAR
+    const kiloPrice = getItemPrice('g2', 109);
+    return [
+      { id: 'g1', labelAr: 'نفر كباب لحم (4 أسياخ)', labelEn: 'Beef Portion (4 Skewers)', price: basePrice, diff: 0 },
+      { id: 'g1_half', labelAr: 'نصف كيلو كباب لحم (8 أسياخ)', labelEn: 'Half Kilo Beef Kabab (8 Skewers)', price: halfPrice, diff: halfPrice - basePrice },
+      { id: 'g2', labelAr: 'كيلو كامل كباب لحم صافي (16 سيخ)', labelEn: 'Kilo Beef Kabab (16 Skewers)', price: kiloPrice, diff: kiloPrice - basePrice }
+    ];
+  }
+
+  // 2. Chicken Kabab Portion (g5 / كباب دجاج نفر)
+  if (item.id === 'g5' || (item.nameAr.includes('كباب دجاج') && item.nameAr.includes('نفر'))) {
+    const halfPrice = basePrice * 2; // Portion is 1/4 Kilo (23), so 1/2 Kilo is 2 portions = 46 SAR
+    const kiloPrice = getItemPrice('g8', 80);
+    return [
+      { id: 'g5', labelAr: 'نفر كباب دجاج (4 أسياخ)', labelEn: 'Chicken Portion (4 Skewers)', price: basePrice, diff: 0 },
+      { id: 'g5_half', labelAr: 'نصف كيلو كباب دجاج (8 أسياخ)', labelEn: 'Half Kilo Chicken Kabab (8 Skewers)', price: halfPrice, diff: halfPrice - basePrice },
+      { id: 'g8', labelAr: 'كيلو كامل كباب دجاج (16 سيخ)', labelEn: 'Kilo Chicken Kabab (16 Skewers)', price: kiloPrice, diff: kiloPrice - basePrice }
+    ];
+  }
+
+  // 3. Shish Taouk Portion (g7 / شيش طاووق نفر)
+  if (item.id === 'g7' || (item.nameAr.includes('شيش') && item.nameAr.includes('نفر'))) {
+    const halfPrice = basePrice * 2; // Portion is 1/4 Kilo (22), so 1/2 Kilo is 2 portions = 44 SAR
+    const kiloPrice = getItemPrice('g9', 85);
+    return [
+      { id: 'g7', labelAr: 'نفر شيش طاووق (4 أسياخ)', labelEn: 'Shish Portion (4 Skewers)', price: basePrice, diff: 0 },
+      { id: 'g7_half', labelAr: 'نصف كيلو شيش طاووق (8 أسياخ)', labelEn: 'Half Kilo Shish (8 Skewers)', price: halfPrice, diff: halfPrice - basePrice },
+      { id: 'g9', labelAr: 'كيلو كامل شيش (16 سيخ)', labelEn: 'Kilo Shish (16 Skewers)', price: kiloPrice, diff: kiloPrice - basePrice }
+    ];
+  }
+
+  // 4. Awsal Portion (g10 / أوصال لحم نفر)
+  if (item.id === 'g10' || (item.nameAr.includes('أوصال') && item.nameAr.includes('نفر'))) {
+    const halfPrice = basePrice * 2; // Portion is 1/4 Kilo (35), so 1/2 Kilo is 2 portions = 70 SAR
+    const kiloPrice = getItemPrice('g4', 140);
+    return [
+      { id: 'g10', labelAr: 'نفر أوصال لحم (4 أسياخ)', labelEn: 'Awsal Portion (4 Skewers)', price: basePrice, diff: 0 },
+      { id: 'g10_half', labelAr: 'نصف كيلو أوصال لحم (8 أسياخ)', labelEn: 'Half Kilo Awsal (8 Skewers)', price: halfPrice, diff: halfPrice - basePrice },
+      { id: 'g4', labelAr: 'كيلو كامل أوصال لحم (16 سيخ)', labelEn: 'Kilo Awsal (16 Skewers)', price: kiloPrice, diff: kiloPrice - basePrice }
+    ];
+  }
+
+  // 5. Small Shawarma (s2)
+  if (item.id === 's2' || item.nameAr === 'شاورما صغير') {
+    const sarookhPrice = getItemPrice('s1', 9);
+    return [
+      { id: 's2', labelAr: 'صغير', labelEn: 'Small', price: basePrice, diff: 0 },
+      { id: 's1', labelAr: 'صاروخ', labelEn: 'Sarookh', price: sarookhPrice, diff: sarookhPrice - basePrice }
+    ];
+  }
+
+  // 6. Medium Arabic Plate (s4)
+  if (item.id === 's4' || item.nameAr === 'صحن عربي وسط') {
+    const largePrice = getItemPrice('s5', 20);
+    return [
+      { id: 's4', labelAr: 'صحن عربي وسط', labelEn: 'Medium Arabic Plate', price: basePrice, diff: 0 },
+      { id: 's5', labelAr: 'صحن عربي كبير عائلي', labelEn: 'Large Arabic Plate Family', price: largePrice, diff: largePrice - basePrice }
+    ];
+  }
+
+  return [];
 };
 
 interface SandwichCustomizationModalProps {
@@ -110,7 +153,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   // Reset local state when item changes
   if (item && lastItemId !== item.id) {
     setLastItemId(item.id);
-    const itemSizes = SIZE_UPGRADES_BY_ITEM[item.id] || [];
+    const itemSizes = getDynamicSizesForItem(item, menuItems);
     setSelectedSize(itemSizes.length > 0 ? itemSizes[0] : null);
     setSodaQuantities({});
     setSelectedNotes([]);
@@ -145,8 +188,8 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   // Special check for BBQ Shawarma Meal (وجبة رحلة شواء)
   const isBbqMeal = item.id === 's3' || item.nameAr.includes('شاورما شواء وجبة') || item.nameAr.includes('وجبة رحلة شواء') || item.name === 'BBQ Shawarma Meal';
 
-  // Sizing choices for this item
-  const availableSizes = SIZE_UPGRADES_BY_ITEM[item.id] || [];
+  // Sizing choices for this item dynamically computed from actual item price & menu
+  const availableSizes = getDynamicSizesForItem(item, menuItems);
 
   // Smart Prebuilt Notes based on item type - Only for Sandwiches and Fries, NEVER for plates/dishes (الصحون)
   const smartNotesList = isFries

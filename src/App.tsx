@@ -132,6 +132,7 @@ function MenuAndOrdersApp() {
               category: def.category,
               nameAr: existing.nameAr || def.nameAr,
               name: existing.name || def.name,
+              price: (typeof existing.price === 'number' && !isNaN(existing.price) && existing.price >= 0) ? existing.price : def.price,
               image: existing.isCustomImage ? existing.image : def.image
             });
           }
@@ -777,6 +778,11 @@ function MenuAndOrdersApp() {
   // Sync state between App & children panels
   const handleMenuUpdate = (newMenu: MenuItem[]) => {
     setMenuItems(newMenu);
+    try {
+      localStorage.setItem('simulated_menu', JSON.stringify(newMenu));
+    } catch (e) {
+      console.warn('Failed to save menu items to localStorage:', e);
+    }
   };
 
   const handleSettingsUpdate = (newSettings: BusinessSettings) => {
@@ -1042,6 +1048,52 @@ function MenuAndOrdersApp() {
     );
   }
 
+  // Standalone full-screen Driver Portal View (eliminates clash with Client store header/nav)
+  if (activeTab === 'driver') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans select-none pb-12 text-start">
+        <header className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-3">
+            <img 
+              src="/driver-icon.jpg" 
+              alt="مناديب رحلة شواء" 
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border-2 border-amber-400/80 object-cover shadow-md"
+            />
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-extrabold text-sm sm:text-base text-white tracking-wide">
+                  {language === 'ar' ? 'مناديب رحلة شواء 🛵' : 'Grill Journey Drivers 🛵'}
+                </h1>
+                <span className="bg-amber-400/20 text-amber-300 text-[9px] font-black px-2 py-0.5 rounded-full border border-amber-400/30">
+                  PWA Standalone
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-mono">
+                {language === 'ar' ? 'تطبيق التوصيل الكابتن المستقل' : 'Independent Captain Delivery App'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setActiveTab('menu')}
+            className="text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700/80 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title={language === 'ar' ? 'العودة لتطبيق العميل والمتجر' : 'Back to Customer Store'}
+          >
+            <span>🛒</span>
+            <span>{language === 'ar' ? 'متجر العميل' : 'Customer App'}</span>
+          </button>
+        </header>
+
+        <main className="max-w-4xl mx-auto p-4 sm:p-6">
+          <DriverPortal 
+            businessSettings={businessSettings} 
+            onExitToClient={() => setActiveTab('menu')}
+          />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-[#FCFCFB] text-dark select-none selection:bg-yellow/30 selection:text-black">
       
@@ -1174,11 +1226,6 @@ function MenuAndOrdersApp() {
               setActiveTab('menu');
             }}
           />
-        )}
-
-        {/* Independent Driver logistics hub */}
-        {activeTab === 'driver' && showDriverTab && (
-          <DriverPortal businessSettings={businessSettings} />
         )}
 
         {/* Customer Account & Addresses portal */}

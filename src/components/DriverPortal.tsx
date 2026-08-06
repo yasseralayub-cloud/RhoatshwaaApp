@@ -38,9 +38,10 @@ import { motion, AnimatePresence } from 'motion/react';
 
 interface DriverPortalProps {
   businessSettings?: import('../types').BusinessSettings;
+  onExitToClient?: () => void;
 }
 
-export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings }) => {
+export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, onExitToClient }) => {
   const { language, t } = useLanguage();
   const isAr = language === 'ar';
 
