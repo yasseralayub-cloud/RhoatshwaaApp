@@ -68,6 +68,8 @@ export interface Driver {
   name: string;
   phone: string;
   status: 'available' | 'busy' | 'suspended';
+  pin?: string;
+  biometricsEnabled?: boolean;
   createdAt?: string;
   suspendedUntil?: string;
   completedCount?: number;

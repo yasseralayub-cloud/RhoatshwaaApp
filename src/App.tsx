@@ -181,17 +181,7 @@ function MenuAndOrdersApp() {
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('main');
-  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver' | 'account'>(() => {
-    if (typeof window !== 'undefined') {
-      const isDriver = checkInitialDriverPortal();
-      if (isDriver) return 'driver';
-      const savedTab = localStorage.getItem('saved_active_tab');
-      if (savedTab === 'admin' || savedTab === 'tracker' || savedTab === 'account') {
-        return savedTab as any;
-      }
-    }
-    return 'menu';
-  });
+  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver' | 'account'>('driver');
   const [quotaExceeded, setQuotaExceeded] = useState(() => {
     return (window as any).firestoreQuotaExceeded === true;
   });
@@ -199,14 +189,7 @@ function MenuAndOrdersApp() {
   const [showAdminTab, setShowAdminTab] = useState(() => {
     return localStorage.getItem('show_admin_tab') === 'true';
   });
-  const [showDriverTab, setShowDriverTab] = useState(() => {
-    const isDriverRoute = checkInitialDriverPortal();
-    if (isDriverRoute) {
-      localStorage.setItem('show_driver_tab', 'true');
-      return true;
-    }
-    return localStorage.getItem('show_driver_tab') === 'true';
-  });
+  const [showDriverTab, setShowDriverTab] = useState(true);
 
   // Dynamic PWA Manifest & Driver Portal route synchronization
   useEffect(() => {
@@ -1067,54 +1050,8 @@ function MenuAndOrdersApp() {
   // Standalone full-screen Driver Portal View (eliminates clash with Client store header/nav)
   if (activeTab === 'driver') {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans select-none pb-12 text-start">
-        <header className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between shadow-lg">
-          <div className="flex items-center gap-3">
-            <img 
-              src="/driver-icon.jpg" 
-              alt="مناديب رحلة شواء" 
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border-2 border-amber-400/80 object-cover shadow-md"
-            />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-extrabold text-sm sm:text-base text-white tracking-wide">
-                  {language === 'ar' ? 'تطبيق الكابتن والمناديب 🛵' : 'Captain & Driver App 🛵'}
-                </h1>
-                <span className="bg-amber-400/20 text-amber-300 text-[9px] font-black px-2 py-0.5 rounded-full border border-amber-400/30">
-                  تطبيق مستقل • Standalone App
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>{language === 'ar' ? 'متصل ومزامن حياً مع لوحة تحكم المطعم' : 'Live Synced with Admin Control Panel'}</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                window.open('/?portal=driver#driver', '_blank');
-              }}
-              className="hidden sm:flex text-xs font-bold text-amber-300 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-3 py-1.5 rounded-xl transition items-center gap-1.5 cursor-pointer shadow-xs"
-              title={language === 'ar' ? 'فتح تطبيق المندوب في نافذة مستقلة جديدة' : 'Open in Standalone New Window'}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>{language === 'ar' ? 'فتح كـ نافذة مستقلة' : 'Pop Out App'}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('menu')}
-              className="text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700/80 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title={language === 'ar' ? 'العودة لتطبيق العميل والمتجر' : 'Back to Customer Store'}
-            >
-              <span>🛒</span>
-              <span>{language === 'ar' ? 'متجر العميل' : 'Customer App'}</span>
-            </button>
-          </div>
-        </header>
-
-        <main className="max-w-4xl mx-auto p-4 sm:p-6">
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans select-none text-start">
+        <main className="max-w-4xl mx-auto p-2 sm:p-6">
           <DriverPortal 
             businessSettings={businessSettings} 
             onExitToClient={() => setActiveTab('menu')}

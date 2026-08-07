@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-type Language = 'ar' | 'en';
+type Language = 'ar' | 'en' | 'ur';
 
 interface LanguageContextType {
   language: Language;
@@ -9,7 +9,7 @@ interface LanguageContextType {
   isRtl: boolean;
 }
 
-const TR_DICT: Record<string, Record<Language, string>> = {
+const TR_DICT: Record<string, Record<string, string>> = {
   appName: { ar: 'رحلة شواء', en: 'Grilling Journey' },
   appSub: { ar: 'مذاق المشويات الفاخرة على أصولها', en: 'The Authentic Taste of Premium Grills' },
   menu: { ar: 'المنيو', en: 'Menu' },
@@ -84,7 +84,7 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem('app_lang');
-    return (saved === 'en' || saved === 'ar') ? saved : 'ar';
+    return (saved === 'en' || saved === 'ar' || saved === 'ur') ? saved : 'ar';
   });
 
   useEffect(() => {
@@ -93,12 +93,12 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const t = (key: string): string => {
     if (TR_DICT[key]) {
-      return TR_DICT[key][language];
+      return TR_DICT[key][language] || TR_DICT[key]['ar'] || TR_DICT[key]['en'];
     }
     return key;
   };
 
-  const isRtl = language === 'ar';
+  const isRtl = language === 'ar' || language === 'ur';
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage, t, isRtl }}>

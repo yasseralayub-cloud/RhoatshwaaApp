@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import InteractiveOrderMap from './InteractiveOrderMap';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
+import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
 import { collection, onSnapshot, doc, updateDoc, addDoc, query, where, orderBy, deleteDoc } from 'firebase/firestore';
 import { Order, Driver } from '../types';
 import { useLanguage } from './LanguageContext';
@@ -32,7 +33,17 @@ import {
   X,
   Copy,
   Check,
-  Smartphone
+  Smartphone,
+  Lock,
+  Key,
+  Fingerprint,
+  Globe,
+  RefreshCw,
+  Send,
+  MessageSquare,
+  ArrowRight,
+  ArrowLeft,
+  UserPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -43,7 +54,23 @@ interface DriverPortalProps {
 
 export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, onExitToClient }) => {
   const { language, t } = useLanguage();
-  const isAr = language === 'ar';
+
+  // Driver portal language state (Arabic, English, Urdu)
+  const [portalLang, setPortalLang] = useState<'ar' | 'en' | 'ur'>(() => {
+    const saved = localStorage.getItem('driver_portal_lang');
+    if (saved === 'ar' || saved === 'en' || saved === 'ur') return saved;
+    if (language === 'ar' || language === 'en' || language === 'ur') return language as any;
+    return 'ar';
+  });
+
+  const isAr = portalLang === 'ar';
+  const isUr = portalLang === 'ur';
+  const isEn = portalLang === 'en';
+  const isRtl = isAr || isUr;
+
+  useEffect(() => {
+    localStorage.setItem('driver_portal_lang', portalLang);
+  }, [portalLang]);
 
   // Driver context state
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -52,9 +79,44 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Login form state
+  // Advanced Authentication System State
+  const [authStep, setAuthStep] = useState<'phone' | 'pin_entry' | 'otp_verification' | 'set_pin' | 'biometric_suggestion' | 'not_registered'>('phone');
   const [loginPhone, setLoginPhone] = useState('');
+  const [unregisteredPhone, setUnregisteredPhone] = useState('');
+  const [enteredPin, setEnteredPin] = useState('');
+  const [foundDriverAuth, setFoundDriverAuth] = useState<Driver | null>(null);
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [otpTimer, setOtpTimer] = useState(0);
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [isForgotPinFlow, setIsForgotPinFlow] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [hasBiometricSaved, setHasBiometricSaved] = useState(false);
+  const [smsDispatchState, setSmsDispatchState] = useState<'idle' | 'sending' | 'sent_gateway' | 'sent_simulated' | 'failed'>('idle');
+  const [smsGatewayName, setSmsGatewayName] = useState<string>('');
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+
+  // Format phone number to E.164 format for Firebase Phone Auth (+9665XXXXXXXX)
+  const formatPhoneE164 = (phone: string): string => {
+    let clean = phone.trim().replace(/\D/g, '');
+    if (clean.startsWith('05') && clean.length === 10) {
+      return '+966' + clean.substring(1);
+    }
+    if (clean.startsWith('5') && clean.length === 9) {
+      return '+966' + clean;
+    }
+    if (clean.startsWith('9665') && clean.length === 12) {
+      return '+' + clean;
+    }
+    if (clean.startsWith('00966') && clean.length === 14) {
+      return '+' + clean.substring(2);
+    }
+    if (!phone.startsWith('+')) {
+      return '+' + clean;
+    }
+    return phone;
+  };
 
   // Creation form state
   const [showRegisterForm, setShowRegisterForm] = useState(false);
@@ -85,6 +147,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
   const [copiedText, setCopiedText] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [copiedDriverUrl, setCopiedDriverUrl] = useState(false);
+
+  const lastGpsSyncRef = useRef<number>(0);
+  const firestoreQuotaExceededRef = useRef<boolean>(false);
 
   const handleInstallDriverApp = async () => {
     const promptEvent = (window as any).deferredPrompt;
@@ -291,15 +356,23 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
           setGpsPermissionState('granted');
 
           // Sync position to cloud Firestore for Live customer tracking map & Admin panel tracking in real-time!
-          try {
-            await updateDoc(doc(db, 'drivers', selectedDriver.id), {
-              latitude: lat,
-              longitude: lng,
-              lastActive: new Date().toISOString(),
-              gpsAccuracy: accuracy
-            });
-          } catch (err) {
-            console.error("Failed to sync GPS position to Firestore:", err);
+          // Throttle to at most once every 30 seconds to conserve Firestore write quota
+          const now = Date.now();
+          if (!firestoreQuotaExceededRef.current && (now - lastGpsSyncRef.current > 30000)) {
+            lastGpsSyncRef.current = now;
+            try {
+              await updateDoc(doc(db, 'drivers', selectedDriver.id), {
+                latitude: lat,
+                longitude: lng,
+                lastActive: new Date().toISOString(),
+                gpsAccuracy: accuracy
+              });
+            } catch (err: any) {
+              console.warn("Failed to sync GPS position to Firestore (quota or offline):", err);
+              if (err?.code === 'resource-exhausted' || String(err).includes('quota') || String(err).includes('resource-exhausted')) {
+                firestoreQuotaExceededRef.current = true;
+              }
+            }
           }
         },
         (error) => {
@@ -430,29 +503,314 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
     return () => unsubscribe();
   }, [selectedDriver?.id]);
 
-  // 2b. Handle Login via Mobile Phone Number
-  const handlePhoneLogin = (e: React.FormEvent) => {
+  // OTP Countdown timer effect
+  useEffect(() => {
+    if (otpTimer <= 0) return;
+    const interval = setInterval(() => {
+      setOtpTimer((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [otpTimer]);
+
+  // Check saved biometric credentials in vault
+  useEffect(() => {
+    try {
+      const vault = JSON.parse(localStorage.getItem('driver_biometric_vault') || '{}');
+      if (Object.keys(vault).length > 0) {
+        setHasBiometricSaved(true);
+      } else {
+        setHasBiometricSaved(false);
+      }
+    } catch {
+      setHasBiometricSaved(false);
+    }
+  }, [loginPhone]);
+
+  // 2b. Advanced Authentication Flow Handlers
+  const handleCheckPhone = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    const cleanedInput = loginPhone.trim().replace(/[\s+]/g, '');
-    if (!cleanedInput) return;
+    const cleanPhone = loginPhone.trim().replace(/[\s+]/g, '');
+    if (!cleanPhone) return;
 
-    // Search for driver in registered, approved drivers
-    const foundDriver = drivers.find(
-      (d) => d.phone.trim().replace(/[\s+]/g, '') === cleanedInput
+    // Search in registered approved drivers
+    const matched = drivers.find(
+      (d) => d.phone.trim().replace(/[\s+]/g, '') === cleanPhone
     );
 
-    if (foundDriver) {
-      setSelectedDriver(foundDriver);
-      localStorage.setItem('active_driver_profile', JSON.stringify(foundDriver));
-      setLoginPhone('');
+    if (matched) {
+      // Driver IS registered: Welcome by name and request PIN / password
+      setFoundDriverAuth(matched);
+      setUnregisteredPhone('');
+      if (matched.pin) {
+        setAuthStep('pin_entry');
+        setEnteredPin('');
+      } else {
+        // First time login for registered driver without PIN -> Send OTP Verification
+        triggerSendOtp(matched.phone);
+        setIsForgotPinFlow(false);
+        setAuthStep('otp_verification');
+      }
+    } else {
+      // Driver IS NOT registered: Send real SMS OTP to verify mobile first
+      setFoundDriverAuth(null);
+      setUnregisteredPhone(loginPhone);
+      triggerSendOtp(loginPhone);
+      setIsForgotPinFlow(false);
+      setAuthStep('otp_verification');
+    }
+  };
+
+  const triggerSendOtp = async (phone: string) => {
+    setEnteredOtp('');
+    setOtpTimer(60);
+    setErrorMsg('');
+    setSmsDispatchState('sending');
+    setSmsGatewayName('Firebase Phone SMS');
+
+    const e164Phone = formatPhoneE164(phone);
+
+    try {
+      // Clear any existing stale verifier instance to prevent reCAPTCHA hanging
+      if ((window as any).driverRecaptchaVerifier) {
+        try {
+          (window as any).driverRecaptchaVerifier.clear();
+        } catch (e) {
+          // ignore clear error
+        }
+        (window as any).driverRecaptchaVerifier = null;
+      }
+
+      // Create a fresh invisible reCAPTCHA verifier instance
+      const verifier = new RecaptchaVerifier(auth, 'recaptcha-container-driver', {
+        size: 'invisible',
+        callback: () => {},
+        'expired-callback': () => {
+          if ((window as any).driverRecaptchaVerifier) {
+            try { (window as any).driverRecaptchaVerifier.clear(); } catch (e) {}
+            (window as any).driverRecaptchaVerifier = null;
+          }
+        }
+      });
+      (window as any).driverRecaptchaVerifier = verifier;
+
+      const confirmationObj = await signInWithPhoneNumber(auth, e164Phone, verifier);
+      setConfirmationResult(confirmationObj);
+      setSmsDispatchState('sent_gateway');
+      setSmsGatewayName('Firebase Phone SMS');
+    } catch (err: any) {
+      // Clean up verifier on error
+      if ((window as any).driverRecaptchaVerifier) {
+        try { (window as any).driverRecaptchaVerifier.clear(); } catch (e) {}
+        (window as any).driverRecaptchaVerifier = null;
+      }
+
+      console.error('Firebase Phone Auth SMS Error:', err);
+      setSmsDispatchState('failed');
+      
+      let friendlyError = isAr 
+        ? 'فشل إرسال رمز التحقق عبر SMS. يرجى التأكد من صحة رقم الهاتف ومحاولة الإرسال مجدداً.' 
+        : 'Failed to send SMS verification code. Please check your phone number and try again.';
+        
+      if (err?.code === 'auth/invalid-phone-number') {
+        friendlyError = isAr ? 'رقم الهاتف غير صالح لاستلام رسائل SMS (تأكد من كتابة الرقم بشكل صحيح).' : 'Invalid phone number format for SMS.';
+      } else if (err?.code === 'auth/too-many-requests') {
+        friendlyError = isAr ? 'تم حظر الطلبات المؤقتة لكثرة المحاولات. يرجى الانتظار بضع دقائق ثم المحاولة مرة أخرى.' : 'Too many requests. Please wait a few minutes and try again.';
+      } else if (err?.code === 'auth/operation-not-allowed') {
+        friendlyError = isAr ? 'مزود خدمة الهاتف غير مفعّل في Firebase Console.' : 'Phone Sign-In provider is not enabled in Firebase Console.';
+      }
+
+      setErrorMsg(friendlyError);
+    }
+  };
+
+  const handleVerifyPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    if (!foundDriverAuth) return;
+
+    if (enteredPin.trim() === foundDriverAuth.pin) {
+      completeDriverLogin(foundDriverAuth);
     } else {
       setErrorMsg(
         isAr 
-          ? 'عذراً، رقم الجوال هذا غير مسجل في قائمة المناديب المعتمدين. يرجى تقديم طلب تسجيل بالضغط على الرابط أدناه.' 
-          : 'Sorry, this mobile number is not registered in our approved drivers list. Please request registration using the link below.'
+          ? 'رمز الدخول / كلمة المرور غير صحيحة. يرجى التأكد وإعادة المحاولة.' 
+          : isUr
+          ? 'پن یا پاس ورڈ غلط ہے۔ دوبارہ کوشش کریں۔'
+          : 'Incorrect PIN / Password. Please check and try again.'
       );
     }
+  };
+
+  const handleForgotPinClick = () => {
+    if (!foundDriverAuth) return;
+    setIsForgotPinFlow(true);
+    triggerSendOtp(foundDriverAuth.phone);
+    setAuthStep('otp_verification');
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setIsSubmitting(true);
+
+    const cleanCode = enteredOtp.trim();
+
+    if (!confirmationResult) {
+      setErrorMsg(
+        isAr 
+          ? 'لم يتم العثور على طلب إرسال الرمز. يرجى النقر على إعادة الإرسال.' 
+          : 'Verification session missing. Please resend the code.'
+      );
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      await confirmationResult.confirm(cleanCode);
+      setIsSubmitting(false);
+      
+      if (foundDriverAuth) {
+        // Driver is registered -> move to set / reset PIN
+        setAuthStep('set_pin');
+        setNewPin('');
+        setConfirmPin('');
+      } else {
+        // Driver is NOT registered -> move to 'not_registered' notice screen
+        setAuthStep('not_registered');
+      }
+    } catch (err: any) {
+      console.error('Firebase OTP confirm error:', err);
+      setIsSubmitting(false);
+      setErrorMsg(
+        isAr 
+          ? 'رمز التحقق (OTP) الذي أدخلته غير صحيح أو انتهت صلاحيته. يرجى التأكد وإعادة المحاولة.' 
+          : isUr
+          ? 'تصدیقی کوڈ (OTP) غلط ہے۔'
+          : 'Invalid or expired verification OTP code. Please try again.'
+      );
+    }
+  };
+
+  const handleSaveNewPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+
+    if (!newPin || newPin.length < 4) {
+      setErrorMsg(
+        isAr 
+          ? 'الرجاء إدخال رمز دخول مكون من 4 أرقام على الأقل.' 
+          : isUr
+          ? 'براہ کرم کم از کم 4 ہندسوں کا پن درج کریں۔'
+          : 'Please enter a PIN with at least 4 digits.'
+      );
+      return;
+    }
+
+    if (newPin !== confirmPin) {
+      setErrorMsg(
+        isAr 
+          ? 'رمزا الدخول غير متطابقين. يرجى إعادة كتابتهما بدقة.' 
+          : isUr
+          ? 'پن کوڈز آپس میں نہیں ملتے ہیں۔'
+          : 'PINs do not match. Please retype carefully.'
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (foundDriverAuth) {
+        const driverRef = doc(db, 'drivers', foundDriverAuth.id);
+        await updateDoc(driverRef, { pin: newPin });
+
+        const updatedDriver = { ...foundDriverAuth, pin: newPin };
+        setFoundDriverAuth(updatedDriver);
+
+        setAuthStep('biometric_suggestion');
+      }
+    } catch (err) {
+      console.error('Failed to update driver PIN:', err);
+      setErrorMsg(
+        isAr 
+          ? 'تعذر حفظ كلمة المرور، يرجى المحاولة مرة أخرى.' 
+          : isUr
+          ? 'پاس ورڈ محفوظ نہیں ہو سکا۔ دوبارہ کوشش کریں۔'
+          : 'Failed to update PIN, please try again.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEnableBiometrics = async () => {
+    if (foundDriverAuth) {
+      try {
+        const vault = JSON.parse(localStorage.getItem('driver_biometric_vault') || '{}');
+        vault[foundDriverAuth.phone.trim().replace(/[\s+]/g, '')] = {
+          phone: foundDriverAuth.phone,
+          pin: foundDriverAuth.pin || newPin,
+          driverId: foundDriverAuth.id,
+          name: foundDriverAuth.name,
+          savedAt: new Date().toISOString()
+        };
+        localStorage.setItem('driver_biometric_vault', JSON.stringify(vault));
+
+        await updateDoc(doc(db, 'drivers', foundDriverAuth.id), { biometricsEnabled: true });
+        
+        const updated = { ...foundDriverAuth, biometricsEnabled: true };
+        completeDriverLogin(updated);
+      } catch (err) {
+        console.error('Biometric save error:', err);
+        completeDriverLogin(foundDriverAuth);
+      }
+    }
+  };
+
+  const handleBiometricQuickLogin = () => {
+    setErrorMsg('');
+    try {
+      const vault = JSON.parse(localStorage.getItem('driver_biometric_vault') || '{}');
+      const cleanPhone = loginPhone.trim().replace(/[\s+]/g, '');
+      
+      let cred = vault[cleanPhone];
+      if (!cred && Object.keys(vault).length > 0) {
+        cred = Object.values(vault)[0] as any;
+      }
+
+      if (!cred) {
+        setErrorMsg(
+          isAr 
+            ? 'لم يتم العثور على بصمة قائمة لهذا الجوال. يرجى الدخول بالرمز أولاً.' 
+            : isUr
+            ? 'اس موبائل کے لیے بائیو میٹرک تفصیلات نہیں ملیں۔'
+            : 'No saved biometric profile found for this phone. Please login with PIN first.'
+        );
+        return;
+      }
+
+      const matched = drivers.find(
+        (d) => d.phone.trim().replace(/[\s+]/g, '') === cred.phone.trim().replace(/[\s+]/g, '')
+      );
+
+      if (matched) {
+        setLoginPhone(matched.phone);
+        completeDriverLogin(matched);
+      }
+    } catch (err) {
+      console.error('Biometric login failed:', err);
+    }
+  };
+
+  const completeDriverLogin = (driver: Driver) => {
+    setSelectedDriver(driver);
+    localStorage.setItem('active_driver_profile', JSON.stringify(driver));
+    setAuthStep('phone');
+    setLoginPhone('');
+    setEnteredPin('');
+    setNewPin('');
+    setConfirmPin('');
+    setErrorMsg('');
   };
 
   // 3. Register a new driver profile (Pending Approval & Telegram dispatch)
@@ -570,10 +928,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
     try {
       await updateDoc(doc(db, 'drivers', selectedDriver.id), { status: nextStatus });
     } catch (err) {
-      console.error('Failed to update status:', err);
-      // Revert if database update failed
-      setSelectedDriver(selectedDriver);
-      localStorage.setItem('active_driver_profile', JSON.stringify(selectedDriver));
+      console.warn('Firestore driver status sync warning (quota or offline):', err);
     }
   };
 
@@ -660,24 +1015,22 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
       if (nextStatus === 'delivered') {
         const order = activeDeliveries.find(o => o.id === orderId);
         
+        // Optimistically clear locally first
+        setActiveDeliveries(prev => prev.filter(o => o.id !== orderId));
+
         // Open WhatsApp with delivered notification
         if (order) {
           const waLink = getWhatsAppLink(order, 'delivered');
           window.open(waLink, '_blank');
         }
 
-        // Update driver completed count & earnings
+        // Update driver completed count & earnings locally
         if (selectedDriver) {
           const orderFee = order?.deliveryFee || 15;
           const currentCount = selectedDriver.completedCount || 0;
           const currentEarnings = selectedDriver.totalEarnings || 0;
           const newCount = currentCount + 1;
           const newEarnings = currentEarnings + orderFee;
-
-          await updateDoc(doc(db, 'drivers', selectedDriver.id), {
-            completedCount: newCount,
-            totalEarnings: newEarnings
-          });
 
           const updated = {
             ...selectedDriver,
@@ -686,22 +1039,38 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
           };
           setSelectedDriver(updated);
           localStorage.setItem('active_driver_profile', JSON.stringify(updated));
+
+          try {
+            await updateDoc(doc(db, 'drivers', selectedDriver.id), {
+              completedCount: newCount,
+              totalEarnings: newEarnings
+            });
+          } catch (err) {
+            console.warn('Driver profile Firestore sync error (quota or offline):', err);
+          }
         }
 
-        // Delete order from Firestore directly so it is instantly removed after delivery completion
-        await deleteDoc(doc(db, 'orders', orderId));
-        
-        // Clear locally as fallback
-        setActiveDeliveries(prev => prev.filter(o => o.id !== orderId));
+        // Delete order from Firestore directly
+        try {
+          await deleteDoc(doc(db, 'orders', orderId));
+        } catch (err) {
+          console.warn('Order delete Firestore sync error (quota or offline):', err);
+        }
       } else {
-        const updateData: Partial<Order> = { status: nextStatus };
-        await updateDoc(doc(db, 'orders', orderId), updateData);
+        // Optimistically update order status locally
+        setActiveDeliveries(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
 
-        // Find the order info to open WhatsApp automatically for intermediate status
         const order = activeDeliveries.find(o => o.id === orderId);
         if (order) {
           const waLink = getWhatsAppLink(order, nextStatus);
           window.open(waLink, '_blank');
+        }
+
+        try {
+          const updateData: Partial<Order> = { status: nextStatus };
+          await updateDoc(doc(db, 'orders', orderId), updateData);
+        } catch (err) {
+          console.warn('Order update Firestore sync error (quota or offline):', err);
         }
       }
     } catch (err) {
@@ -773,24 +1142,57 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
   return (
     <div id="driver-portal-container" className="space-y-6 max-w-4xl mx-auto">
       
-      {/* Title Header with Icon */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-black/5 pb-4">
+      {/* Title Header with Icon & 3-Language Toggle */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-black/5 pb-4">
         <div className="text-start space-y-1">
-          <div className="flex items-center gap-2 text-yellow-600 font-mono text-[10px] uppercase font-bold tracking-widest">
-            <Truck className="w-4 h-4 text-yellow" />
-            <span>{isAr ? 'نظام تتبع وإدارة لوجستية للمناديب' : 'Driver Logistics & Realtime Dispatch'}</span>
+          <div className="flex items-center gap-2 text-yellow-600 text-xs font-bold leading-snug flex-wrap">
+            <Truck className="w-4 h-4 text-yellow shrink-0" />
+            <span>
+              {isAr ? 'نظام تتبع وإدارة لوجستية للمناديب' : isUr ? 'ڈرائیور ڈسپچ اور لوجسٹک ٹریکنگ سسٹم' : 'Driver Logistics & Realtime Dispatch'}
+            </span>
           </div>
-          <h2 className="text-2xl font-serif font-bold text-dark tracking-tight">
-            {isAr ? 'بوابة كابتن التوصيل 🚴' : 'Delivery Captain Portal 🚴'}
+          <h2 className="text-xl sm:text-2xl font-serif font-bold text-dark tracking-tight leading-tight">
+            {isAr ? 'بوابة كابتن التوصيل 🚴' : isUr ? 'ڈلیوری کپتان پورٹل 🚴' : 'Delivery Captain Portal 🚴'}
           </h2>
+        </div>
+
+        {/* 3-Language Selector Bar */}
+        <div className="flex items-center gap-1 bg-neutral-900 p-1.5 rounded-2xl shadow-xs border border-neutral-800 self-stretch sm:self-auto justify-center">
+          <button
+            type="button"
+            onClick={() => setPortalLang('ar')}
+            className={`px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+              isAr ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            🇸🇦 العربية
+          </button>
+          <button
+            type="button"
+            onClick={() => setPortalLang('en')}
+            className={`px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+              isEn ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            🇬🇧 English
+          </button>
+          <button
+            type="button"
+            onClick={() => setPortalLang('ur')}
+            className={`px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+              isUr ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            🇵🇰 اردو
+          </button>
         </div>
 
         {selectedDriver && (
           <button
             onClick={handleLogout}
-            className="text-[10px] font-black text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/50 px-3 py-1.5 rounded-xl cursor-pointer transition-colors"
+            className="text-[11px] font-black text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/50 px-3 py-1.5 rounded-xl cursor-pointer transition-colors whitespace-nowrap shrink-0"
           >
-            {isAr ? 'تغيير الحساب 👤' : 'Change Profile 👤'}
+            {isAr ? 'تغيير الحساب 👤' : isUr ? 'پروفائل تبدیل کریں 👤' : 'Change Profile 👤'}
           </button>
         )}
       </div>
@@ -798,49 +1200,50 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
       {/* PWA Standalone Driver App Banner (مناديب رحلة شواء) */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white border border-amber-500/30 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3 text-start">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-3.5 min-w-0">
             <div className="relative shrink-0">
               <img 
-                src="/driver-icon.jpg" 
+                src="/driver-icon.jpg?v=2" 
                 alt="مناديب رحلة شواء" 
+                referrerPolicy="no-referrer"
                 className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-amber-400/80 shadow-md"
               />
-              <span className="absolute -bottom-1 -end-1 bg-amber-400 text-black text-[9px] font-black px-1.5 py-0.5 rounded-full border border-slate-900">
+              <span className="absolute -bottom-1 -end-1 bg-amber-400 text-black text-[9px] font-black px-1.5 py-0.5 rounded-full border border-slate-900 whitespace-nowrap">
                 PWA
               </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-base sm:text-lg text-white tracking-wide">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-extrabold text-base sm:text-lg text-white leading-snug">
                   {isAr ? 'مناديب رحلة شواء 🛵' : 'Grill Journey Drivers 🛵'}
                 </h3>
-                <span className="bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                <span className="bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
                   {isAr ? 'تطبيق مستقل' : 'Standalone App'}
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-0.5 max-w-lg leading-relaxed">
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
                 {isAr 
-                  ? 'قم بتثبيت تطبيق المناديب على شاشة جوالك الرئيسية ليفتح معك مباشرة على لوحة الكابتن بأيقونة الدباب المخصصة دون العودة لصفحة الزبائن.' 
-                  : 'Install the Drivers App on your home screen to launch directly into the Captain Portal with dedicated scooter icon!'}
+                  ? 'قم بتثبيت تطبيق المناديب على شاشة جوالك الرئيسية ليفتح معك مباشرة على لوحة الكابتن.' 
+                  : 'Install the Drivers App on your home screen to launch directly into the Captain Portal.'}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto shrink-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap sm:flex-nowrap">
             <button
               onClick={handleInstallDriverApp}
-              className="flex-1 sm:flex-none py-2.5 px-4 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all transform active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+              className="flex-1 sm:flex-none py-2.5 px-4 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all transform active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Smartphone className="w-4 h-4 text-slate-950" />
+              <Smartphone className="w-4 h-4 text-slate-950 shrink-0" />
               <span>{isAr ? 'تثبيت تطبيق المناديب 📱' : 'Install Driver App 📱'}</span>
             </button>
 
             <button
               onClick={handleCopyDriverUrl}
-              className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
               title={isAr ? 'نسخ رابط تطبيق المناديب المباشر' : 'Copy Direct Driver Portal Link'}
             >
-              {copiedDriverUrl ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              {copiedDriverUrl ? <Check className="w-4 h-4 text-emerald-400 shrink-0" /> : <Copy className="w-4 h-4 shrink-0" />}
               <span>{copiedDriverUrl ? (isAr ? 'تم النسخ!' : 'Copied!') : (isAr ? 'نسخ الرابط' : 'Copy Link')}</span>
             </button>
           </div>
@@ -851,10 +1254,10 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
           <div className="pt-3 mt-3 border-t border-slate-700/60 text-xs text-slate-300 space-y-2 bg-slate-950/50 p-3.5 rounded-2xl border border-slate-800">
             <div className="flex items-center justify-between text-amber-300 font-bold text-xs">
               <span className="flex items-center gap-1.5">
-                <HelpCircle className="w-4 h-4" />
-                {isAr ? 'خطوات إضافة تطبيق (مناديب رحلة شواء) على الجوال:' : 'How to install (Grill Journey Drivers) App:'}
+                <HelpCircle className="w-4 h-4 shrink-0" />
+                <span>{isAr ? 'خطوات إضافة تطبيق (مناديب رحلة شواء) على الجوال:' : 'How to install (Grill Journey Drivers) App:'}</span>
               </span>
-              <button onClick={() => setShowInstallGuide(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button onClick={() => setShowInstallGuide(false)} className="text-slate-400 hover:text-white shrink-0 p-1">✕</button>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[11px] leading-relaxed">
@@ -864,7 +1267,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
                   <li>افتح هذا الرابط أو اضغط زر (نسخ الرابط) بالأعلى في متصفح Safari.</li>
                   <li>اضغط على زر المشاركة أسفل الشاشة <span className="font-mono bg-slate-800 px-1 rounded">⎘ Share</span>.</li>
                   <li>اختر <span className="font-bold text-white font-mono bg-slate-800 px-1 rounded">الإضافة إلى الشاشة الرئيسية ➕</span>.</li>
-                  <li>اضغط (إضافة) وسيظهر التطبيق بأيقونة الدباب باسم <b>مناديب رحلة شواء</b>.</li>
+                  <li>اضغط (إضافة) وسيظهر التطبيق باسم <b>مناديب رحلة شواء</b>.</li>
                 </ol>
               </div>
 
@@ -902,6 +1305,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
             </div>
           </div>
 
+          {/* Invisible reCAPTCHA container for Firebase Phone Authentication */}
+          <div id="recaptcha-container-driver"></div>
+
           {/* Error Message */}
           {errorMsg && (
             <div className="bg-rose-50 border border-rose-200/50 text-rose-700 rounded-xl p-3 text-xs flex items-center gap-2">
@@ -931,51 +1337,397 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
               </button>
             </div>
           ) : !showRegisterForm ? (
-            /* PHONE LOGIN FORM */
-            <form onSubmit={handlePhoneLogin} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-dark/60 block">
-                  {isAr ? 'أدخل رقم جوالك المسجل بالسيستم:' : 'Enter your registered mobile number:'}
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dark/40 text-xs font-bold">
-                    📞
-                  </span>
-                  <input
-                    type="tel"
-                    required
-                    placeholder={isAr ? '05xxxxxxxx' : '05xxxxxxxx'}
-                    value={loginPhone}
-                    onChange={(e) => setLoginPhone(e.target.value)}
-                    className="w-full bg-neutral-50 text-dark border border-black/5 rounded-xl pl-9 pr-4 py-3 outline-none focus:border-yellow focus:bg-white text-xs text-start font-mono font-bold"
-                  />
+            /* MULTI-STEP DRIVER AUTHENTICATION FORM */
+            <div>
+              {/* STEP 1: PHONE NUMBER ENTRY */}
+              {authStep === 'phone' && (
+                <form onSubmit={handleCheckPhone} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-dark/70 block">
+                      {isAr ? 'أدخل رقم جوالك المسجل بالسيستم:' : isUr ? 'اپنا رجسٹرڈ موبائل نمبر درج کریں:' : 'Enter your registered mobile number:'}
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dark/40 text-xs font-bold">
+                        📞
+                      </span>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="05xxxxxxxx"
+                        value={loginPhone}
+                        onChange={(e) => setLoginPhone(e.target.value)}
+                        className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl pl-9 pr-4 py-3 outline-none focus:border-yellow focus:bg-white text-xs text-start font-mono font-bold transition-all shadow-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoggingIn}
+                    className="w-full py-3.5 px-4 bg-yellow hover:bg-yellow-500 text-black font-black text-xs rounded-xl transition-all cursor-pointer text-center shadow-md uppercase tracking-wider flex items-center justify-center gap-2 transform active:scale-98"
+                  >
+                    <span>{isAr ? 'تأكيد ودخول الكابتن 🚴' : isUr ? 'ڈلیوری کپتان لاگ ان 🚴' : 'Delivery Login 🚴'}</span>
+                  </button>
+
+                  {/* Quick Biometric Login Option if vault has saved profile */}
+                  {hasBiometricSaved && (
+                    <button
+                      type="button"
+                      onClick={handleBiometricQuickLogin}
+                      className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-extrabold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                    >
+                      <Fingerprint className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>
+                        {isAr ? 'الدخول السريع ببصمة الوجه / الإصبع 👆' : isUr ? 'فیس آئی ڈی / فنگر پرنٹ سے سائن ان 👆' : 'Face ID / Touch ID Quick Login 👆'}
+                      </span>
+                    </button>
+                  )}
+
+                  <div className="pt-4 border-t border-black/5 text-center space-y-1.5">
+                    <p className="text-xs text-dark/50">
+                      {isAr ? 'هل أنت مندوب جديد وترغب بالانضمام إلينا؟' : isUr ? 'کیا آپ نئے ڈرائیور ہیں؟' : 'Are you a new captain wanting to join us?'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrorMsg('');
+                        setShowRegisterForm(true);
+                      }}
+                      className="text-xs font-black text-yellow-600 hover:text-yellow-700 hover:underline cursor-pointer"
+                    >
+                      {isAr ? '🚴 للتسجيل تقديم طلب جديد' : isUr ? '🚴 نیا اکاؤنٹ رجسٹر کریں' : '🚴 Click Here to Register'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* STEP 2: PIN ENTRY (FOR REGISTERED DRIVERS) */}
+              {authStep === 'pin_entry' && (
+                <form onSubmit={handleVerifyPin} className="space-y-4">
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3.5 flex items-center gap-3">
+                    <div className="w-11 h-11 bg-amber-400 text-slate-950 font-black rounded-xl flex items-center justify-center shrink-0 text-base shadow-xs">
+                      {foundDriverAuth?.name.charAt(0) || '🚴'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-bold text-amber-700">
+                        {isAr ? 'أهلاً وسهلاً بعودتك 👋' : 'Welcome back 👋'}
+                      </p>
+                      <h4 className="font-extrabold text-xs text-dark leading-snug">
+                        {isAr ? `مرحباً بك يا ${foundDriverAuth?.name}!` : `Welcome, ${foundDriverAuth?.name}!`}
+                      </h4>
+                      <p className="text-[10px] text-dark/50 font-mono mt-0.5">{foundDriverAuth?.phone}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAuthStep('phone')}
+                      className="text-[10px] font-bold text-amber-700 hover:underline shrink-0 bg-amber-100 px-2 py-1 rounded-md"
+                    >
+                      {isAr ? 'تغيير الرقم' : isUr ? 'نمبر تبدیل کریں' : 'Change Phone'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-dark/70 block">
+                        {isAr ? 'يرجى إدخال كلمة المرور / رمز الدخول (PIN):' : isUr ? 'پن کوڈ / پاس ورڈ درج کریں (4 ہندسے):' : 'Enter PIN / Password (4 Digits):'}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleForgotPinClick}
+                        className="text-[11px] font-black text-rose-600 hover:text-rose-700 hover:underline"
+                      >
+                        {isAr ? 'نسيت كلمة المرور؟' : isUr ? 'پاس ورڈ بھول گئے؟' : 'Forgot PIN?'}
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark/40 shrink-0" />
+                      <input
+                        type="password"
+                        required
+                        maxLength={6}
+                        placeholder="••••"
+                        value={enteredPin}
+                        onChange={(e) => setEnteredPin(e.target.value)}
+                        className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl pl-9 pr-4 py-3 outline-none focus:border-yellow focus:bg-white text-sm text-start font-mono font-bold tracking-widest transition-all shadow-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3.5 px-4 bg-yellow hover:bg-yellow-500 text-black font-black text-xs rounded-xl transition-all cursor-pointer text-center shadow-md uppercase tracking-wider flex items-center justify-center gap-2 transform active:scale-98"
+                  >
+                    <Lock className="w-4 h-4 text-slate-950 shrink-0" />
+                    <span>{isAr ? 'تأكيد كلمة المرور والدخول 🔒' : isUr ? 'لاگ ان کریں 🔒' : 'Verify Password & Sign In 🔒'}</span>
+                  </button>
+
+                  {/* Biometric Quick Option */}
+                  {hasBiometricSaved && (
+                    <button
+                      type="button"
+                      onClick={handleBiometricQuickLogin}
+                      className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-amber-300 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Fingerprint className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>{isAr ? 'الدخول السريع ببصمة الجوال 👆' : isUr ? 'بائیو میٹرک لاگ ان 👆' : 'Biometric Quick Login 👆'}</span>
+                    </button>
+                  )}
+                </form>
+              )}
+
+              {/* STEP 3: OTP VERIFICATION (STRICT REAL SMS VIA FIREPHONE) */}
+              {authStep === 'otp_verification' && (
+                <form onSubmit={handleVerifyOtp} className="space-y-4 animate-fade-in">
+                  <div className="bg-blue-50 border border-blue-200/80 rounded-2xl p-4 text-start space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-blue-900 font-extrabold text-xs">
+                        <Send className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>{isAr ? 'رمز التحقق (OTP) عبر الرسائل النصية 📩' : isUr ? 'تصدیقی ایس ایم ایس کوڈ 📩' : 'SMS Verification OTP 📩'}</span>
+                      </div>
+                      
+                      {/* SMS Dispatch Badge Status */}
+                      {smsDispatchState === 'sending' && (
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full flex items-center gap-1 animate-pulse">
+                          <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+                          <span>{isAr ? 'جاري إرسال SMS...' : 'Sending SMS...'}</span>
+                        </span>
+                      )}
+                      {smsDispatchState === 'sent_gateway' && (
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                          <span>✓ {isAr ? 'تم الإرسال إلى جوالك' : 'Sent to your phone'}</span>
+                        </span>
+                      )}
+                      {smsDispatchState === 'failed' && (
+                        <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                          <span>✕ {isAr ? 'فشل الإرسال' : 'Delivery Failed'}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-blue-900 leading-relaxed font-medium">
+                      {isAr ? 'تم إرسال كود تحقق حقيقي مكون من 6 أرقام عبر SMS إلى رقم الجوال:' : isUr ? 'درج ذیل نمبر پر تصدیقی کوڈ بھیجا گیا ہے:' : 'A real 6-digit verification code was sent via SMS to:'}{' '}
+                      <strong className="font-mono text-blue-950 bg-blue-100/80 px-2 py-0.5 rounded-md font-bold dir-ltr inline-block">
+                        {foundDriverAuth?.phone || unregisteredPhone || loginPhone}
+                      </strong>
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-dark/70 block">
+                      {isAr ? 'أدخل رمز التحقق المرسل لجوالك (6 أرقام):' : isUr ? '6 ہندسوں کا تصدیقی کوڈ درج کریں:' : 'Enter 6-Digit SMS Code:'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="••••••"
+                      value={enteredOtp}
+                      onChange={(e) => setEnteredOtp(e.target.value.replace(/\D/g, ''))}
+                      className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl px-4 py-3.5 outline-none focus:border-yellow focus:bg-white text-lg text-center font-mono font-black tracking-widest shadow-xs"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || enteredOtp.length < 6}
+                    className="w-full py-3.5 px-4 bg-yellow hover:bg-yellow-500 disabled:opacity-50 text-black font-black text-xs rounded-xl transition-all cursor-pointer text-center shadow-md uppercase tracking-wider flex items-center justify-center gap-2 transform active:scale-98"
+                  >
+                    {isSubmitting ? (
+                      <RefreshCw className="w-4 h-4 animate-spin shrink-0 text-black" />
+                    ) : (
+                      <span>{isAr ? 'تأكيد الرمز والانتقال للتالي ➔' : isUr ? 'کوڈ کی تصدیق کریں ➔' : 'Verify Code & Proceed ➔'}</span>
+                    )}
+                  </button>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-black/5 text-xs">
+                    {otpTimer > 0 ? (
+                      <span className="text-dark/50 font-mono font-bold">
+                        {isAr ? `إعادة إرسال الرمز خلال (${otpTimer} ثانية)` : isUr ? `دوبارہ بھیجیں (${otpTimer}s)` : `Resend code in (${otpTimer}s)`}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => triggerSendOtp(foundDriverAuth?.phone || unregisteredPhone || loginPhone)}
+                        className="font-black text-yellow-600 hover:text-yellow-700 flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                        <span>{isAr ? 'إعادة إرسال رمز التحقق الآن 🔄' : isUr ? 'دوبارہ کوڈ بھیجیں 🔄' : 'Resend Verification Code 🔄'}</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setAuthStep('phone')}
+                      className="text-dark/50 hover:text-dark font-bold underline cursor-pointer"
+                    >
+                      {isAr ? 'إلغاء والعودة' : isUr ? 'منسوخ کریں' : 'Cancel'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* STEP 4: UNREGISTERED DRIVER NOTICE & REGISTRATION LINK */}
+              {authStep === 'not_registered' && (
+                <div className="space-y-4 animate-fade-in bg-amber-50/90 border border-amber-200/80 rounded-2xl p-5 text-start shadow-xs">
+                  <div className="flex items-center gap-3 border-b border-amber-200/80 pb-3">
+                    <div className="w-10 h-10 bg-emerald-100 text-emerald-800 rounded-xl flex items-center justify-center shrink-0 font-bold">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-xs text-emerald-800 flex items-center gap-1">
+                        <span>{isAr ? 'تم التحقق من رقم الجوال بنجاح ✅' : 'Mobile Number Verified ✅'}</span>
+                      </h4>
+                      <p className="text-xs font-mono text-dark/70 font-bold mt-0.5">
+                        {unregisteredPhone || loginPhone}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5 text-xs leading-relaxed font-medium">
+                    <div className="bg-rose-50 border border-rose-200/80 text-rose-800 p-3.5 rounded-xl font-bold flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <span>
+                        {isAr 
+                          ? 'عذراً، هذا الرقم غير مسجل لدينا في قائمة المناديب المعتمدين.' 
+                          : isUr
+                          ? 'معذرت، یہ نمبر ہمارے پاس رجسٹرڈ ڈرائیورز کی فہرست میں نہیں ہے۔'
+                          : 'Sorry, this mobile number is not registered in our approved drivers list.'}
+                      </span>
+                    </div>
+
+                    <p className="text-dark/80 font-bold pt-1 text-center">
+                      {isAr 
+                        ? 'هل ترغب بالانضمام والتسجيل كـ كابتن توصيل جديد في رحلات الشواء؟' 
+                        : isUr
+                        ? 'کیا آپ نیا ڈرائیور اکاؤنٹ بنانا چاہتے ہیں؟'
+                        : 'Would you like to apply as a new Delivery Captain with Grill Journey?'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewDriverPhone(unregisteredPhone || loginPhone);
+                      setShowRegisterForm(true);
+                      setAuthStep('phone');
+                    }}
+                    className="w-full py-3.5 px-4 bg-yellow hover:bg-yellow-500 text-black font-black text-xs rounded-xl transition-all cursor-pointer text-center shadow-md flex items-center justify-center gap-2 transform active:scale-98"
+                  >
+                    <UserPlus className="w-4.5 h-4.5 shrink-0" />
+                    <span>{isAr ? 'اضغط هنا للتقديم والتسجيل كمندوب جديد 🚴' : isUr ? 'نئے ڈرائیور کے طور پر رجسٹر ہوں 🚴' : 'Click Here to Apply & Register as New Driver 🚴'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAuthStep('phone')}
+                    className="w-full py-2.5 text-center text-xs font-bold text-dark/60 hover:text-dark hover:underline cursor-pointer block"
+                  >
+                    {isAr ? 'العودة لتجربة رقم جوال آخر ↩️' : 'Try Another Phone Number ↩️'}
+                  </button>
                 </div>
-              </div>
+              )}
 
-              <button
-                type="submit"
-                disabled={isLoggingIn}
-                className="w-full py-3 px-4 bg-yellow hover:bg-yellow-500 text-black font-black text-xs rounded-xl transition-colors cursor-pointer text-center shadow-xs uppercase tracking-wider"
-              >
-                {isAr ? 'تسجيل دخول كابتن 🚴' : 'Delivery Login 🚴'}
-              </button>
+              {/* STEP 4: CREATE / RESET PIN */}
+              {authStep === 'set_pin' && (
+                <form onSubmit={handleSaveNewPin} className="space-y-4 animate-fade-in">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-start space-y-1">
+                    <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-xs">
+                      <Key className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{isAr ? 'تعيين رمز الدخول الخاص بك 🔑' : isUr ? 'نیا پن سیٹ کریں 🔑' : 'Set Your Personal Entry PIN 🔑'}</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-700 leading-relaxed font-medium">
+                      {isAr 
+                        ? 'قم بإنشاء رمز دخول مكون من 4 أرقام ليتسنى لك تسجيل الدخول مباشرة بدون الحاجة لانتظار رمز تحقق في الزيارات القادمة:' 
+                        : isUr
+                        ? 'آئندہ آسان لاگ ان کے لیے 4 ہندسوں کا نیا پن سیٹ کریں:'
+                        : 'Create a 4-digit PIN for seamless future access without waiting for OTP:'}
+                    </p>
+                  </div>
 
-              <div className="pt-4 border-t border-black/5 text-center space-y-1.5">
-                <p className="text-xs text-dark/50">
-                  {isAr ? 'هل أنت مندوب جديد وترغب بالانضمام إلينا؟' : 'Are you a new captain wanting to join us?'}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMsg('');
-                    setShowRegisterForm(true);
-                  }}
-                  className="text-xs font-black text-yellow-600 hover:text-yellow-700 hover:underline cursor-pointer"
-                >
-                  {isAr ? '🚴 للتسجيل اضغط هنا' : '🚴 To Register, Click Here'}
-                </button>
-              </div>
-            </form>
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-dark/70 block">
+                        {isAr ? 'رمز الدخول الجديد (4 أرقام):' : isUr ? 'نیا پن کوڈ (4 ہندسے):' : 'New 4-Digit PIN:'}
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        maxLength={6}
+                        placeholder="••••"
+                        value={newPin}
+                        onChange={(e) => setNewPin(e.target.value)}
+                        className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl px-4 py-3 outline-none focus:border-yellow focus:bg-white text-sm text-start font-mono font-bold tracking-widest shadow-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-dark/70 block">
+                        {isAr ? 'تأكيد رمز الدخول الجديد:' : isUr ? 'نیا پن دوبارہ درج کریں:' : 'Confirm New PIN:'}
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        maxLength={6}
+                        placeholder="••••"
+                        value={confirmPin}
+                        onChange={(e) => setConfirmPin(e.target.value)}
+                        className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl px-4 py-3 outline-none focus:border-yellow focus:bg-white text-sm text-start font-mono font-bold tracking-widest shadow-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer text-center shadow-md uppercase tracking-wider flex items-center justify-center gap-2"
+                  >
+                    <Lock className="w-4 h-4 text-slate-950 shrink-0" />
+                    <span>{isSubmitting ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ كلمة المرور والدخول 🔒' : isUr ? 'پن محفوظ کریں 🔒' : 'Save PIN & Sign In 🔒')}</span>
+                  </button>
+                </form>
+              )}
+
+              {/* STEP 5: BIOMETRIC SAVING SUGGESTION PROMPT */}
+              {authStep === 'biometric_suggestion' && (
+                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-amber-500/30 rounded-3xl p-6 text-white text-start space-y-5 animate-fade-in shadow-xl">
+                  <div className="w-14 h-14 bg-amber-400/20 text-amber-400 rounded-2xl flex items-center justify-center border border-amber-400/30">
+                    <Fingerprint className="w-7 h-7" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="font-extrabold text-base text-amber-300">
+                      {isAr ? 'حفظ كلمة المرور وتفعيل البصمة 👆' : isUr ? 'فیس آئی ڈی / فنگر پرنٹ محفوظ کریں 👆' : 'Save Credentials & Enable Face ID / Touch ID 👆'}
+                    </h4>
+                    <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                      {isAr 
+                        ? 'هل ترغب بتفعيل الدخول السريع ببصمة الوجه أو الأصبع (Face ID / Touch ID / رمز الدخول للجوال) ليتم ملء رقم الجوال وتأكيد دخولك بنقرة واحدة وبسرعة فائقة؟' 
+                        : isUr
+                        ? 'کیا آپ آئندہ فیس آئی ڈی یا فنگر پرنٹ بائیو میٹرک سے 1 کلک سائن ان فعال کرنا چاہتے ہیں؟'
+                        : 'Would you like to enable Face ID / Touch ID quick login to sign in seamlessly with 1-click on future visits?'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleEnableBiometrics}
+                      className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer shadow-md flex items-center justify-center gap-2 transform active:scale-95"
+                    >
+                      <Fingerprint className="w-4 h-4 text-slate-950 shrink-0" />
+                      <span>{isAr ? 'تفعيل البصمة وحفظ البيانات 🔒' : isUr ? 'بائیو میٹرک فعال کریں 🔒' : 'Enable Biometrics & Save 🔒'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => foundDriverAuth && completeDriverLogin(foundDriverAuth)}
+                      className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+                    >
+                      {isAr ? 'تخطي والمتابعة الآن ➔' : isUr ? 'بعد میں کریں ➔' : 'Skip & Continue ➔'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             /* DRIVER REGISTRATION FORM */
             <form onSubmit={handleRegisterDriver} className="space-y-4">
@@ -1530,7 +2282,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
                           onClick={() => { setActiveTab('home'); setMobileMenuOpen(false); }}
                           className={`w-full text-start py-3 px-4 rounded-xl text-xs font-bold flex justify-between items-center ${activeTab === 'home' ? 'bg-yellow text-black font-black' : 'text-white'}`}
                         >
-                          <span>{isAr ? '📦 الطلبات والمهام' : '📦 Orders'}</span>
+                          <span>{isAr ? '📦 الطلبات والمهام' : isUr ? '📦 آرڈرز اور کام' : '📦 Orders'}</span>
                           {(activeDeliveries.length > 0 || unassignedDeliveries.length > 0) && (
                             <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[10px] font-mono font-bold">
                               {activeDeliveries.length + unassignedDeliveries.length}
@@ -1541,26 +2293,26 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
                           onClick={() => { setActiveTab('map'); setMobileMenuOpen(false); }}
                           className={`w-full text-start py-3 px-4 rounded-xl text-xs font-bold flex justify-between items-center ${activeTab === 'map' ? 'bg-yellow text-black font-black' : 'text-white'}`}
                         >
-                          <span>{isAr ? '📍 الخريطة التفاعلية والمسار' : '📍 Interactive Live Map'}</span>
+                          <span>{isAr ? '📍 الخريطة التفاعلية والمسار' : isUr ? '📍 لائیو نقشہ' : '📍 Interactive Live Map'}</span>
                         </button>
                         <button
                           onClick={() => { setActiveTab('bank'); setMobileMenuOpen(false); }}
                           className={`w-full text-start py-3 px-4 rounded-xl text-xs font-bold ${activeTab === 'bank' ? 'bg-yellow text-black font-black' : 'text-white'}`}
                         >
-                          <span>{isAr ? '🏦 تفاصيل الحساب البنكي' : '🏦 Bank Account Details'}</span>
+                          <span>{isAr ? '🏦 تفاصيل الحساب البنكي' : isUr ? '🏦 بینک اکاؤنٹ کی تفصیلات' : '🏦 Bank Account Details'}</span>
                         </button>
                         <button
                           onClick={() => { setActiveTab('earnings'); setMobileMenuOpen(false); }}
                           className={`w-full text-start py-3 px-4 rounded-xl text-xs font-bold flex justify-between items-center ${activeTab === 'earnings' ? 'bg-yellow text-black font-black' : 'text-white'}`}
                         >
-                          <span>{isAr ? '📜 سجل الأرباح والتسليمات' : '📜 Earnings Log'}</span>
+                          <span>{isAr ? '📜 سجل الأرباح والتسليمات' : isUr ? '📜 آمدنی کا لاگ' : '📜 Earnings Log'}</span>
                           <span className="text-emerald-400 text-[11px]">+{estimatedEarnings} SAR</span>
                         </button>
                         <button
                           onClick={() => { setActiveTab('profile'); setMobileMenuOpen(false); }}
                           className={`w-full text-start py-3 px-4 rounded-xl text-xs font-bold ${activeTab === 'profile' ? 'bg-yellow text-black font-black' : 'text-white'}`}
                         >
-                          <span>{isAr ? '👤 مستنداتك وملفك الشخصي' : '👤 My Documents'}</span>
+                          <span>{isAr ? '👤 مستنداتك وملفك الشخصي' : isUr ? '👤 میری دستاویزات' : '👤 My Documents'}</span>
                         </button>
                         <div className="pt-2 border-t border-white/10 mt-2 flex gap-2">
                           <button
