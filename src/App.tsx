@@ -169,9 +169,8 @@ function MenuAndOrdersApp() {
     const portalParam = urlParams.get('portal');
     const tabParam = urlParams.get('tab');
     const hash = window.location.hash;
-    const savedTab = localStorage.getItem('saved_active_tab');
 
-    if (portalParam === 'driver' || tabParam === 'driver' || hash === '#driver' || savedTab === 'driver') {
+    if (portalParam === 'driver' || tabParam === 'driver' || hash === '#driver') {
       return true;
     }
     return false;
@@ -181,7 +180,9 @@ function MenuAndOrdersApp() {
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('main');
-  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver' | 'account'>('driver');
+  const [activeTab, setActiveTab] = useState<'menu' | 'tracker' | 'admin' | 'driver' | 'account'>(() => {
+    return checkInitialDriverPortal() ? 'driver' : 'menu';
+  });
   const [quotaExceeded, setQuotaExceeded] = useState(() => {
     return (window as any).firestoreQuotaExceeded === true;
   });

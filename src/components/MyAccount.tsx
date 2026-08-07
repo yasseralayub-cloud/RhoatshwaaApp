@@ -6,7 +6,7 @@ import { doc, getDoc, setDoc, updateDoc, collection, query, where, onSnapshot, o
 import { Order, CartItem } from '../types';
 import { 
   User, Phone, MapPin, LogOut, Globe, ChevronDown, ChevronUp, 
-  ShoppingBag, Check, Plus, Trash2, History, RotateCcw, Loader2, AlertCircle, Edit2, Navigation
+  ShoppingBag, Check, Plus, Trash2, History, RotateCcw, Loader2, AlertCircle, Edit2, Navigation, Truck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MapPicker from './MapPicker';
@@ -1014,12 +1014,63 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
         </div>
       </div>
 
+      {/* Switch to Delivery Captain / Driver Portal Card (Mr. Mandoob style) */}
+      <div className="bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 p-4 rounded-[2rem] border border-amber-500/30 text-slate-950 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-slate-950 text-amber-400 flex items-center justify-center shrink-0 font-black text-xl shadow-xs">
+            🚴
+          </div>
+          <div>
+            <h4 className="font-black text-xs sm:text-sm text-slate-950">
+              {language === 'ar' ? 'واجهة المناديب (كابتن التوصيل)' : 'Delivery Captain Portal'}
+            </h4>
+            <p className="text-[11px] text-slate-900 font-extrabold leading-tight">
+              {language === 'ar' 
+                ? 'تصفح واستلم طلبات التوصيل أو انضم لكباتن رحلة شواء مباشرة بضغطة زر.' 
+                : 'Deliver orders or apply as a delivery captain instantly.'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('navigate-tab', { detail: 'driver' }));
+          }}
+          className="w-full sm:w-auto px-5 py-3 bg-slate-950 hover:bg-slate-900 text-amber-400 font-black text-xs rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 active:scale-95 shrink-0"
+        >
+          <span>{language === 'ar' ? 'تحويل لواجهة المناديب 🚴' : 'Switch to Driver Portal 🚴'}</span>
+        </button>
+      </div>
+
       {/* Sub Tabs Content */}
       <div className="space-y-4">
 
         {/* Vertical Stack List (Dashboard Menu) */}
         {activeSubTab === null && (
           <div className="flex flex-col gap-3.5 pt-2 animate-fade-in max-w-md mx-auto">
+            {/* 0. Register / Switch to Driver Captain */}
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('navigate-tab', { detail: 'driver' }));
+              }}
+              className="bg-gradient-to-r from-amber-50 to-yellow-50/80 border border-amber-300/60 hover:border-amber-400 hover:shadow-xs p-4 rounded-2xl text-start transition-all cursor-pointer flex items-center justify-between group focus:outline-none"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 font-black flex items-center justify-center shrink-0">
+                  <Truck className="w-5 h-5 text-slate-950" />
+                </div>
+                <div>
+                  <h3 className="font-black text-amber-950 group-hover:text-amber-600 transition-colors text-sm">
+                    {language === 'ar' ? 'سجل كمندوب توصيل 🚴' : 'Register as Delivery Driver 🚴'}
+                  </h3>
+                  <p className="text-[10px] text-amber-800 font-bold">
+                    {language === 'ar' ? 'انضم لكباتن التوصيل واستلم أرباحك مباشرة' : 'Join delivery team and earn with us'}
+                  </p>
+                </div>
+              </div>
+              <span className="text-amber-500 group-hover:translate-x-0.5 transition-all text-sm font-mono font-bold">→</span>
+            </button>
+
             {/* 1. My Orders */}
             <button
               onClick={() => setActiveSubTab('orders')}
