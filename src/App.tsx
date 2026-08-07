@@ -268,7 +268,8 @@ function MenuAndOrdersApp() {
   // Smooth scroll click handler for Categories selection
   const handleSelectCategory = (categoryId: string) => {
     setSelectedCategory(categoryId);
-    if (searchTerm) {
+    const hadSearch = Boolean(searchTerm);
+    if (hadSearch) {
       setSearchTerm('');
     }
     isManualScrolling.current = true;
@@ -279,16 +280,31 @@ function MenuAndOrdersApp() {
       btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
 
-    setTimeout(() => {
+    const scrollToTarget = () => {
       const element = document.getElementById(`category-sec-${categoryId}`);
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const headerEl = document.querySelector('header');
+        const headerHeight = headerEl ? headerEl.offsetHeight : 160;
+        const rect = element.getBoundingClientRect();
+        const absoluteTop = window.pageYOffset + rect.top;
+        const targetPosition = Math.max(0, absoluteTop - headerHeight - 12);
+
+        window.scrollTo({
+          top: targetPosition,
+          behavior: 'smooth'
+        });
       }
-    }, 20);
+    };
+
+    if (hadSearch) {
+      setTimeout(scrollToTarget, 60);
+    } else {
+      scrollToTarget();
+    }
 
     setTimeout(() => {
       isManualScrolling.current = false;
-    }, 850);
+    }, 1000);
   };
 
   // Scroll spy listener to auto-highlight categories as user scrolls
@@ -306,8 +322,9 @@ function MenuAndOrdersApp() {
 
       if (categorySections.length === 0) return;
 
-      // Define offset threshold at which a section is considered "entered"
-      const offset = window.innerWidth < 768 ? 200 : 180;
+      const headerEl = document.querySelector('header');
+      const headerHeight = headerEl ? headerEl.offsetHeight : 160;
+      const offset = headerHeight + 35;
 
       let activeId = categorySections[0].id;
       for (const section of categorySections) {
@@ -333,13 +350,12 @@ function MenuAndOrdersApp() {
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
-    // Run initially to capture current position
     handleScroll();
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [activeTab, menuItems, searchTerm]);
+  }, [activeTab, allCategories, menuItems, searchTerm]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [socialAlertMessage, setSocialAlertMessage] = useState<string | null>(null);
@@ -1062,26 +1078,40 @@ function MenuAndOrdersApp() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-extrabold text-sm sm:text-base text-white tracking-wide">
-                  {language === 'ar' ? 'مناديب رحلة شواء 🛵' : 'Grill Journey Drivers 🛵'}
+                  {language === 'ar' ? 'تطبيق الكابتن والمناديب 🛵' : 'Captain & Driver App 🛵'}
                 </h1>
                 <span className="bg-amber-400/20 text-amber-300 text-[9px] font-black px-2 py-0.5 rounded-full border border-amber-400/30">
-                  PWA Standalone
+                  تطبيق مستقل • Standalone App
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 font-mono">
-                {language === 'ar' ? 'تطبيق التوصيل الكابتن المستقل' : 'Independent Captain Delivery App'}
+              <p className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>{language === 'ar' ? 'متصل ومزامن حياً مع لوحة تحكم المطعم' : 'Live Synced with Admin Control Panel'}</span>
               </p>
             </div>
           </div>
 
-          <button
-            onClick={() => setActiveTab('menu')}
-            className="text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700/80 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-            title={language === 'ar' ? 'العودة لتطبيق العميل والمتجر' : 'Back to Customer Store'}
-          >
-            <span>🛒</span>
-            <span>{language === 'ar' ? 'متجر العميل' : 'Customer App'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                window.open('/?portal=driver#driver', '_blank');
+              }}
+              className="hidden sm:flex text-xs font-bold text-amber-300 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-3 py-1.5 rounded-xl transition items-center gap-1.5 cursor-pointer shadow-xs"
+              title={language === 'ar' ? 'فتح تطبيق المندوب في نافذة مستقلة جديدة' : 'Open in Standalone New Window'}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>{language === 'ar' ? 'فتح كـ نافذة مستقلة' : 'Pop Out App'}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('menu')}
+              className="text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700/80 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title={language === 'ar' ? 'العودة لتطبيق العميل والمتجر' : 'Back to Customer Store'}
+            >
+              <span>🛒</span>
+              <span>{language === 'ar' ? 'متجر العميل' : 'Customer App'}</span>
+            </button>
+          </div>
         </header>
 
         <main className="max-w-4xl mx-auto p-4 sm:p-6">
@@ -1120,6 +1150,9 @@ function MenuAndOrdersApp() {
         showAdminTab={showAdminTab}
         showDriverTab={showDriverTab}
         onWelcomeClick={handleInstallOrWelcomeClick}
+        categories={allCategories}
+        selectedCategory={selectedCategory}
+        onSelectCategory={handleSelectCategory}
       />
 
 
@@ -1132,18 +1165,6 @@ function MenuAndOrdersApp() {
             {activePromo && activePromo.isActive && (
               <PromotionCountdown promotion={activePromo} onExpired={() => console.log('Promotion expired')} />
             )}
-
-            {/* Scrolling Categories selection line bar */}
-            <div 
-              id="menu-header-anchor" 
-              className="sticky top-[108px] md:top-[124px] z-30 bg-[#FCFCFB]/95 backdrop-blur-md border-b border-black/5 -mx-4 px-4 md:-mx-6 md:px-6 py-1 transition-all duration-200"
-            >
-              <CategoryNav
-                categories={allCategories}
-                selectedCategory={selectedCategory}
-                onSelectCategory={handleSelectCategory}
-              />
-            </div>
 
             {/* Menu items display GRID layout */}
             <div className="space-y-12">

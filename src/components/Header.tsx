@@ -2,6 +2,7 @@ import React from 'react';
 import { useLanguage } from './LanguageContext';
 import { ShoppingBag, Search, Globe, Shield, ClipboardList, MapPin, Clock, Smartphone, Truck } from 'lucide-react';
 import { isRestaurantOpen, formatTime12h } from '../utils/time';
+import { CategoryNav } from './CategoryNav';
 
 interface HeaderProps {
   cartCount: number;
@@ -15,6 +16,9 @@ interface HeaderProps {
   showAdminTab?: boolean;
   showDriverTab?: boolean;
   onWelcomeClick?: () => void;
+  categories?: import('../types').Category[];
+  selectedCategory?: string;
+  onSelectCategory?: (id: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,7 +32,10 @@ export const Header: React.FC<HeaderProps> = ({
   businessSettings,
   showAdminTab = false,
   showDriverTab = false,
-  onWelcomeClick
+  onWelcomeClick,
+  categories,
+  selectedCategory,
+  onSelectCategory
 }) => {
   const { language, setLanguage, t } = useLanguage();
 
@@ -199,17 +206,28 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Lower Row: Immediate Live Input Search Bar (only appears on menu tab) */}
         {activeTab === 'menu' && (
-          <div className="mt-3.5 max-w-2xl mx-auto relative">
+          <div className="mt-2.5 max-w-2xl mx-auto relative">
             <div className="absolute inset-y-0 start-0 ps-3.5 flex items-center pointer-events-none text-dark/40">
-              <Search className="w-5 h-5" />
+              <Search className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <input
               id="menu-search-input"
               type="text"
-              placeholder={language === 'ar' ? 'ابحث عن أكلة، شاورما، حلى، أو قهوة...' : 'Search delicious food, drinks, games...'}
+              placeholder={language === 'ar' ? 'ابحث عن أكلة، شاورما، كباب، أو قهوة...' : 'Search delicious food, drinks, kebabs...'}
               value={searchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full bg-neutral-50 text-dark border border-black/5 rounded-2xl ps-11 pe-4 py-3 placeholder-dark/40 text-sm md:text-base outline-none focus:border-yellow focus:bg-white focus:ring-1 focus:ring-yellow transition-all text-start shadow-sm"
+              className="w-full bg-neutral-50 text-dark border border-black/5 rounded-xl ps-10 pe-4 py-2 placeholder-dark/40 text-xs sm:text-sm outline-none focus:border-yellow focus:bg-white focus:ring-1 focus:ring-yellow transition-all text-start shadow-2xs"
+            />
+          </div>
+        )}
+
+        {/* Category Navigation Bar embedded directly in Sticky Header */}
+        {activeTab === 'menu' && categories && categories.length > 0 && onSelectCategory && (
+          <div className="mt-2 pt-1 border-t border-black/5">
+            <CategoryNav
+              categories={categories}
+              selectedCategory={selectedCategory || ''}
+              onSelectCategory={onSelectCategory}
             />
           </div>
         )}

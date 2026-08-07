@@ -5573,33 +5573,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </form>
 
             {/* Standalone Driver Portal Link Box */}
-            <div className="mt-4 bg-yellow-50/50 border border-yellow-200 p-4 rounded-2xl space-y-2">
-              <h5 className="text-xs font-black text-yellow-800 flex items-center gap-1.5">
-                🔗 {language === 'ar' ? 'بوابة المناديب المستقلة' : 'Standalone Driver Portal'}
-              </h5>
-              <p className="text-[10px] text-yellow-700 leading-normal">
+            <div className="mt-4 bg-amber-50/70 border border-amber-200 p-4 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <h5 className="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-amber-600" />
+                  <span>{language === 'ar' ? 'تطبيق المندوب الكابتن المستقل 🛵' : 'Standalone Driver Captain App 🛵'}</span>
+                </h5>
+                <span className="bg-emerald-500/10 text-emerald-700 text-[9px] font-black px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  {language === 'ar' ? 'متصل حي بالإدارة ⚡' : 'Live Synced ⚡'}
+                </span>
+              </div>
+
+              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
                 {language === 'ar' 
-                  ? 'رابط البوابة المستقلة للمناديب لتسجيل الدخول وتسليم الطلبات بشكل منفصل تماماً عن منيو الزبائن.' 
-                  : 'Link to the standalone driver portal for sign-in and delivery updates separate from customer menu.'}
+                  ? 'صفحة وتطبيق مستقل تماماً وخاص بالكباتن لاستلام الطلبات وتتبع التوصيل. يرتبط ويتزامن تلقائياً في الخلفية مع لوحة التحكم الفرعية لمركز الإدارة.' 
+                  : 'Completely separate app page for captains to accept orders and track deliveries, automatically synced with admin controls in background.'}
               </p>
+
               <div className="flex gap-1.5">
                 <input
                   type="text"
                   readOnly
-                  value={(businessSettings?.websiteUrl || window.location.origin).replace(/\/+$/, '') + '/driver'}
-                  className="flex-1 text-[10px] bg-white border border-yellow-200 rounded-lg p-2 font-mono outline-none text-slate-700 select-all"
+                  value={(businessSettings?.websiteUrl || window.location.origin).replace(/\/+$/, '') + '/?portal=driver#driver'}
+                  className="flex-1 text-[10px] bg-white border border-amber-200 rounded-lg p-2 font-mono outline-none text-slate-700 select-all"
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText((businessSettings?.websiteUrl || window.location.origin).replace(/\/+$/, '') + '/driver');
-                    alert(language === 'ar' ? 'تم نسخ الرابط بنجاح! 📋' : 'Link copied successfully! 📋');
+                    const url = (businessSettings?.websiteUrl || window.location.origin).replace(/\/+$/, '') + '/?portal=driver#driver';
+                    navigator.clipboard.writeText(url);
+                    alert(language === 'ar' ? 'تم نسخ رابط تطبيق المندوب بنجاح! يمكنك إرساله للكباتن عبر الواتساب 📋' : 'Driver app link copied! You can share it with captains on WhatsApp 📋');
                   }}
-                  className="bg-yellow hover:bg-yellow-500 text-black text-[10px] font-black px-3 py-2 rounded-lg cursor-pointer transition-all shrink-0"
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold px-3 py-2 rounded-lg cursor-pointer transition-all shrink-0 flex items-center gap-1 shadow-2xs"
                 >
-                  {language === 'ar' ? 'نسخ' : 'Copy'}
+                  <Copy className="w-3 h-3" />
+                  <span>{language === 'ar' ? 'نسخ الرابط' : 'Copy'}</span>
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.open('/?portal=driver#driver', '_blank');
+                }}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/30 text-xs font-black py-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xs active:scale-[0.98]"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                <span>{language === 'ar' ? 'فتح تطبيق المندوب في صفحة/نافذة منفصلة ↗️' : 'Open Driver App in Standalone Window ↗️'}</span>
+              </button>
             </div>
           </div>
 
