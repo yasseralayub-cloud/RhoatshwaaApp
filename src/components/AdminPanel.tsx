@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { MenuItem, Order, Driver, PendingDriver } from '../types';
+import { MenuItem, MenuItemAddon, Order, Driver, PendingDriver } from '../types';
 import { useLanguage } from './LanguageContext';
 import { playOrderChime, startContinuousAlarm, stopContinuousAlarm, initSharedAudio } from './AudioAlert';
 import { generateZatcaQr } from '../utils/time';
@@ -64,8 +64,11 @@ import {
   Bell,
   CreditCard,
   Send,
-  Globe
+  Globe,
+  Camera,
+  Layers
 } from 'lucide-react';
+import { CategoryManager } from './CategoryManager';
 import {
   BarChart,
   Bar,
@@ -247,37 +250,117 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   });
 
   const mergedCategories = React.useMemo(() => {
-    const existing = new Set(CATEGORIES.map(c => c.id));
-    const newOnes = customCategories.filter(c => !existing.has(c.id));
-    return [...CATEGORIES, ...newOnes];
+    const customMap = new Map<string, import('../types').Category>();
+    customCategories.forEach(c => customMap.set(c.id, c));
+    
+    // First map all default categories with any custom overrides
+    const mergedDefaults = CATEGORIES.map(def => {
+      const custom = customMap.get(def.id);
+      if (custom) {
+        return {
+          ...def,
+          ...custom,
+          image: custom.image !== undefined ? custom.image : def.image,
+          nameAr: custom.nameAr || def.nameAr,
+          name: custom.name || def.name,
+          descriptionAr: custom.descriptionAr || def.descriptionAr,
+          descriptionEn: custom.descriptionEn || def.descriptionEn
+        };
+      }
+      return def;
+    });
+
+    const defaultIds = new Set(CATEGORIES.map(c => c.id));
+    const newOnes = customCategories.filter(c => !defaultIds.has(c.id));
+    return [...mergedDefaults, ...newOnes];
   }, [customCategories]);
 
-  const [showCategoryForm, setShowCategoryForm] = useState(false);
-  const [newCatId, setNewCatId] = useState('');
-  const [newCatNameAr, setNewCatNameAr] = useState('');
-  const [newCatNameEn, setNewCatNameEn] = useState('');
-
-  const handleAddCategory = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCatNameAr.trim()) return;
-
-    const id = newCatId.trim().toLowerCase().replace(/\s+/g, '_') || `cat_${Date.now()}`;
-    const newCategory: import('../types').Category = {
-      id,
-      name: newCatNameEn.trim() || newCatNameAr.trim(),
-      nameAr: newCatNameAr.trim(),
-      icon: 'Droplets'
+  // Realtime subscription for categories from Firestore
+  useEffect(() => {
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(
+        collection(db, 'categories'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const fetched: import('../types').Category[] = [];
+            snapshot.forEach((snap) => {
+              const data = snap.data() || {};
+              fetched.push({
+                id: snap.id,
+                name: data.name || snap.id,
+                nameAr: data.nameAr || data.name || snap.id,
+                icon: data.icon || 'Utensils',
+                image: data.image || '',
+                descriptionAr: data.descriptionAr || '',
+                descriptionEn: data.descriptionEn || ''
+              });
+            });
+            setCustomCategories(fetched);
+            localStorage.setItem('simulated_custom_categories', JSON.stringify(fetched));
+          }
+        },
+        (error) => {
+          console.warn("Firestore categories snapshot:", error);
+        }
+      );
+    } catch (e) {
+      console.warn("Categories listener error:", e);
+    }
+    return () => {
+      if (unsub) unsub();
     };
+  }, []);
 
-    const updated = [...customCategories.filter(c => c.id !== id), newCategory];
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+
+  const handleSaveCategory = async (category: import('../types').Category) => {
+    try {
+      await setDoc(doc(db, 'categories', category.id), {
+        id: category.id,
+        name: category.name,
+        nameAr: category.nameAr,
+        icon: category.icon || 'Utensils',
+        image: category.image || '',
+        descriptionAr: category.descriptionAr || '',
+        descriptionEn: category.descriptionEn || '',
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.warn("Firestore save category error (local fallback):", err);
+    }
+
+    const updated = [...customCategories.filter(c => c.id !== category.id), category];
     setCustomCategories(updated);
     localStorage.setItem('simulated_custom_categories', JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('categories-updated', { detail: updated }));
+    showNotification(language === 'ar' ? 'تم حفظ وتحديث بيانات وصورة القسم بنجاح!' : 'Category details and banner saved successfully!', 'success');
+  };
 
-    setNewCatId('');
-    setNewCatNameAr('');
-    setNewCatNameEn('');
-    setShowCategoryForm(false);
-    showNotification(language === 'ar' ? 'تم إضافة القسم الجديد بنجاح!' : 'New category created successfully!', 'success');
+  const handleDeleteCategory = async (catId: string) => {
+    try {
+      await deleteDoc(doc(db, 'categories', catId));
+    } catch (err) {
+      console.warn("Firestore delete category error:", err);
+    }
+    const updated = customCategories.filter(c => c.id !== catId);
+    setCustomCategories(updated);
+    localStorage.setItem('simulated_custom_categories', JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('categories-updated', { detail: updated }));
+    showNotification(language === 'ar' ? 'تم حذف القسم بنجاح' : 'Category deleted successfully', 'info');
+  };
+
+  const handleResetCategoryImage = async (catId: string) => {
+    const defaultCat = CATEGORIES.find(c => c.id === catId);
+    const existing = mergedCategories.find(c => c.id === catId);
+    if (!existing) return;
+
+    const resetCategory: import('../types').Category = {
+      ...existing,
+      image: defaultCat ? defaultCat.image : ''
+    };
+
+    await handleSaveCategory(resetCategory);
   };
   
   const [formId, setFormId] = useState('');
@@ -291,7 +374,72 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [formImage, setFormImage] = useState('');
   const [formPopular, setFormPopular] = useState(false);
   const [formDineInOnly, setFormDineInOnly] = useState(false);
+  const [formIsAddonOnly, setFormIsAddonOnly] = useState(false);
   const [validationMsg, setValidationMsg] = useState('');
+
+  // Addons states for the item being created or edited
+  const [formAddons, setFormAddons] = useState<MenuItemAddon[]>([]);
+  const [newAddonNameAr, setNewAddonNameAr] = useState('');
+  const [newAddonNameEn, setNewAddonNameEn] = useState('');
+  const [newAddonPrice, setNewAddonPrice] = useState<number>(0);
+  const [newAddonIsFree, setNewAddonIsFree] = useState<boolean>(true);
+
+  const PRESET_ADDONS = [
+    { nameAr: 'ثومية إضافية', nameEn: 'Extra Garlic Dip', price: 0 },
+    { nameAr: 'ثومية حارة', nameEn: 'Spicy Garlic Dip', price: 0 },
+    { nameAr: 'إضافة جبن شيدر ذائب', nameEn: 'Melted Cheddar Cheese', price: 2 },
+    { nameAr: 'دبس الرمان الفاخر', nameEn: 'Pomegranate Molasses', price: 1 },
+    { nameAr: 'صوص باربكيو مدخن', nameEn: 'BBQ Sauce', price: 0 },
+    { nameAr: 'كاتشب طازج', nameEn: 'Ketchup', price: 0 },
+    { nameAr: 'مايونيز طازج', nameEn: 'Mayonnaise', price: 0 },
+    { nameAr: 'شطة حارة', nameEn: 'Hot Sauce', price: 0 },
+    { nameAr: 'مخلل إضافي', nameEn: 'Extra Pickles', price: 0 },
+    { nameAr: 'طحينة فاخرة', nameEn: 'Tahini Dip', price: 0 },
+    { nameAr: 'خبز صاج إضافي', nameEn: 'Extra Saj Bread', price: 1 },
+    { nameAr: 'بطاطس مقلية زيادة', nameEn: 'Extra Crispy Fries', price: 3 },
+    { nameAr: 'فلفل هلابينو', nameEn: 'Jalapeno Slices', price: 2 },
+  ];
+
+  const handleAddAddonToForm = () => {
+    if (!newAddonNameAr.trim()) {
+      showNotification(language === 'ar' ? 'يرجى إدخال اسم الإضافة' : 'Please enter addon name', 'error');
+      return;
+    }
+    const finalPrice = newAddonIsFree ? 0 : Math.max(0, Number(newAddonPrice) || 0);
+    const newAddon: MenuItemAddon = {
+      id: `add_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      nameAr: newAddonNameAr.trim(),
+      nameEn: newAddonNameEn.trim() || undefined,
+      price: finalPrice
+    };
+    setFormAddons(prev => [...prev, newAddon]);
+    setNewAddonNameAr('');
+    setNewAddonNameEn('');
+    setNewAddonPrice(0);
+    setNewAddonIsFree(true);
+  };
+
+  const handleAddPresetAddon = (preset: { nameAr: string; nameEn: string; price: number }) => {
+    if (formAddons.some(a => a.nameAr === preset.nameAr)) {
+      showNotification(language === 'ar' ? 'هذه الإضافة مضافة مسبقاً لهذا الصنف' : 'Addon already added', 'warning');
+      return;
+    }
+    const newAddon: MenuItemAddon = {
+      id: `add_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      nameAr: preset.nameAr,
+      nameEn: preset.nameEn,
+      price: preset.price
+    };
+    setFormAddons(prev => [...prev, newAddon]);
+  };
+
+  const handleRemoveAddonFromForm = (addonId: string) => {
+    setFormAddons(prev => prev.filter(a => a.id !== addonId));
+  };
+
+  const handleUpdateFormAddonPrice = (addonId: string, newPrice: number) => {
+    setFormAddons(prev => prev.map(a => a.id === addonId ? { ...a, price: Math.max(0, newPrice) } : a));
+  };
 
   // Promotions states
   const [promoTitle, setPromoTitle] = useState('');
@@ -1930,8 +2078,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     setValidationMsg('');
 
-    if (!formName || !formNameAr || !formPrice) {
-      setValidationMsg(language === 'ar' ? 'يرجى ملء الحقول الإجبارية (الاسم والسعر)' : 'Please fill mandatory fields (Name & Price)');
+    if (!formName && !formNameAr) {
+      setValidationMsg(language === 'ar' ? 'يرجى إدخال اسم الصنف' : 'Please provide item name');
       return;
     }
 
@@ -1965,6 +2113,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       image: formImage.trim() || defaultItemForCleanId?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600',
       isPopular: formPopular,
       dineInOnly: formDineInOnly,
+      addons: formAddons,
       isAvailable: isEditMode ? (menuItems.find(i => i.id === editingItemId)?.isAvailable ?? true) : true,
       ...(hasCustomImg ? { isCustomImage: true } : {})
     };
@@ -2000,6 +2149,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setFormImage('');
     setFormPopular(false);
     setFormDineInOnly(false);
+    setFormIsAddonOnly(false);
+    setFormAddons([]);
+    setNewAddonNameAr('');
+    setNewAddonNameEn('');
+    setNewAddonPrice(0);
+    setNewAddonIsFree(true);
     setIsEditMode(false);
     setEditingItemId(null);
     setShowItemForm(false);
@@ -2018,6 +2173,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setFormImage(item.image || '');
     setFormPopular(!!item.isPopular);
     setFormDineInOnly(!!item.dineInOnly);
+    setFormIsAddonOnly(!!item.isAddonOnly);
+    setFormAddons(item.addons ? JSON.parse(JSON.stringify(item.addons)) : []);
+    setNewAddonNameAr('');
+    setNewAddonNameEn('');
+    setNewAddonPrice(0);
+    setNewAddonIsFree(true);
     
     setIsEditMode(true);
     setEditingItemId(item.id);
@@ -5887,10 +6048,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </button>
 
             <button
-              onClick={() => setShowCategoryForm(!showCategoryForm)}
-              className="bg-amber-100 text-amber-900 hover:bg-amber-200 font-bold text-xs py-2 px-3.5 rounded-xl transition border border-amber-300/60"
+              onClick={() => setShowCategoryManager(!showCategoryManager)}
+              className={`font-bold text-xs py-2 px-3.5 rounded-xl transition border flex items-center gap-1.5 cursor-pointer ${
+                showCategoryManager 
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-xs' 
+                  : 'bg-amber-100 text-amber-900 hover:bg-amber-200 border-amber-300/60'
+              }`}
             >
-              {showCategoryForm ? (language === 'ar' ? 'إغلاق الأقسام' : 'Close Category Form') : (language === 'ar' ? '📁 + إنشاء قسم جديد' : '📁 + New Category')}
+              <Camera className="w-3.5 h-3.5" />
+              <span>
+                {showCategoryManager 
+                  ? (language === 'ar' ? 'إخفاء إدارة صور الأقسام' : 'Hide Category Manager') 
+                  : (language === 'ar' ? '📁 إدارة صور وأقسام المنيو' : '📁 Category Photos & Sections')}
+              </span>
             </button>
 
             <button
@@ -5914,88 +6084,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   setShowItemForm(true);
                 }
               }}
-              className="bg-amber-600 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs hover:bg-amber-700 transition"
+              className="bg-amber-600 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs hover:bg-amber-700 transition flex items-center gap-1.5 cursor-pointer"
             >
-              {showItemForm ? (language === 'ar' ? 'إغلاق النموذج' : 'Close Form') : (language === 'ar' ? '+ صنف جديد' : '+ New Item')}
+              <Plus className="w-3.5 h-3.5" />
+              <span>{showItemForm ? (language === 'ar' ? 'إغلاق نموذج الصنف' : 'Close Form') : (language === 'ar' ? '+ صنف جديد' : '+ New Item')}</span>
             </button>
           </div>
         </div>
 
-        {/* Add custom Category form panel */}
+        {/* Enhanced Category Banner & Sections Management Panel */}
         <AnimatePresence>
-          {showCategoryForm && (
+          {showCategoryManager && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden border border-amber-200 bg-amber-500/10 p-4 rounded-2xl text-start space-y-3"
+              className="overflow-hidden bg-slate-50/60 p-4 sm:p-5 rounded-3xl border border-amber-200/80 shadow-xs"
             >
-              <h4 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                <span>📁</span>
-                <span>{language === 'ar' ? 'إنشاء قسم منتجات جديد' : 'Create New Category'}</span>
-              </h4>
-
-              <form onSubmit={handleAddCategory} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'اسم القسم (عربي)' : 'Category Name (Arabic)'}</label>
-                  <input
-                    required
-                    type="text"
-                    value={newCatNameAr}
-                    onChange={(e) => setNewCatNameAr(e.target.value)}
-                    placeholder="مثال: قسم الصوصات"
-                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'اسم القسم (إنجليزي)' : 'Category Name (English)'}</label>
-                  <input
-                    type="text"
-                    value={newCatNameEn}
-                    onChange={(e) => setNewCatNameEn(e.target.value)}
-                    placeholder="e.g. Sauces"
-                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'معرّف الكود (ID اختياري)' : 'Category ID (Optional)'}</label>
-                  <input
-                    type="text"
-                    value={newCatId}
-                    onChange={(e) => setNewCatId(e.target.value)}
-                    placeholder="e.g. sauces"
-                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none font-mono"
-                  />
-                </div>
-
-                <div className="sm:col-span-3 flex justify-end gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowCategoryForm(false)}
-                    className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl"
-                  >
-                    {language === 'ar' ? 'إلغاء' : 'Cancel'}
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 text-xs font-black text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-xs"
-                  >
-                    {language === 'ar' ? 'حفظ ونشر القسم الجديد' : 'Save & Publish Category'}
-                  </button>
-                </div>
-              </form>
-
-              {/* List of existing categories */}
-              <div className="pt-2 border-t border-amber-200/60">
-                <span className="text-[11px] font-bold text-slate-500 block mb-1.5">{language === 'ar' ? 'الأقسام المعتمدة حالياً بالمنيو:' : 'Current Approved Categories:'}</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {mergedCategories.map(c => (
-                    <span key={c.id} className="text-xs font-extrabold bg-white text-slate-800 border border-slate-200 px-2.5 py-1 rounded-lg">
-                      {language === 'ar' ? c.nameAr : c.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              <CategoryManager
+                categories={mergedCategories}
+                menuItems={menuItems}
+                onSaveCategory={handleSaveCategory}
+                onDeleteCategory={handleDeleteCategory}
+                onResetCategoryImage={handleResetCategoryImage}
+                language={language}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -6079,7 +6192,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'السعر (ريال)' : 'Price (SAR)'}</label>
                   <input
-                    required
                     type="number"
                     step="0.5"
                     value={formPrice}
@@ -6131,6 +6243,206 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </label>
                 </div>
 
+                {/* Item-specific Add-ons & Customizations Panel */}
+                <div id="item-addons-editor-section" className="md:col-span-3 mt-2 bg-white/95 rounded-2xl p-4 border border-amber-200/80 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-amber-100">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">✨</span>
+                        <h4 className="text-xs sm:text-sm font-extrabold text-slate-800">
+                          {language === 'ar' ? 'الإضافات وخيارات التخصيص الخاصة بهذا الصنف' : 'Add-ons & Extras for this Item'}
+                        </h4>
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full border border-amber-200">
+                          {formAddons.length} {language === 'ar' ? 'إضافات مخصصة' : 'custom addons'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                        {language === 'ar'
+                          ? 'تحكم بإضافات هذا الصنف (مثل: ثومية، جبن، دبس رمان، صوص حار...). هذه الإضافات لا تُعرض كمنتج في المنيو بل تظهر للزبون عند طلب الصنف فقط، ويمكنك جعل أي إضافة مجانية (0 ر.س) أو تحديد سعر لها.'
+                          : 'Configure add-ons for this item. They will NOT appear as products on the menu; customers choose them when ordering. You can make any add-on free (0 SAR) or set a price.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Fast 1-Click Preset Add-on Chips */}
+                  <div className="mb-3.5 bg-amber-50/50 p-3 rounded-xl border border-amber-200/50">
+                    <span className="block text-[11px] font-bold text-amber-900 mb-2">
+                      {language === 'ar' ? '⚡ إضافات شائعة مقترحة (انقر للإضافة الفورية بنقرة واحدة):' : '⚡ Quick Presets (Click to add instantly):'}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PRESET_ADDONS.map((preset) => {
+                        const isAlreadyAdded = formAddons.some(a => a.nameAr === preset.nameAr);
+                        return (
+                          <button
+                            key={preset.nameAr}
+                            type="button"
+                            disabled={isAlreadyAdded}
+                            onClick={() => handleAddPresetAddon(preset)}
+                            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                              isAlreadyAdded
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                                : 'bg-white hover:bg-amber-100 text-amber-900 border-amber-200/80 shadow-2xs active:scale-95'
+                            }`}
+                          >
+                            <span>+</span>
+                            <span>{language === 'ar' ? preset.nameAr : preset.nameEn}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono font-bold ${preset.price === 0 ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60' : 'text-amber-800 bg-amber-100 border border-amber-200'}`}>
+                              {preset.price === 0 ? (language === 'ar' ? 'مجاناً' : 'Free') : `${preset.price} ر.س`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* New Addon Input Fields */}
+                  <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 mb-3 shadow-2xs">
+                    <span className="block text-[11px] font-bold text-slate-700 mb-2">
+                      {language === 'ar' ? '➕ إضافة خيار / إضافة جديدة مخصصة للصنف:' : '➕ Add Custom Add-on for this Item:'}
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                      {/* Name Ar */}
+                      <div className="sm:col-span-4">
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          {language === 'ar' ? 'اسم الإضافة (عربي) *' : 'Addon Name (Arabic) *'}
+                        </label>
+                        <input
+                          type="text"
+                          value={newAddonNameAr}
+                          onChange={(e) => setNewAddonNameAr(e.target.value)}
+                          placeholder={language === 'ar' ? 'مثال: جبن شيدر ذائب' : 'e.g. Melted Cheese'}
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 outline-none focus:border-amber-500 font-bold"
+                        />
+                      </div>
+
+                      {/* Name En */}
+                      <div className="sm:col-span-3">
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          {language === 'ar' ? 'الاسم (إنجليزي - اختياري)' : 'Name (English - Optional)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={newAddonNameEn}
+                          onChange={(e) => setNewAddonNameEn(e.target.value)}
+                          placeholder="e.g. Extra Cheese"
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 outline-none focus:border-amber-500"
+                        />
+                      </div>
+
+                      {/* Price & Free toggle */}
+                      <div className="sm:col-span-3">
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          {language === 'ar' ? 'سعر الإضافة (ريال)' : 'Price (SAR)'}
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            disabled={newAddonIsFree}
+                            value={newAddonIsFree ? 0 : newAddonPrice}
+                            onChange={(e) => setNewAddonPrice(Number(e.target.value))}
+                            className={`w-20 text-xs border rounded-lg p-2 outline-none font-mono font-bold ${
+                              newAddonIsFree 
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' 
+                                : 'bg-white text-slate-800 border-slate-300 focus:border-amber-500'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextFree = !newAddonIsFree;
+                              setNewAddonIsFree(nextFree);
+                              if (nextFree) setNewAddonPrice(0);
+                            }}
+                            className={`text-[10px] font-bold px-2.5 py-2 rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                              newAddonIsFree
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {newAddonIsFree ? (language === 'ar' ? '🎁 مجانية (0 ر.س)' : '🎁 Free (0 SAR)') : (language === 'ar' ? 'اجعلها مجانية' : 'Set Free')}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Add Button */}
+                      <div className="sm:col-span-2 text-end">
+                        <button
+                          type="button"
+                          onClick={handleAddAddonToForm}
+                          className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2 px-3 rounded-lg shadow-2xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{language === 'ar' ? 'إضافة الإضافة' : 'Add Extra'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Current Item Addons List */}
+                  <div className="space-y-1.5">
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1">
+                      {language === 'ar' ? 'قائمة إضافات الصنف الحالية:' : 'Current Add-ons for this Item:'}
+                    </span>
+                    {formAddons.length === 0 ? (
+                      <div className="p-4 bg-slate-50/70 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 text-xs">
+                        {language === 'ar'
+                          ? 'لم تتم إضافة أي إضافات لهذا الصنف بعد. يمكنك النقر على الإضافات المقترحة بالأعلى أو كتابة إضافة جديدة وتحديد سعرها أو جعلها مجانية.'
+                          : 'No addons configured for this item yet. Click any preset above or enter a new custom addon.'}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                        {formAddons.map((addon) => (
+                          <div
+                            key={addon.id}
+                            className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-2xs gap-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span className="font-bold text-xs text-slate-800 block truncate">{addon.nameAr}</span>
+                              {addon.nameEn && (
+                                <span className="text-[10px] text-slate-400 block truncate font-mono">{addon.nameEn}</span>
+                              )}
+                              <div className="flex items-center gap-1.5 mt-1">
+                                {addon.price === 0 ? (
+                                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md">
+                                    {language === 'ar' ? 'مجاناً 🎁' : 'Free 🎁'}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md font-mono">
+                                    {addon.price} {t('sar')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Quick Price input & Delete */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                value={addon.price}
+                                onChange={(e) => handleUpdateFormAddonPrice(addon.id, Number(e.target.value))}
+                                title={language === 'ar' ? 'تعديل سعر الإضافة (0 = مجاناً)' : 'Edit price (0 = Free)'}
+                                className="w-14 text-center text-[11px] font-bold border border-slate-200 rounded-lg p-1 outline-none font-mono focus:border-amber-500 bg-slate-50 focus:bg-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAddonFromForm(addon.id)}
+                                title={language === 'ar' ? 'حذف الإضافة' : 'Delete Addon'}
+                                className="p-1 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {validationMsg && <p className="text-xs text-red-500 font-semibold md:col-span-3">{validationMsg}</p>}
 
                 <div className="md:col-span-3 text-end pt-2">
@@ -6160,6 +6472,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <th className="px-4 py-3 text-start">{language === 'ar' ? 'الصنف' : 'Product'}</th>
                   <th className="px-4 py-3 text-start">{language === 'ar' ? 'القسم' : 'Category'}</th>
                   <th className="px-4 py-3 text-start">{language === 'ar' ? 'السعر الحالي' : 'Price'}</th>
+                  <th className="px-4 py-3 text-start">{language === 'ar' ? 'الإضافات والتخصيصات' : 'Add-ons & Options'}</th>
                   <th className="px-4 py-3 text-center">{language === 'ar' ? 'الحالة بالمخزن' : 'Stock Availability'}</th>
                   <th className="px-4 py-3 text-center">{language === 'ar' ? 'إدارة' : 'Actions'}</th>
                 </tr>
@@ -6230,6 +6543,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                       </td>
 
+                      {/* Add-ons column */}
+                      <td className="px-4 py-3 text-start">
+                        {item.addons && item.addons.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleEditClick(item);
+                              setTimeout(() => {
+                                const el = document.getElementById('item-addons-editor-section');
+                                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                              }, 120);
+                            }}
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2.5 py-1 rounded-xl transition cursor-pointer"
+                          >
+                            <span>✨ {item.addons.length} {language === 'ar' ? 'إضافات' : 'addons'}</span>
+                            <span className="text-[10px] text-amber-700 font-normal">
+                              ({item.addons.filter(a => a.price === 0).length} {language === 'ar' ? 'مجانية' : 'free'})
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleEditClick(item);
+                              setTimeout(() => {
+                                const el = document.getElementById('item-addons-editor-section');
+                                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                              }, 120);
+                            }}
+                            className="text-[11px] font-bold text-slate-400 hover:text-amber-800 hover:bg-amber-50/60 px-2.5 py-1 rounded-lg transition cursor-pointer border border-dashed border-slate-200"
+                          >
+                            + {language === 'ar' ? 'تخصيص إضافات' : 'Add extras'}
+                          </button>
+                        )}
+                      </td>
+
                       {/* Availability status toggle switcher */}
                       <td className="px-4 py-3 text-center">
                         <button
@@ -6256,6 +6605,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             title={language === 'ar' ? 'تعديل الصنف' : 'Edit Product'}
                           >
                             <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleEditClick(item);
+                              setTimeout(() => {
+                                const el = document.getElementById('item-addons-editor-section');
+                                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                              }, 120);
+                            }}
+                            className="p-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer"
+                            title={language === 'ar' ? 'تخصيص وإدارة إضافات هذا الصنف' : 'Configure Item Add-ons'}
+                          >
+                            <Sliders className="w-3.5 h-3.5" />
                           </button>
                           
                           <button

@@ -568,6 +568,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
   // If customer is already verified via OTP on customer side, skip OTP verification on driver side!
   useEffect(() => {
     if (selectedDriver) return; // Driver already logged in
+    if (localStorage.getItem('driver_explicit_logout') === 'true') return; // Explicitly logged out
 
     try {
       const cachedCustomer = localStorage.getItem('rehla_user_profile');
@@ -902,6 +903,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
   };
 
   const completeDriverLogin = (driver: Driver) => {
+    localStorage.removeItem('driver_explicit_logout');
     setSelectedDriver(driver);
     localStorage.setItem('active_driver_profile', JSON.stringify(driver));
     setAuthStep('phone');
@@ -1204,10 +1206,29 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
     }
   };
 
-  // 7. Clear Selected Profile
-  const handleLogout = () => {
+  // 7. Clear Selected Profile, wipe localStorage connection state and return immediately to client store
+  const handleLogout = async () => {
+    if (selectedDriver) {
+      try {
+        await updateDoc(doc(db, 'drivers', selectedDriver.id), { status: 'busy' });
+      } catch (err) {
+        console.warn('Driver status offline update warning:', err);
+      }
+    }
     setSelectedDriver(null);
     localStorage.removeItem('active_driver_profile');
+    localStorage.removeItem('driver_biometric_vault');
+    localStorage.removeItem('driver_phone_session');
+    localStorage.removeItem('driver_authenticated');
+    localStorage.removeItem('driver_status');
+    localStorage.removeItem('show_driver_tab');
+    localStorage.setItem('driver_explicit_logout', 'true');
+
+    // Immediately return to customer interface
+    if (onExitToClient) {
+      onExitToClient();
+    }
+    window.dispatchEvent(new CustomEvent('navigate-tab', { detail: 'menu' }));
   };
 
   // Helper to generate Google Maps link
@@ -1282,45 +1303,52 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
           </h2>
         </div>
 
-        {/* 3-Language Selector Bar */}
-        <div className="flex items-center gap-1 bg-neutral-900 p-1.5 rounded-2xl shadow-xs border border-neutral-800 self-stretch sm:self-auto justify-center">
+        {/* Header Controls: Language Selector & Prominent Logout / Return Button */}
+        <div className="flex items-center gap-2 flex-wrap self-stretch sm:self-auto justify-between sm:justify-end">
+          {/* 3-Language Selector Bar */}
+          <div className="flex items-center gap-1 bg-neutral-900 p-1.5 rounded-2xl shadow-xs border border-neutral-800">
+            <button
+              type="button"
+              onClick={() => setPortalLang('ar')}
+              className={`px-2.5 sm:px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+                isAr ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              🇸🇦 العربية
+            </button>
+            <button
+              type="button"
+              onClick={() => setPortalLang('en')}
+              className={`px-2.5 sm:px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+                isEn ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              🇬🇧 English
+            </button>
+            <button
+              type="button"
+              onClick={() => setPortalLang('ur')}
+              className={`px-2.5 sm:px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
+                isUr ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              🇵🇰 اردو
+            </button>
+          </div>
+
+          {/* Prominent & Distinct Logout / Return to Customer Store Button */}
           <button
-            type="button"
-            onClick={() => setPortalLang('ar')}
-            className={`px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-              isAr ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
-            }`}
+            id="driver-portal-logout-btn"
+            onClick={handleLogout}
+            className="flex items-center justify-center gap-1.5 py-2 px-3.5 sm:px-4 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-black text-xs rounded-2xl shadow-md transition-all transform active:scale-95 cursor-pointer whitespace-nowrap border border-rose-400/40"
+            title={isAr ? 'تسجيل الخروج والعودة لواجهة العميل' : isUr ? 'لاگ آؤٹ اور کسٹمر اسٹور پر واپس جائیں' : 'Logout & Return to Store'}
           >
-            🇸🇦 العربية
-          </button>
-          <button
-            type="button"
-            onClick={() => setPortalLang('en')}
-            className={`px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-              isEn ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            🇬🇧 English
-          </button>
-          <button
-            type="button"
-            onClick={() => setPortalLang('ur')}
-            className={`px-3 py-1.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-              isUr ? 'bg-amber-400 text-slate-950 shadow-xs scale-105' : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            🇵🇰 اردو
+            <LogOut className="w-4 h-4 shrink-0" />
+            <span>
+              {isAr ? 'خروج لواجهة العميل 🛒' : isUr ? 'کسٹمر اسٹور پر واپس 🛒' : 'Exit to Store 🛒'}
+            </span>
           </button>
         </div>
-
-        {selectedDriver && (
-          <button
-            onClick={handleLogout}
-            className="text-[11px] font-black text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/50 px-3 py-1.5 rounded-xl cursor-pointer transition-colors whitespace-nowrap shrink-0"
-          >
-            {isAr ? 'تغيير الحساب 👤' : isUr ? 'پروفائل تبدیل کریں 👤' : 'Change Profile 👤'}
-          </button>
-        )}
       </div>
 
       {/* PWA Standalone Driver App Banner (مناديب رحلة شواء) */}
@@ -2380,8 +2408,15 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
                         🟢
                       </button>
                       <button
+                        onClick={handleLogout}
+                        className="p-2 bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/30 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
+                        title={isAr ? 'تسجيل الخروج والعودة للعميل' : 'Logout & Return'}
+                      >
+                        <LogOut className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                        className="p-2 bg-white/10 rounded-xl text-white hover:bg-white/15"
+                        className="p-2 bg-white/10 rounded-xl text-white hover:bg-white/15 cursor-pointer"
                       >
                         {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                       </button>

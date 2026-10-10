@@ -18,8 +18,8 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   const { language } = useLanguage();
 
   return (
-    <div className="w-full overflow-x-auto no-scrollbar py-1 px-1" style={{ scrollbarWidth: 'none' }}>
-      <div className="flex gap-2 min-w-max px-1 md:justify-center items-center">
+    <div className="w-full overflow-x-auto no-scrollbar py-1.5 px-1" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex gap-2 sm:gap-4 min-w-max px-1 md:justify-center items-start">
         {categories.map((cat) => {
           const isSelected = selectedCategory === cat.id;
           
@@ -30,30 +30,42 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             <button
               id={`cat-btn-${cat.id}`}
               key={cat.id}
-              onClick={() => onSelectCategory(cat.id)}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border transition-all duration-200 transform active:scale-95 cursor-pointer ${
-                isSelected
-                  ? 'bg-yellow text-black border-yellow shadow-sm font-bold scale-[1.02]'
-                  : 'bg-neutral-100/80 text-dark/70 border-black/5 hover:bg-neutral-200/80 hover:text-dark'
-              }`}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                onSelectCategory(cat.id);
+              }}
+              className="group flex flex-col items-center justify-center gap-1.5 p-1 rounded-2xl transition-all duration-200 transform active:scale-95 cursor-pointer shrink-0 outline-none focus:outline-none"
             >
+              {/* Circular Icon Container */}
               <div
-                className={`p-1 rounded-lg transition-colors ${
-                  isSelected ? 'bg-black/10 text-dark' : 'bg-black/5 text-dark/50'
+                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all duration-300 ${
+                  isSelected
+                    ? 'bg-yellow text-black ring-2 ring-yellow ring-offset-2 ring-offset-white shadow-md scale-105'
+                    : 'bg-neutral-100 text-dark/70 border border-black/5 group-hover:bg-neutral-200/90 group-hover:text-dark group-hover:scale-105 group-hover:shadow-2xs'
                 }`}
               >
-                <IconComponent className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <IconComponent className={`w-5 h-5 sm:w-6 sm:h-6 transition-transform ${isSelected ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
               </div>
-              <span className="font-bold text-xs sm:text-sm whitespace-nowrap">
+
+              {/* Category Name Beneath the Circle */}
+              <span
+                className={`text-[11px] sm:text-xs whitespace-nowrap tracking-tight transition-colors ${
+                  isSelected ? 'font-black text-dark' : 'font-semibold text-dark/70 group-hover:text-dark'
+                }`}
+              >
                 {language === 'ar' ? cat.nameAr : cat.name}
               </span>
               
-              {isSelected && (
+              {/* Active Selection Indicator */}
+              {isSelected ? (
                 <motion.div
                   layoutId="activeCategoryDot"
-                  className="w-1.5 h-1.5 rounded-full bg-black/80 shrink-0"
-                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                  className="w-1.5 h-1.5 rounded-full bg-yellow shrink-0 shadow-2xs"
+                  transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                 />
+              ) : (
+                <div className="w-1.5 h-1.5 rounded-full bg-transparent shrink-0" />
               )}
             </button>
           );
@@ -62,4 +74,5 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
     </div>
   );
 };
+
 

@@ -542,7 +542,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       sodasTotal = current.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
     }
     
-    const addonsTotal = (current.customizations ? current.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) 
+    const addonsTotal = (current.customizations ? current.customizations.addons.reduce((aSum, a) => aSum + (a.price * (a.quantity || 1)), 0) : 0) 
       + drinkPrice 
       + sizeDiff 
       + sodasTotal;
@@ -695,7 +695,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         sodasTotal = c.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
       }
       
-      const addonsTotal = (c.customizations ? c.customizations.addons.reduce((aSum, a) => aSum + a.price, 0) : 0) 
+      const addonsTotal = (c.customizations ? c.customizations.addons.reduce((aSum, a) => aSum + (a.price * (a.quantity || 1)), 0) : 0) 
         + drinkPrice 
         + sizeDiff 
         + sodasTotal;
@@ -999,7 +999,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     sodasTotal = c.customizations.selectedSoftDrinks.reduce((sSum, s) => sSum + (s.price * s.quantity), 0);
                   }
                   
-                  const addonsTotal = (c.customizations ? c.customizations.addons.reduce((sum, a) => sum + a.price, 0) : 0) 
+                  const addonsTotal = (c.customizations ? c.customizations.addons.reduce((sum, a) => sum + (a.price * (a.quantity || 1)), 0) : 0) 
                     + drinkPrice 
                     + sizeDiff 
                     + sodasTotal;
@@ -1047,8 +1047,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                   </span>
                                 ))}
                                 {c.customizations.addons.map((addon) => (
-                                  <span key={addon.nameAr} className="bg-green-50 text-green-700 text-[11px] sm:text-xs px-2 py-0.5 rounded-md font-bold border border-green-500/20 shadow-xs">
-                                    {language === 'ar' ? addon.nameAr : addon.nameEn} {addon.price > 0 ? `(+${addon.price})` : ''}
+                                  <span key={addon.nameAr} className="bg-emerald-50 text-emerald-800 text-[11px] sm:text-xs px-2 py-0.5 rounded-md font-bold border border-emerald-500/20 shadow-xs flex items-center gap-1">
+                                    <span>{language === 'ar' ? addon.nameAr : addon.nameEn}</span>
+                                    {addon.quantity && addon.quantity > 1 ? <span>× {addon.quantity}</span> : null}
+                                    <span className="text-[10px] opacity-80">
+                                      {addon.price > 0 ? `(+${(addon.price * (addon.quantity || 1)).toFixed(1)} ${t('sar')})` : `(${language === 'ar' ? 'مجاناً' : 'Free'})`}
+                                    </span>
                                   </span>
                                 ))}
                                 {c.customizations.selectedDrink && (

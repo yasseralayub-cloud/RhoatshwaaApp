@@ -162,3 +162,5 @@ export const MenuCard: React.FC<MenuCardProps> = ({
     </motion.div>
   );
 };
+
+export { MenuCardSkeleton, MenuGridSkeleton } from './MenuCardSkeleton';

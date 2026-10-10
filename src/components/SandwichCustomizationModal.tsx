@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { MenuItem, CartItemOption } from '../types';
+import { MenuItem, MenuItemAddon, CartItemOption } from '../types';
+import { DEFAULT_SANDWICH_ADDONS } from '../initialData';
 import { useLanguage } from './LanguageContext';
 import { X, Check, Flame, Plus, Minus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -213,28 +214,11 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
             ])
       : [];
 
-  // Dynamic Sauces from 'sauces' category in menuItems + Extra toppings
-  const sauceCategoryItems = menuItems.filter(mi => mi.category === 'sauces' && mi.isAvailable !== false);
-  
-  // Default sauces if category empty
-  const defaultSauceList = [
-    { id: 'sauce1', nameAr: 'إضافة ثومية', nameEn: 'Garlic Sauce', price: 0 },
-    { id: 'sauce2', nameAr: 'ثومية حارة', nameEn: 'Spicy Garlic Dip', price: 0 },
-    { id: 'sauce3', nameAr: 'إضافة جبن', nameEn: 'Extra Cheese', price: 1 },
-    { id: 'sauce4', nameAr: 'دبس الرمان', nameEn: 'Pomegranate Molasses', price: 1 },
-    { id: 'sauce5', nameAr: 'كتشب', nameEn: 'Ketchup', price: 0 },
-    { id: 'sauce6', nameAr: 'مايونيز', nameEn: 'Mayonnaise', price: 0 },
-  ];
-
-  const availableSauces = sauceCategoryItems.length > 0 
-    ? sauceCategoryItems.map(s => ({
-        id: s.id,
-        nameAr: s.nameAr,
-        nameEn: s.name,
-        price: s.price,
-        image: s.image
-      }))
-    : defaultSauceList;
+  // Add-ons configured specifically for this item by the manager
+  // Fallback to DEFAULT_SANDWICH_ADDONS for sandwiches/shawarmas if not explicitly set
+  const availableSauces: MenuItemAddon[] = (item.addons && item.addons.length > 0)
+    ? item.addons
+    : (isSandwich || isShawarma || isFries ? DEFAULT_SANDWICH_ADDONS : (item.addons || []));
 
   const handleToggleNote = (noteAr: string) => {
     if (isFries) {
@@ -597,15 +581,22 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                     </p>
                     
                     <div className="space-y-2.5 pt-1">
-                      {/* Section A: All Available Sauces */}
-                      <div className="text-xs font-extrabold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/60 flex items-center gap-1.5">
-                        <span>{language === 'ar' ? 'جميع الصوصات المتاحة:' : 'Available Sauces:'}</span>
+                      {/* Section A: All Available Sauces & Add-ons */}
+                      <div className="text-xs font-extrabold text-amber-900 bg-amber-50 px-3.5 py-2 rounded-xl border border-amber-200/70 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <span>✨</span>
+                          <span>{language === 'ar' ? 'الإضافات والخيارات المتاحة لهذا الصنف:' : 'Available Add-ons & Extras:'}</span>
+                        </span>
+                        <span className="text-[10px] text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded-full font-bold">
+                          {availableSauces.length} {language === 'ar' ? 'خيارات' : 'options'}
+                        </span>
                       </div>
 
                       <div className="grid grid-cols-1 gap-2.5">
                         {availableSauces.map((sauce) => {
                           const qty = addonQuantities[sauce.id] || 0;
-                          const sauceName = language === 'ar' ? sauce.nameAr : sauce.nameEn;
+                          const sauceName = language === 'ar' ? sauce.nameAr : (sauce.nameEn || (sauce as any).name || sauce.nameAr);
+                          const sauceImg = (sauce as any).image;
                           
                           return (
                             <div
@@ -617,23 +608,31 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                               }`}
                             >
                               <div className="flex items-center gap-3 pr-1">
-                                {sauce.image ? (
+                                {sauceImg ? (
                                   <img 
-                                    src={sauce.image} 
+                                    src={sauceImg} 
                                     alt={sauceName} 
                                     className="w-10 h-10 rounded-xl object-cover border border-black/5 bg-white shadow-xs shrink-0" 
                                     referrerPolicy="no-referrer"
                                   />
                                 ) : (
-                                  <div className="w-10 h-10 rounded-xl bg-amber-100/80 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
-                                    {sauceName.substring(0, 2)}
+                                  <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 border border-amber-200/50 flex items-center justify-center font-bold text-xs shrink-0">
+                                    {sauce.price === 0 ? '🎁' : '✨'}
                                   </div>
                                 )}
                                 <div className="text-start">
                                   <span className="font-extrabold text-xs sm:text-sm text-stone-900 block">{sauceName}</span>
-                                  <span className="text-[11px] font-bold text-amber-700 font-mono">
-                                    {sauce.price > 0 ? `+${sauce.price.toFixed(1)} ${language === 'ar' ? 'ريال' : 'SAR'}` : (language === 'ar' ? 'مجاني' : 'Free')}
-                                  </span>
+                                  <div className="mt-0.5">
+                                    {sauce.price > 0 ? (
+                                      <span className="inline-block text-[10px] font-extrabold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md border border-amber-300/60 font-mono">
+                                        +{sauce.price.toFixed(1)} {language === 'ar' ? 'ريال' : 'SAR'}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-block text-[10px] font-extrabold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-md border border-emerald-300/60">
+                                        {language === 'ar' ? 'مجاناً 🎁' : 'Free 🎁'}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
 

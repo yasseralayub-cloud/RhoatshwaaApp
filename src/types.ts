@@ -1,3 +1,10 @@
+export interface MenuItemAddon {
+  id: string;
+  nameAr: string;
+  nameEn?: string;
+  price: number; // 0 for free (مجاناً), or positive number in SAR
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -12,6 +19,8 @@ export interface MenuItem {
   isAvailable: boolean;
   dineInOnly?: boolean;
   isCustomImage?: boolean;
+  isAddonOnly?: boolean;
+  addons?: MenuItemAddon[];
 }
 
 export interface OrderItem {
@@ -168,6 +177,9 @@ export interface Category {
   name: string;
   nameAr: string;
   icon: string;
+  image?: string;
+  descriptionAr?: string;
+  descriptionEn?: string;
 }
 
 export interface PendingDriver {

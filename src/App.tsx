@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { LanguageProvider, useLanguage } from './components/LanguageContext';
 import { Header } from './components/Header';
 import { CategoryNav } from './components/CategoryNav';
-import { MenuCard } from './components/MenuCard';
+import { MenuCard, MenuCardSkeleton, MenuGridSkeleton } from './components/MenuCard';
+import { MostOrderedPromo } from './components/MostOrderedPromo';
 import { CartDrawer } from './components/CartDrawer';
 import { OrderTracker } from './components/OrderTracker';
 import { AdminPanel } from './components/AdminPanel';
@@ -12,6 +13,7 @@ import { CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_BUSINESS_SETTINGS } from './ini
 import { MenuItem, Promotion, BusinessSettings, CartItem, CartItemOption } from './types';
 import { collection, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import * as Icons from 'lucide-react';
 import { Flame, Star, Coffee, AlertCircle, Building2, ShieldCheck, CheckCircle2, ExternalLink, Code2, Sparkles, Globe, FileText, Eye, Download, X, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PromotionCountdown } from './components/PromotionCountdown';
@@ -157,11 +159,101 @@ function MenuAndOrdersApp() {
     return [];
   });
 
+  // Priority ordering to ensure food dishes and categories strictly appear at the forefront
+  const getCategoryOrderPriority = (catId: string): number => {
+    switch (catId) {
+      case 'main': return 10;       // المشويات (Signature Charcoal Grills)
+      case 'shawarma': return 20;   // قسم الشاورما (Shawarma & Wraps)
+      case 'appetizers': return 40; // المقبلات والسلطات (Appetizers & Sides)
+      case 'desserts': return 50;   // الحلويات (Desserts)
+      case 'drinks': return 70;     // المشروبات والعصائر (Beverages)
+      case 'coffee': return 80;     // القهوة العربية (Arabic Coffee)
+      case 'games': return 90;      // الألعاب الشعبية (Traditional Board Games)
+      default: return 30;           // Any custom food category added by manager goes right with the food
+    }
+  };
+
+  const initialOrderMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    INITIAL_MENU_ITEMS.forEach((it, idx) => {
+      map.set(it.id, idx);
+    });
+    return map;
+  }, []);
+
   const allCategories = React.useMemo(() => {
-    const existingIds = new Set(CATEGORIES.map(c => c.id));
-    const newOnes = customCategories.filter(c => !existingIds.has(c.id));
-    return [...CATEGORIES, ...newOnes];
+    const customMap = new Map<string, import('./types').Category>();
+    customCategories.forEach(c => customMap.set(c.id, c));
+    
+    // First map all default categories with any overrides
+    const mergedDefaults = CATEGORIES.map(def => {
+      const custom = customMap.get(def.id);
+      if (custom) {
+        return {
+          ...def,
+          ...custom,
+          image: custom.image !== undefined ? custom.image : def.image,
+          nameAr: custom.nameAr || def.nameAr,
+          name: custom.name || def.name,
+          descriptionAr: custom.descriptionAr || def.descriptionAr,
+          descriptionEn: custom.descriptionEn || def.descriptionEn
+        };
+      }
+      return def;
+    });
+
+    const defaultIds = new Set(CATEGORIES.map(c => c.id));
+    const newOnes = customCategories.filter(c => !defaultIds.has(c.id) && c.id !== 'sauces');
+    return [...mergedDefaults, ...newOnes]
+      .filter(c => c.id !== 'sauces')
+      .sort((a, b) => getCategoryOrderPriority(a.id) - getCategoryOrderPriority(b.id));
   }, [customCategories]);
+
+  // Realtime subscription for categories from Firestore and custom events
+  useEffect(() => {
+    const handleCategoryEvent = (e: any) => {
+      if (e.detail) {
+        setCustomCategories(e.detail);
+      }
+    };
+    window.addEventListener('categories-updated', handleCategoryEvent);
+
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(
+        collection(db, 'categories'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const fetched: import('./types').Category[] = [];
+            snapshot.forEach((snap) => {
+              const data = snap.data() || {};
+              fetched.push({
+                id: snap.id,
+                name: data.name || snap.id,
+                nameAr: data.nameAr || data.name || snap.id,
+                icon: data.icon || 'Utensils',
+                image: data.image || '',
+                descriptionAr: data.descriptionAr || '',
+                descriptionEn: data.descriptionEn || ''
+              });
+            });
+            setCustomCategories(fetched);
+            localStorage.setItem('simulated_custom_categories', JSON.stringify(fetched));
+          }
+        },
+        (error) => {
+          console.warn("Categories real-time snapshot fallback:", error);
+        }
+      );
+    } catch (e) {
+      console.warn("Failed to subscribe to categories:", e);
+    }
+
+    return () => {
+      window.removeEventListener('categories-updated', handleCategoryEvent);
+      if (unsub) unsub();
+    };
+  }, []);
 
   const checkInitialDriverPortal = () => {
     if (typeof window === 'undefined') return false;
@@ -247,18 +339,41 @@ function MenuAndOrdersApp() {
     };
   }, []);
 
-  const isManualScrolling = useRef(false);
+  const isManualScrolling = useRef<any>(null);
 
   // Smooth scroll click handler for Categories selection
   const handleSelectCategory = (categoryId: string) => {
+    // If not in menu tab, switch to menu tab
+    if (activeTab !== 'menu') {
+      setActiveTab('menu');
+    }
+
+    if (selectedCategory !== categoryId) {
+      setIsCategoryTransitioning(true);
+      if (categoryTransitionTimerRef.current) {
+        clearTimeout(categoryTransitionTimerRef.current);
+      }
+      categoryTransitionTimerRef.current = setTimeout(() => {
+        setIsCategoryTransitioning(false);
+      }, 250);
+    }
+
     setSelectedCategory(categoryId);
-    const hadSearch = Boolean(searchTerm);
-    if (hadSearch) {
+    
+    // Clear search filter so the selected category is visible and rendered in the DOM
+    if (searchTerm) {
       setSearchTerm('');
     }
-    isManualScrolling.current = true;
 
-    // Scroll category button into view in the horizontal nav
+    // Suppress scroll spy during manual smooth scroll transition
+    if (isManualScrolling.current) {
+      clearTimeout(isManualScrolling.current);
+    }
+    isManualScrolling.current = setTimeout(() => {
+      isManualScrolling.current = null;
+    }, 1200);
+
+    // Scroll category button into center view in the horizontal nav
     const btn = document.getElementById(`cat-btn-${categoryId}`);
     if (btn) {
       btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -268,27 +383,39 @@ function MenuAndOrdersApp() {
       const element = document.getElementById(`category-sec-${categoryId}`);
       if (element) {
         const headerEl = document.querySelector('header');
-        const headerHeight = headerEl ? headerEl.offsetHeight : 160;
-        const rect = element.getBoundingClientRect();
-        const absoluteTop = window.pageYOffset + rect.top;
-        const targetPosition = Math.max(0, absoluteTop - headerHeight - 12);
+        const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 175;
+        const elementRect = element.getBoundingClientRect();
+        const currentScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+        const targetPosition = Math.max(0, elementRect.top + currentScrollY - headerHeight - 12);
 
-        window.scrollTo({
-          top: targetPosition,
-          behavior: 'smooth'
-        });
+        try {
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+        } catch (e) {
+          window.scrollTo(0, targetPosition);
+        }
+
+        try {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (e) {
+          // ignore
+        }
+        return true;
       }
+      return false;
     };
 
-    if (hadSearch) {
-      setTimeout(scrollToTarget, 60);
-    } else {
-      scrollToTarget();
+    // Try immediately, and retry with delays to handle search state transitions or DOM rendering
+    if (!scrollToTarget()) {
+      const delays = [40, 100, 200, 400];
+      delays.forEach(delay => {
+        setTimeout(() => {
+          scrollToTarget();
+        }, delay);
+      });
     }
-
-    setTimeout(() => {
-      isManualScrolling.current = false;
-    }, 1000);
   };
 
   // Scroll spy listener to auto-highlight categories as user scrolls
@@ -299,16 +426,18 @@ function MenuAndOrdersApp() {
       if (isManualScrolling.current) return;
 
       // Find all rendered category sections
-      const categorySections = allCategories.map(cat => ({
-        id: cat.id,
-        element: document.getElementById(`category-sec-${cat.id}`)
-      })).filter(item => item.element !== null) as { id: string; element: HTMLElement }[];
+      const categorySections = allCategories
+        .map(cat => ({
+          id: cat.id,
+          element: document.getElementById(`category-sec-${cat.id}`)
+        }))
+        .filter(item => item.element !== null) as { id: string; element: HTMLElement }[];
 
       if (categorySections.length === 0) return;
 
       const headerEl = document.querySelector('header');
-      const headerHeight = headerEl ? headerEl.offsetHeight : 160;
-      const offset = headerHeight + 35;
+      const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 175;
+      const offset = headerHeight + 40;
 
       let activeId = categorySections[0].id;
       for (const section of categorySections) {
@@ -334,12 +463,11 @@ function MenuAndOrdersApp() {
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [activeTab, allCategories, menuItems, searchTerm]);
+  }, [activeTab, allCategories, menuItems]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [socialAlertMessage, setSocialAlertMessage] = useState<string | null>(null);
@@ -377,6 +505,11 @@ function MenuAndOrdersApp() {
     const saved = localStorage.getItem('simulated_business_settings');
     return saved ? JSON.parse(saved) : DEFAULT_BUSINESS_SETTINGS;
   });
+
+  // Skeleton Loading states for initial Firestore data fetch and category switching
+  const [isInitialMenuLoading, setIsInitialMenuLoading] = useState(true);
+  const [isCategoryTransitioning, setIsCategoryTransitioning] = useState(false);
+  const categoryTransitionTimerRef = useRef<any>(null);
 
   // 1. Establish Realtime Sync with Firestore for the Menu catalog!
   // Any toggles / availability switches marked by an admin instantly update on the client screens!
@@ -457,8 +590,10 @@ function MenuAndOrdersApp() {
 
             setMenuItems(docs);
             localStorage.setItem('simulated_menu', JSON.stringify(docs));
+            setIsInitialMenuLoading(false);
           } else {
             console.log('Firestore menuItems collection is empty. Showing default items.');
+            setIsInitialMenuLoading(false);
             // Automatically seed the empty database with default items and business settings!
             // This is perfect for the user's brand new database so they don't have to do it manually.
             const autoSeedDatabase = async () => {
@@ -479,6 +614,7 @@ function MenuAndOrdersApp() {
         },
         (error: any) => {
           console.warn('Could not establish live Firestore menu connection. Defaulting to cached data:', error);
+          setIsInitialMenuLoading(false);
           const errMsg = error?.message || String(error);
           if (errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('resource-exhausted') || error?.code === 'resource-exhausted') {
             console.warn('Quota exceeded. Auto-unsubscribing menu listener to save memory & prevent connection retries.');
@@ -490,6 +626,7 @@ function MenuAndOrdersApp() {
       );
     } catch (e) {
       console.warn('Failed to initialize menuItems listener:', e);
+      setIsInitialMenuLoading(false);
     }
 
     return () => {
@@ -814,7 +951,8 @@ function MenuAndOrdersApp() {
     const item = itemOrCartItem as MenuItem;
     const hasSizing = ['s2', 's4', 'g1', 'g5', 'g7', 'g10'].includes(item.id);
     const isSodasGroup = item.id === 'drinks-soft-group';
-    if (isSandwichItem(item) || isFriesItem(item) || hasSizing || isSodasGroup) {
+    const hasAddons = Boolean(item.addons && item.addons.length > 0);
+    if (isSandwichItem(item) || isFriesItem(item) || hasSizing || isSodasGroup || hasAddons) {
       setCustomizingItem(item);
     } else {
       setCart((prevCart) => {
@@ -994,11 +1132,18 @@ function MenuAndOrdersApp() {
 
   // Filters catalog list matching both Arabic & English titles / descriptions plus keywords
   const filteredMenuItems = menuItems.filter((item) => {
-    // Exclude redundant merged items from display
+    // Exclude redundant merged items from display, add-on only items, and standalone sauces
     const MERGED_IDS_TO_EXCLUDE = new Set([
       'g2', 'g8', 'g9', 'g4', 's5'
     ]);
-    if (MERGED_IDS_TO_EXCLUDE.has(item.id)) return false;
+    if (
+      MERGED_IDS_TO_EXCLUDE.has(item.id) || 
+      item.isAddonOnly || 
+      item.category === 'sauces' || 
+      item.id.startsWith('sauce')
+    ) {
+      return false;
+    }
 
     // Filter by input search text
     if (!searchTerm.trim()) return true;
@@ -1104,9 +1249,28 @@ function MenuAndOrdersApp() {
               <PromotionCountdown promotion={activePromo} onExpired={() => console.log('Promotion expired')} />
             )}
 
+            {/* Most Ordered / Featured Real Product Promo Card */}
+            {!searchTerm.trim() && !isInitialMenuLoading && (
+              <MostOrderedPromo
+                items={menuItems}
+                onItemClick={handleAddToCart}
+                activePromo={activePromo}
+              />
+            )}
+
             {/* Menu items display GRID layout */}
             <div className="space-y-12">
-              {filteredMenuItems.length === 0 ? (
+              {isInitialMenuLoading ? (
+                <div className="space-y-6 pt-6">
+                  <div className="flex justify-between items-center text-dark border-b border-black/5 pb-2 text-start">
+                    <div className="space-y-1">
+                      <div className="h-6 w-36 bg-neutral-200 rounded-md animate-pulse" />
+                      <div className="h-3 w-20 bg-neutral-100 rounded-md animate-pulse" />
+                    </div>
+                  </div>
+                  <MenuGridSkeleton count={6} />
+                </div>
+              ) : filteredMenuItems.length === 0 ? (
                 <div className="h-56 flex flex-col items-center justify-center text-dark/40 text-center border border-dashed border-black/10 rounded-[2rem] bg-neutral-50 p-6 animate-fade-in">
                   <AlertCircle className="w-10 h-10 text-dark/30 stroke-[1.5] mb-2" />
                   <p className="font-semibold text-dark/80 text-sm mb-0.5">{language === 'ar' ? 'لم يعثر على نتائج للبحث' : 'No Items Found'}</p>
@@ -1117,41 +1281,93 @@ function MenuAndOrdersApp() {
                   const categoryItems = filteredMenuItems.filter(item => item.category === category.id);
                   if (categoryItems.length === 0) return null;
 
+                  // Sort items inside category: available first, popular/best-sellers at the top, curated order preserved
+                  const sortedCategoryItems = [...categoryItems].sort((a, b) => {
+                    // 1. Available dishes first
+                    if (a.isAvailable !== b.isAvailable) {
+                      return a.isAvailable ? -1 : 1;
+                    }
+                    // 2. Best-sellers & popular dishes at the front
+                    if (a.isPopular && !b.isPopular) return -1;
+                    if (!a.isPopular && b.isPopular) return 1;
+                    // 3. Keep curated culinary order
+                    const idxA = initialOrderMap.has(a.id) ? initialOrderMap.get(a.id)! : 999;
+                    const idxB = initialOrderMap.has(b.id) ? initialOrderMap.get(b.id)! : 999;
+                    return idxA - idxB;
+                  });
+
+                  const isTargetCategoryTransitioning = isCategoryTransitioning && selectedCategory === category.id;
+                  const CategoryHeaderIcon = (Icons as any)[category.icon] || Flame;
+
                   return (
                     <div
                       key={category.id}
                       id={`category-sec-${category.id}`}
                       className="space-y-6 pt-6 scroll-mt-[175px] md:scroll-mt-[190px]"
                     >
-                      <div className="flex justify-between items-center text-dark border-b border-black/5 pb-2 text-start">
-                        <div>
-                          <h3 className="font-bold font-serif text-xl flex items-center gap-1.5 uppercase tracking-wide">
-                            <Flame className="w-4 h-4 text-yellow animate-pulse" />
-                            {language === 'ar' ? category.nameAr : category.name}
-                          </h3>
-                          <p className="text-[10px] text-dark/40 font-mono mt-0.5">
-                            {categoryItems.length} {language === 'ar' ? 'خيارات لذيذة' : 'choices found'}
-                          </p>
+                      {/* Enhanced Organized Category Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-black/10 text-start gap-2">
+                        <div className="flex items-center gap-3">
+                          <span className="w-10 h-10 rounded-2xl bg-gradient-to-br from-yellow/30 to-amber-500/20 text-yellow-800 flex items-center justify-center shrink-0 shadow-2xs border border-yellow/30">
+                            <CategoryHeaderIcon className="w-5 h-5 text-amber-900" />
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-extrabold font-serif text-xl sm:text-2xl text-dark tracking-wide">
+                                {language === 'ar' ? category.nameAr : category.name}
+                              </h3>
+                              {/* Distinctive badges for food categories */}
+                              {(category.id === 'main' || category.id === 'shawarma') && (
+                                <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-300/50 shadow-2xs">
+                                  {language === 'ar' ? '🔥 وجبات رئيسية' : 'Main Meals'}
+                                </span>
+                              )}
+                              {category.id === 'appetizers' && (
+                                <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300/50 shadow-2xs">
+                                  {language === 'ar' ? '🥗 مقبلات طازجة' : 'Fresh Sides'}
+                                </span>
+                              )}
+                              {category.id === 'desserts' && (
+                                <span className="bg-pink-50 text-pink-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-pink-300/50 shadow-2xs">
+                                  {language === 'ar' ? '🍯 حلى ولذاذة' : 'Desserts'}
+                                </span>
+                              )}
+                            </div>
+                            {(category.descriptionAr || category.descriptionEn) && (
+                              <p className="text-xs text-dark/60 mt-0.5 font-sans">
+                                {language === 'ar' ? category.descriptionAr : (category.descriptionEn || category.descriptionAr)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 self-start sm:self-center">
+                          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-neutral-100 text-dark/70 border border-black/5 font-mono">
+                            {sortedCategoryItems.length} {language === 'ar' ? 'أصناف مختارة' : 'items'}
+                          </span>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <AnimatePresence mode="popLayout">
-                          {categoryItems.map((item) => {
-                            const cartQty = cart.filter((c) => c.item.id === item.id).reduce((sum, c) => sum + c.quantity, 0);
-                            return (
-                              <MenuCard
-                                key={item.id}
-                                item={item}
-                                cartQuantity={cartQty}
-                                onAdd={handleAddToCart}
-                                onRemove={handleRemoveFromCart}
-                                activePromo={activePromo}
-                              />
-                            );
-                          })}
-                        </AnimatePresence>
-                      </div>
+                      {isTargetCategoryTransitioning ? (
+                        <MenuGridSkeleton count={Math.min(sortedCategoryItems.length, 3)} />
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                          <AnimatePresence mode="popLayout">
+                            {sortedCategoryItems.map((item) => {
+                              const cartQty = cart.filter((c) => c.item.id === item.id).reduce((sum, c) => sum + c.quantity, 0);
+                              return (
+                                <MenuCard
+                                  key={item.id}
+                                  item={item}
+                                  cartQuantity={cartQty}
+                                  onAdd={handleAddToCart}
+                                  onRemove={handleRemoveFromCart}
+                                  activePromo={activePromo}
+                                />
+                              );
+                            })}
+                          </AnimatePresence>
+                        </div>
+                      )}
                     </div>
                   );
                 })
