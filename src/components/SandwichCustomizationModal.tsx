@@ -186,8 +186,13 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
     !nameArLower.includes('نفر') &&
     !nameArLower.includes('كيلو');
 
-  // Special check for BBQ Shawarma Meal (وجبة رحلة شواء)
-  const isBbqMeal = item.id === 's3' || item.nameAr.includes('شاورما شواء وجبة') || item.nameAr.includes('وجبة رحلة شواء') || item.name === 'BBQ Shawarma Meal';
+  // Check if item is configured as a meal (وجبة) either explicitly via isMeal or by keyword/id
+  const isMealItem = Boolean(
+    item.isMeal || 
+    item.id === 's3' || 
+    item.nameAr.includes('وجبة') || 
+    item.name.toLowerCase().includes('meal')
+  );
 
   // Sizing choices for this item dynamically computed from actual item price & menu
   const availableSizes = getDynamicSizesForItem(item, menuItems);
@@ -262,14 +267,14 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
   };
 
   // Compute calculated values
-  const drinkPrice = (selectedDrink && !isBbqMeal) ? selectedDrink.price : 0;
+  const drinkPrice = (selectedDrink && !isMealItem) ? selectedDrink.price : 0;
   
   // Sizing upgrade difference
   const sizeDiff = selectedSize ? selectedSize.diff : 0;
   
-  // Soft drinks sum for group or custom items
+  // Soft drinks sum for group or additional drinks
   let sodasTotal = 0;
-  if (isSodasGroup || (!isBbqMeal && Object.keys(sodaQuantities).length > 0)) {
+  if (isSodasGroup || Object.keys(sodaQuantities).length > 0) {
     sodasTotal = Object.entries(sodaQuantities).reduce((sum: number, [sodaId, qty]: [string, number]) => {
       const match = menuItems.find(m => m.id === sodaId);
       const pr = match ? match.price : 2.5;
@@ -296,7 +301,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
     if (isAddButtonDisabled) return;
 
     const sodasFromMenu = menuItems.filter(mi => mi.category === 'drinks' && mi.id !== 'drinks-soft-group' && mi.id !== 'dr7' && mi.id !== 'dr8');
-    const selectedSoftDrinks = isSodasGroup || (!isBbqMeal && Object.keys(sodaQuantities).length > 0)
+    const selectedSoftDrinks = isSodasGroup || Object.keys(sodaQuantities).length > 0
       ? sodasFromMenu
           .filter(s => (sodaQuantities[s.id] || 0) > 0)
           .map(s => ({
@@ -325,7 +330,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
     onConfirm(item, isSodasGroup ? 1 : quantity, {
       notes: selectedNotes,
       addons: compiledAddons,
-      selectedDrink: selectedDrink ? { ...selectedDrink, price: isBbqMeal ? 0 : selectedDrink.price } : undefined,
+      selectedDrink: selectedDrink ? { ...selectedDrink, price: isMealItem ? 0 : selectedDrink.price } : undefined,
       selectedSize: selectedSize || undefined,
       selectedSoftDrinks: selectedSoftDrinks
     });
@@ -560,32 +565,31 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                   </div>
                 )}
 
-                {/* 2. Sauces & Extra Addons with Individual Quantity Controls - Only for Sandwiches */}
-                {isSandwich && (
+                {/* 2. Sauces & Extra Addons with Individual Quantity Controls */}
+                {availableSauces.length > 0 && (
                   <div className="space-y-3.5 pt-1 text-start">
                     <div className="flex justify-between items-center flex-wrap gap-2">
                       <div className="flex items-center gap-2">
                         <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
-                          {language === 'ar' ? 'قسم الصوصات والإضافات المميزة' : 'Sauces & Premium Addons'}
+                          {language === 'ar' ? 'الإضافات وخيارات التخصيص' : 'Addons & Extras'}
                         </h4>
                       </div>
                       <span className="text-[11px] sm:text-xs text-stone-500 font-bold whitespace-nowrap bg-stone-100 px-2.5 py-1 rounded-full border border-black/5">
-                        {language === 'ar' ? 'حدد العدد المطلوب لجميع الصوصات' : 'Select quantity for sauces'}
+                        {language === 'ar' ? 'حدد العدد المطلوب للإضافات' : 'Select quantity for addons'}
                       </span>
                     </div>
 
                     <p className="text-xs text-stone-500 leading-relaxed">
                       {language === 'ar' 
-                        ? 'يمكنك اختيار أي عدد ترغبه من الصوصات والإضافات وسيتم احتساب الإجمالي مباشرة:' 
-                        : 'Choose any quantity of sauces & extras. Extra price is calculated instantly:'}
+                        ? 'يمكنك اختيار أي عدد ترغبه من الإضافات وسيتم احتساب الإجمالي مباشرة:' 
+                        : 'Choose any quantity of addons & extras. Extra price is calculated instantly:'}
                     </p>
                     
                     <div className="space-y-2.5 pt-1">
-                      {/* Section A: All Available Sauces & Add-ons */}
+                      {/* Section A: All Available Add-ons */}
                       <div className="text-xs font-extrabold text-amber-900 bg-amber-50 px-3.5 py-2 rounded-xl border border-amber-200/70 flex items-center justify-between">
                         <span className="flex items-center gap-1.5">
-                          <span>✨</span>
-                          <span>{language === 'ar' ? 'الإضافات والخيارات المتاحة لهذا الصنف:' : 'Available Add-ons & Extras:'}</span>
+                          <span>{language === 'ar' ? 'الإضافات المتاحة لهذا الصنف:' : 'Available Add-ons for this Item:'}</span>
                         </span>
                         <span className="text-[10px] text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded-full font-bold">
                           {availableSauces.length} {language === 'ar' ? 'خيارات' : 'options'}
@@ -617,7 +621,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                                   />
                                 ) : (
                                   <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 border border-amber-200/50 flex items-center justify-center font-bold text-xs shrink-0">
-                                    {sauce.price === 0 ? '🎁' : '✨'}
+                                    {sauce.price === 0 ? '🎁' : '+'}
                                   </div>
                                 )}
                                 <div className="text-start">
@@ -679,30 +683,30 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                       <div className="flex items-center gap-2">
                         <span className="text-xl">🥤</span>
                         <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
-                          {isBbqMeal
-                            ? (language === 'ar' ? 'اختر المشروب المجاني مع الوجبة' : 'Select Free Soft Drink')
+                          {isMealItem
+                            ? (language === 'ar' ? 'اختر المشروب المجاني المصاحب للوجبة' : 'Select Free Drink with Meal')
                             : (language === 'ar' ? 'اختر المشروبات الغازية (تحديد العدد)' : 'Select Soft Drinks (With Quantity)')}
                         </h4>
                       </div>
                       <span className="text-[11px] sm:text-xs text-stone-500 font-bold whitespace-nowrap bg-stone-100 px-2.5 py-1 rounded-full border border-black/5">
-                        {isBbqMeal 
+                        {isMealItem 
                           ? (language === 'ar' ? 'مشروب مجاني مع الوجبة 🎁' : 'Free Drink with Meal 🎁')
                           : (language === 'ar' ? 'اختياري بالعدد' : 'Optional Multi-Select')}
                       </span>
                     </div>
 
-                    {isBbqMeal ? (
+                    {isMealItem ? (
                       <>
                         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 font-extrabold text-xs sm:text-sm">
                           <span>
                             {language === 'ar' 
-                              ? 'وجبة رحلة شواء تتضمن مشروب غازي واحد مجاناً مع الوجبة!' 
-                              : 'BBQ Shawarma Meal includes 1 free soft drink with your order!'}
+                              ? 'هذه الوجبة تشمل اختيار مشروب غازي واحد مجاناً!' 
+                              : 'This meal includes 1 free soft drink with your order!'}
                           </span>
                         </div>
                         
                         <p className="text-xs sm:text-sm text-stone-500 text-start leading-normal pl-1">
-                          {language === 'ar' ? 'اختر مشروبك المفضل مع الوجبة:' : 'Select your favorite soft drink:'}
+                          {language === 'ar' ? 'اختر مشروبك المجاني المفضل مع الوجبة:' : 'Select your free soft drink:'}
                         </p>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
@@ -716,7 +720,7 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                                 : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10'
                             }`}
                           >
-                            <span className="flex-1 text-start">{language === 'ar' ? '❌ بدون مشروب' : '❌ No Drink'}</span>
+                            <span className="flex-1 text-start">{language === 'ar' ? '❌ بدون مشروب مجاني' : '❌ No Free Drink'}</span>
                             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0 ${
                               selectedDrink === null ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
                             }`}>
@@ -724,61 +728,110 @@ export const SandwichCustomizationModal: React.FC<SandwichCustomizationModalProp
                             </div>
                           </motion.button>
 
-                          {/* Dynamic Drinks from menuItems */}
+                          {/* Dynamic Drinks from menuItems - strictly excluding unavailable drinks */}
                           {menuItems
-                            .filter(mi => mi.category === 'drinks' && mi.id !== 'drinks-soft-group' && mi.id !== 'dr7' && mi.id !== 'dr8')
+                            .filter(mi => mi.category === 'drinks' && mi.id !== 'drinks-soft-group' && mi.id !== 'dr7' && mi.id !== 'dr8' && mi.isAvailable !== false)
                             .map((drink) => {
                               const drinkLabel = language === 'ar' ? drink.nameAr : drink.name;
                               const isSelected = selectedDrink?.id === drink.id;
-                              const isDrinkAvailable = drink.isAvailable !== false;
 
                               return (
                                 <motion.button
                                   key={drink.id}
-                                  disabled={!isDrinkAvailable}
-                                  whileTap={isDrinkAvailable ? { scale: 0.97 } : undefined}
+                                  whileTap={{ scale: 0.97 }}
                                   onClick={() => {
-                                    if (isDrinkAvailable) {
-                                      setSelectedDrink({
-                                        id: drink.id,
-                                        nameAr: drink.nameAr,
-                                        nameEn: drink.name,
-                                        price: drink.price
-                                      });
-                                    }
+                                    setSelectedDrink({
+                                      id: drink.id,
+                                      nameAr: drink.nameAr,
+                                      nameEn: drink.name,
+                                      price: drink.price
+                                    });
                                   }}
-                                  className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start shadow-xs relative ${
-                                    !isDrinkAvailable
-                                      ? 'bg-stone-100 border-stone-200 text-stone-400 opacity-65 cursor-not-allowed'
-                                      : isSelected
-                                      ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold cursor-pointer active:scale-95'
-                                      : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10 cursor-pointer active:scale-95'
+                                  className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] font-bold transition-all border flex items-center justify-between text-start shadow-xs relative cursor-pointer active:scale-95 ${
+                                    isSelected
+                                      ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-4 ring-amber-500/10 font-extrabold'
+                                      : 'bg-stone-50 hover:bg-stone-100 border-black/5 text-stone-700 hover:border-black/10'
                                   }`}
                                 >
                                   <div className="flex flex-col text-start flex-1 pr-2">
                                     <span>{drinkLabel}</span>
                                     <span className="text-[10px] font-extrabold text-emerald-600 font-bold">
-                                      {language === 'ar' ? '🎁 مجاني مع وجبة رحلة شواء' : 'Free with BBQ Meal'}
+                                      {language === 'ar' ? '🎁 مجاني مع الوجبة' : 'Free with Meal'}
                                     </span>
                                   </div>
                                   
                                   <div className="flex items-center gap-1.5 shrink-0">
-                                    {!isDrinkAvailable && (
-                                      <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md">
-                                        {language === 'ar' ? 'غير متوفر' : 'Unavailable'}
-                                      </span>
-                                    )}
-                                    {isDrinkAvailable && (
-                                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
-                                        isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
-                                      }`}>
-                                        {isSelected ? <Check className="w-3 h-3 stroke-[3]" /> : null}
-                                      </div>
-                                    )}
+                                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                                      isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'border-stone-300 bg-white'
+                                    }`}>
+                                      {isSelected ? <Check className="w-3 h-3 stroke-[3]" /> : null}
+                                    </div>
                                   </div>
                                 </motion.button>
                               );
                             })}
+                        </div>
+
+                        {/* Additional Paid Drinks Section for Meals */}
+                        <div className="mt-4 pt-4 border-t border-black/5">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-stone-700">
+                              {language === 'ar' ? '🥤 إضافة مشروبات إضافية مدفوعة (اختياري):' : '🥤 Add Extra Paid Drinks (Optional):'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {menuItems
+                              .filter(mi => mi.category === 'drinks' && mi.id !== 'drinks-soft-group' && mi.id !== 'dr7' && mi.id !== 'dr8' && mi.isAvailable !== false)
+                              .map((drink) => {
+                                const drinkLabel = language === 'ar' ? drink.nameAr : drink.name;
+                                const qty = sodaQuantities[drink.id] || 0;
+
+                                return (
+                                  <div
+                                    key={`paid-${drink.id}`}
+                                    className={`px-3 py-2.5 rounded-2xl text-xs font-bold transition-all border flex items-center justify-between text-start shadow-xs ${
+                                      qty > 0
+                                        ? 'bg-amber-500/10 border-amber-500 text-amber-950 ring-2 ring-amber-500/20'
+                                        : 'bg-stone-50 border-black/5 text-stone-700'
+                                    }`}
+                                  >
+                                    <div className="flex flex-col text-start flex-1 pr-2">
+                                      <span className="text-xs font-bold">{drinkLabel}</span>
+                                      <span className="text-[10px] text-stone-500 font-mono">
+                                        +{drink.price}.0 {language === 'ar' ? 'ريال' : 'SAR'}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 bg-white border border-black/10 rounded-xl p-1 shadow-xs shrink-0">
+                                      {qty > 0 && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateSodaQuantity(drink.id, -1)}
+                                            className="w-6 h-6 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center active:scale-90 transition cursor-pointer text-stone-700 font-extrabold"
+                                          >
+                                            <Minus className="w-3 h-3" />
+                                          </button>
+                                          <span className="w-5 text-center font-extrabold text-xs font-mono text-stone-900">{qty}</span>
+                                        </>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateSodaQuantity(drink.id, 1)}
+                                        className={`h-6 px-2 rounded-lg flex items-center justify-center gap-1 font-bold text-xs transition cursor-pointer active:scale-90 ${
+                                          qty > 0 
+                                            ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                                            : 'bg-stone-200 hover:bg-stone-300 text-stone-800'
+                                        }`}
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                        {qty === 0 && <span className="text-[10px]">{language === 'ar' ? 'إضافة' : 'Add'}</span>}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                          </div>
                         </div>
                       </>
                     ) : (

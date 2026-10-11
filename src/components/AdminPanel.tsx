@@ -375,6 +375,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [formPopular, setFormPopular] = useState(false);
   const [formDineInOnly, setFormDineInOnly] = useState(false);
   const [formIsAddonOnly, setFormIsAddonOnly] = useState(false);
+  const [formIsMeal, setFormIsMeal] = useState(false);
+  const [formOrder, setFormOrder] = useState<number>(0);
+  const [selectedAdminCategory, setSelectedAdminCategory] = useState<string>('all');
   const [validationMsg, setValidationMsg] = useState('');
 
   // Addons states for the item being created or edited
@@ -2114,6 +2117,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isPopular: formPopular,
       dineInOnly: formDineInOnly,
       addons: formAddons,
+      isMeal: formIsMeal,
+      order: Number(formOrder) || 0,
       isAvailable: isEditMode ? (menuItems.find(i => i.id === editingItemId)?.isAvailable ?? true) : true,
       ...(hasCustomImg ? { isCustomImage: true } : {})
     };
@@ -2150,6 +2155,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setFormPopular(false);
     setFormDineInOnly(false);
     setFormIsAddonOnly(false);
+    setFormIsMeal(false);
+    setFormOrder(0);
     setFormAddons([]);
     setNewAddonNameAr('');
     setNewAddonNameEn('');
@@ -2174,6 +2181,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setFormPopular(!!item.isPopular);
     setFormDineInOnly(!!item.dineInOnly);
     setFormIsAddonOnly(!!item.isAddonOnly);
+    setFormIsMeal(Boolean(item.isMeal || item.id === 's3' || item.nameAr.includes('وجبة') || item.name.toLowerCase().includes('meal')));
+    setFormOrder(item.order ?? 0);
     setFormAddons(item.addons ? JSON.parse(JSON.stringify(item.addons)) : []);
     setNewAddonNameAr('');
     setNewAddonNameEn('');
@@ -6079,6 +6088,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   setFormCalories(0);
                   setFormImage('');
                   setFormPopular(false);
+                  setFormDineInOnly(false);
+                  setFormIsMeal(false);
+                  setFormOrder(0);
+                  setFormAddons([]);
                   setIsEditMode(false);
                   setEditingItemId(null);
                   setShowItemForm(true);
@@ -6243,12 +6256,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </label>
                 </div>
 
+                {/* Meal Checkbox & Order field */}
+                <div className="md:col-span-3 p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      id="meal-chkbx"
+                      checked={formIsMeal}
+                      onChange={(e) => setFormIsMeal(e.target.checked)}
+                      className="w-4 h-4 accent-amber-600"
+                    />
+                    <label htmlFor="meal-chkbx" className="text-xs font-extrabold text-amber-950 cursor-pointer">
+                      {language === 'ar' ? '🍱 تصنيف كـ "وجبة" (تفعيل خيار المشروب المجاني المصاحب للوجبة)' : '🍱 Mark as "Meal" (Enables free soft drink selection for customer)'}
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                      {language === 'ar' ? 'ترتيب الظهور في القسم:' : 'Display Order:'}
+                    </label>
+                    <input
+                      type="number"
+                      value={formOrder}
+                      onChange={(e) => setFormOrder(Number(e.target.value))}
+                      className="w-16 text-center text-xs bg-white border border-slate-300 rounded-lg p-1.5 font-mono font-bold"
+                      title={language === 'ar' ? 'الرقم الأصغر يظهر أولاً' : 'Lower numbers appear first'}
+                    />
+                  </div>
+                </div>
+
                 {/* Item-specific Add-ons & Customizations Panel */}
                 <div id="item-addons-editor-section" className="md:col-span-3 mt-2 bg-white/95 rounded-2xl p-4 border border-amber-200/80 shadow-xs">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-amber-100">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-lg">✨</span>
+                        <span className="text-lg">🍱</span>
                         <h4 className="text-xs sm:text-sm font-extrabold text-slate-800">
                           {language === 'ar' ? 'الإضافات وخيارات التخصيص الخاصة بهذا الصنف' : 'Add-ons & Extras for this Item'}
                         </h4>
@@ -6459,6 +6501,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           )}
         </AnimatePresence>
 
+        {/* Folder-based Category Navigation Tabs */}
+        <div className="bg-slate-100/70 p-2 rounded-2xl border border-slate-200">
+          <div className="flex items-center justify-between gap-2 px-2 pb-2 border-b border-slate-200/80 mb-2">
+            <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+              <span>📁</span>
+              <span>{language === 'ar' ? 'مجلدات وتصنيفات الأقسام:' : 'Category Folders:'}</span>
+            </span>
+            <span className="text-[11px] font-bold text-slate-500 font-mono">
+              {menuItems.length} {language === 'ar' ? 'أصناف مسجلة' : 'total items'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+            <button
+              type="button"
+              onClick={() => setSelectedAdminCategory('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer shrink-0 ${
+                selectedAdminCategory === 'all'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-white hover:bg-slate-200/80 text-slate-700 border border-slate-200'
+              }`}
+            >
+              <span>📂</span>
+              <span>{language === 'ar' ? 'جميع الأصناف' : 'All Products'}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${selectedAdminCategory === 'all' ? 'bg-amber-700 text-amber-100' : 'bg-slate-100 text-slate-500'}`}>
+                {menuItems.length}
+              </span>
+            </button>
+
+            {mergedCategories.map((cat) => {
+              const count = menuItems.filter(i => i.category === cat.id).length;
+              const isSelected = selectedAdminCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSelectedAdminCategory(cat.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer shrink-0 ${
+                    isSelected
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-white hover:bg-slate-200/80 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  <span>📁</span>
+                  <span>{language === 'ar' ? cat.nameAr : cat.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-amber-700 text-amber-100' : 'bg-slate-100 text-slate-500'}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Catalog items list table */}
         {menuItems.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs">
@@ -6473,12 +6569,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <th className="px-4 py-3 text-start">{language === 'ar' ? 'القسم' : 'Category'}</th>
                   <th className="px-4 py-3 text-start">{language === 'ar' ? 'السعر الحالي' : 'Price'}</th>
                   <th className="px-4 py-3 text-start">{language === 'ar' ? 'الإضافات والتخصيصات' : 'Add-ons & Options'}</th>
+                  <th className="px-4 py-3 text-center">{language === 'ar' ? 'الترتيب' : 'Order'}</th>
                   <th className="px-4 py-3 text-center">{language === 'ar' ? 'الحالة بالمخزن' : 'Stock Availability'}</th>
                   <th className="px-4 py-3 text-center">{language === 'ar' ? 'إدارة' : 'Actions'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 select-all">
-                {menuItems.map((item) => {
+                {menuItems
+                  .filter(item => selectedAdminCategory === 'all' || item.category === selectedAdminCategory)
+                  .sort((a, b) => {
+                    const ordA = a.order ?? 999;
+                    const ordB = b.order ?? 999;
+                    return ordA - ordB;
+                  })
+                  .map((item) => {
                   const correlatedCat = mergedCategories.find(c => c.id === item.category);
                   const isCheckedVal = item.isAvailable;
 
@@ -6494,6 +6598,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div>
                           <div className="font-bold text-slate-800 text-xs md:text-sm flex items-center gap-1.5 flex-wrap">
                             <span>{language === 'ar' ? item.nameAr : item.name}</span>
+                            {(item.isMeal || item.id === 's3' || item.nameAr.includes('وجبة')) && (
+                              <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black px-1.5 py-0.5 rounded-sm">
+                                {language === 'ar' ? 'وجبة 🍱' : 'Meal 🍱'}
+                              </span>
+                            )}
                             {item.dineInOnly && (
                               <span className="bg-amber-100/75 text-amber-800 text-[9px] font-black px-1.5 py-0.5 rounded-sm">
                                 {language === 'ar' ? 'محلي فقط 🍽️' : 'Dine-In Only 🍽️'}
@@ -6557,7 +6666,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             }}
                             className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2.5 py-1 rounded-xl transition cursor-pointer"
                           >
-                            <span>✨ {item.addons.length} {language === 'ar' ? 'إضافات' : 'addons'}</span>
+                            <span>➕ {item.addons.length} {language === 'ar' ? 'إضافات' : 'addons'}</span>
                             <span className="text-[10px] text-amber-700 font-normal">
                               ({item.addons.filter(a => a.price === 0).length} {language === 'ar' ? 'مجانية' : 'free'})
                             </span>
@@ -6577,6 +6686,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             + {language === 'ar' ? 'تخصيص إضافات' : 'Add extras'}
                           </button>
                         )}
+                      </td>
+
+                      {/* Item Order */}
+                      <td className="px-4 py-3 text-center">
+                        <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                          {item.order ?? 0}
+                        </span>
                       </td>
 
                       {/* Availability status toggle switcher */}

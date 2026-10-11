@@ -268,6 +268,7 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
     calories: 520,
     isPopular: true,
     isAvailable: true,
+    isMeal: true,
   },
   {
     id: 's4',

@@ -123,7 +123,6 @@ export const MostOrderedPromo: React.FC<MostOrderedPromoProps> = ({
                     {language === 'ar' ? 'الأكثر طلباً' : 'Most Popular'}
                   </span>
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-yellow/90 text-black border border-black/5">
-                    <Sparkles className="w-2.5 h-2.5 mr-0.5 ml-0.5" />
                     {language === 'ar' ? 'مميز' : 'Featured'}
                   </span>
                 </div>

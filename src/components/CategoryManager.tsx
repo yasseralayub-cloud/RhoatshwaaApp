@@ -141,6 +141,7 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
   const [newDescEn, setNewDescEn] = useState('');
   const [newIcon, setNewIcon] = useState('ChefHat');
   const [newImage, setNewImage] = useState('');
+  const [newOrder, setNewOrder] = useState<number>(0);
   const [isUploading, setIsUploading] = useState(false);
 
   // Image editing modal states
@@ -151,6 +152,7 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
   const [tempNameAr, setTempNameAr] = useState('');
   const [tempNameEn, setTempNameEn] = useState('');
   const [tempIcon, setTempIcon] = useState('ChefHat');
+  const [tempOrder, setTempOrder] = useState<number>(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -221,7 +223,8 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
       icon: newIcon || 'Utensils',
       image: newImage.trim() || undefined,
       descriptionAr: newDescAr.trim() || undefined,
-      descriptionEn: newDescEn.trim() || undefined
+      descriptionEn: newDescEn.trim() || undefined,
+      order: Number(newOrder) || 0
     };
 
     await onSaveCategory(newCategory);
@@ -234,6 +237,7 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
     setNewDescEn('');
     setNewIcon('ChefHat');
     setNewImage('');
+    setNewOrder(0);
     setShowAddForm(false);
   };
 
@@ -245,6 +249,7 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
     setTempDescAr(cat.descriptionAr || '');
     setTempDescEn(cat.descriptionEn || '');
     setTempIcon(cat.icon || 'ChefHat');
+    setTempOrder(cat.order ?? 0);
   };
 
   const handleSaveModalChanges = async () => {
@@ -257,7 +262,8 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
       icon: tempIcon,
       image: tempImageUrl.trim() || undefined,
       descriptionAr: tempDescAr.trim() || undefined,
-      descriptionEn: tempDescEn.trim() || undefined
+      descriptionEn: tempDescEn.trim() || undefined,
+      order: Number(tempOrder) || 0
     };
 
     await onSaveCategory(updatedCategory);
@@ -411,6 +417,18 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">
+                    {language === 'ar' ? 'ترتيب ظهور القسم (الرقم الأصغر أولاً)' : 'Category Order (Lower First)'}
+                  </label>
+                  <input
+                    type="number"
+                    value={newOrder}
+                    onChange={(e) => setNewOrder(Number(e.target.value))}
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:bg-white focus:border-amber-500 font-mono font-bold"
+                  />
                 </div>
               </div>
 
@@ -803,6 +821,18 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-600 mb-1">
+                    {language === 'ar' ? 'ترتيب ظهور القسم في المنيو (الرقم الأصغر يظهر أولاً)' : 'Category Order in Menu (Lower First)'}
+                  </label>
+                  <input
+                    type="number"
+                    value={tempOrder}
+                    onChange={(e) => setTempOrder(Number(e.target.value))}
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:bg-white focus:border-amber-500 font-mono font-bold"
+                  />
                 </div>
               </div>
 

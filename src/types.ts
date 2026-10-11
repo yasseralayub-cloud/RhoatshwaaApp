@@ -21,6 +21,8 @@ export interface MenuItem {
   isCustomImage?: boolean;
   isAddonOnly?: boolean;
   addons?: MenuItemAddon[];
+  isMeal?: boolean; // وجبة: يتفعل معها خيار المشروب المجاني المصاحب للوجبة
+  order?: number; // ترتيب الصنف ضمن القسم
 }
 
 export interface OrderItem {
@@ -180,6 +182,7 @@ export interface Category {
   image?: string;
   descriptionAr?: string;
   descriptionEn?: string;
+  order?: number; // ترتيب القسم في القائمة
 }
 
 export interface PendingDriver {

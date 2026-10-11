@@ -44,9 +44,7 @@ function MenuAndOrdersApp() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   // Selected State variables
-  const [isPrivacyOpen, setIsPrivacyOpen] = useState(() => {
-    return localStorage.getItem('rehla_privacy_accepted') !== 'true';
-  });
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
@@ -63,6 +61,8 @@ function MenuAndOrdersApp() {
 
   // PWA & iOS install prompt detectors
   useEffect(() => {
+    localStorage.setItem('rehla_privacy_accepted', 'true');
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       (window as any).deferredPrompt = e;
@@ -77,10 +77,6 @@ function MenuAndOrdersApp() {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
     if (isIosDevice && !isStandalone) {
       setIsIos(true);
-      const dismissed = sessionStorage.getItem('ios_pwa_dismissed');
-      if (dismissed !== 'true') {
-        setShowIosPrompt(true);
-      }
     }
 
     return () => {
@@ -206,7 +202,12 @@ function MenuAndOrdersApp() {
     const newOnes = customCategories.filter(c => !defaultIds.has(c.id) && c.id !== 'sauces');
     return [...mergedDefaults, ...newOnes]
       .filter(c => c.id !== 'sauces')
-      .sort((a, b) => getCategoryOrderPriority(a.id) - getCategoryOrderPriority(b.id));
+      .sort((a, b) => {
+        // If an explicit manager order is set, prioritize it
+        const orderA = a.order !== undefined ? a.order : getCategoryOrderPriority(a.id);
+        const orderB = b.order !== undefined ? b.order : getCategoryOrderPriority(b.id);
+        return orderA - orderB;
+      });
   }, [customCategories]);
 
   // Realtime subscription for categories from Firestore and custom events
@@ -947,12 +948,12 @@ function MenuAndOrdersApp() {
       return;
     }
 
-    // It's a MenuItem (from main card addition)
     const item = itemOrCartItem as MenuItem;
     const hasSizing = ['s2', 's4', 'g1', 'g5', 'g7', 'g10'].includes(item.id);
     const isSodasGroup = item.id === 'drinks-soft-group';
     const hasAddons = Boolean(item.addons && item.addons.length > 0);
-    if (isSandwichItem(item) || isFriesItem(item) || hasSizing || isSodasGroup || hasAddons) {
+    const isMeal = Boolean(item.isMeal || item.id === 's3' || item.nameAr.includes('وجبة') || item.name.toLowerCase().includes('meal'));
+    if (isSandwichItem(item) || isFriesItem(item) || hasSizing || isSodasGroup || hasAddons || isMeal) {
       setCustomizingItem(item);
     } else {
       setCart((prevCart) => {
@@ -1281,16 +1282,23 @@ function MenuAndOrdersApp() {
                   const categoryItems = filteredMenuItems.filter(item => item.category === category.id);
                   if (categoryItems.length === 0) return null;
 
-                  // Sort items inside category: available first, popular/best-sellers at the top, curated order preserved
+                  // Sort items inside category: available first, custom manager order, popular/best-sellers, curated order preserved
                   const sortedCategoryItems = [...categoryItems].sort((a, b) => {
                     // 1. Available dishes first
                     if (a.isAvailable !== b.isAvailable) {
                       return a.isAvailable ? -1 : 1;
                     }
-                    // 2. Best-sellers & popular dishes at the front
+                    // 2. Explicit manager item order if set
+                    if (a.order !== undefined && b.order !== undefined && a.order !== b.order) {
+                      return a.order - b.order;
+                    }
+                    if (a.order !== undefined && b.order === undefined) return -1;
+                    if (a.order === undefined && b.order !== undefined) return 1;
+
+                    // 3. Best-sellers & popular dishes at the front
                     if (a.isPopular && !b.isPopular) return -1;
                     if (!a.isPopular && b.isPopular) return 1;
-                    // 3. Keep curated culinary order
+                    // 4. Keep curated culinary order
                     const idxA = initialOrderMap.has(a.id) ? initialOrderMap.get(a.id)! : 999;
                     const idxB = initialOrderMap.has(b.id) ? initialOrderMap.get(b.id)! : 999;
                     return idxA - idxB;

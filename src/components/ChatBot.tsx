@@ -211,19 +211,19 @@ export function ChatBot({ menuItems, businessSettings, language }: ChatBotProps)
       if (isAr) {
         recText = `أبشر بعزك يا بعد راسي! ❤️ نبي ندلعك وننوع لك اليوم بين أشهى الأكلات الأكثر طلباً ومحبة لدى عملائنا:\n\n`;
         if (randomGrill) {
-          recText += `🍢 **من قسم المشويات على الجمر:** **${randomGrill.nameAr}** بسعر ${randomGrill.price} ريال فقط! ✨\n*(${randomGrill.descriptionAr || 'محضر بكل حب وطازج على الجمر'})*\n\n`;
+          recText += `🍢 **من قسم المشويات على الجمر:** **${randomGrill.nameAr}** بسعر ${randomGrill.price} ريال فقط!\n*(${randomGrill.descriptionAr || 'محضر بكل حب وطازج على الجمر'})*\n\n`;
         }
         if (randomShawarma) {
-          recText += `🌯 **من قسم الشاورما المدخنة:** **${randomShawarma.nameAr}** بسعر ${randomShawarma.price} ريال فقط! ✨\n*(${randomShawarma.descriptionAr || 'شاورما مدخنة ولذيذة بطريقتنا الخاصة'})*\n\n`;
+          recText += `🌯 **من قسم الشاورما المدخنة:** **${randomShawarma.nameAr}** بسعر ${randomShawarma.price} ريال فقط!\n*(${randomShawarma.descriptionAr || 'شاورما مدخنة ولذيذة بطريقتنا الخاصة'})*\n\n`;
         }
         recText += `تقدر تتصفح المنيو وتطلب أي وحدة منهم بضغطة زر وتوصلك ساخنة ومنورة سفرتك! 🔥 وش حاب تستفسر عنه أكثر يا غالي؟`;
       } else {
         recText = `I have the perfect recommendations for you to try a balance of our best flavors:\n\n`;
         if (randomGrill) {
-          recText += `🍢 **From Charcoal Grills:** **${randomGrill.name}** for ${randomGrill.price} SAR! ✨\n*(${randomGrill.description || 'Grilled perfectly over natural charcoal'})*\n\n`;
+          recText += `🍢 **From Charcoal Grills:** **${randomGrill.name}** for ${randomGrill.price} SAR!\n*(${randomGrill.description || 'Grilled perfectly over natural charcoal'})*\n\n`;
         }
         if (randomShawarma) {
-          recText += `🌯 **From Smoked Shawarma:** **${randomShawarma.name}** for ${randomShawarma.price} SAR! ✨\n*(${randomShawarma.description || 'Our signature smoked shawarma wrap'})*\n\n`;
+          recText += `🌯 **From Smoked Shawarma:** **${randomShawarma.name}** for ${randomShawarma.price} SAR!\n*(${randomShawarma.description || 'Our signature smoked shawarma wrap'})*\n\n`;
         }
         recText += `You can order any of these directly from the menu above! What else can I assist you with?`;
       }
