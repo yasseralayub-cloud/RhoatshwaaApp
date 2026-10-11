@@ -12,6 +12,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Categories Rules
+    match /categories/{categoryId} {
+      allow read, write: if true;
+    }
+
     // Settings Rules
     match /settings/{docId} {
       allow read, write: if true;

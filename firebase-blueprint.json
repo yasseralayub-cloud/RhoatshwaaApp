@@ -15,9 +15,32 @@
         "image": { "type": "string" },
         "calories": { "type": "number" },
         "isPopular": { "type": "boolean" },
-        "isAvailable": { "type": "boolean" }
+        "isAvailable": { "type": "boolean" },
+        "dineInOnly": { "type": "boolean" },
+        "isCustomImage": { "type": "boolean" },
+        "isAddonOnly": { "type": "boolean" },
+        "addons": { "type": "array" },
+        "isMeal": { "type": "boolean" },
+        "order": { "type": "number" }
       },
       "required": ["id", "name", "nameAr", "price", "category", "isAvailable"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Menu category folder",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "nameAr": { "type": "string" },
+        "icon": { "type": "string" },
+        "image": { "type": "string" },
+        "descriptionAr": { "type": "string" },
+        "descriptionEn": { "type": "string" },
+        "order": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "nameAr"]
     },
     "Order": {
       "title": "Order",
@@ -112,6 +135,10 @@
     "/menuItems/{itemId}": {
       "schema": "MenuItem",
       "description": "Menu collection storing food, drinks, and games details"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Category folders storing menu categories and display order"
     },
     "/orders/{orderId}": {
       "schema": "Order",

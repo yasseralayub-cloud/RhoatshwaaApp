@@ -575,6 +575,10 @@ function MenuAndOrdersApp() {
                 isAvailable: data.isAvailable !== undefined ? Boolean(data.isAvailable) : (defaultItem?.isAvailable ?? true),
                 dineInOnly: data.dineInOnly !== undefined ? Boolean(data.dineInOnly) : Boolean(defaultItem?.dineInOnly),
                 isCustomImage: Boolean(data.isCustomImage),
+                isAddonOnly: Boolean(data.isAddonOnly),
+                addons: Array.isArray(data.addons) ? data.addons : (defaultItem?.addons || []),
+                isMeal: data.isMeal !== undefined ? Boolean(data.isMeal) : Boolean(defaultItem?.isMeal || docId === 's3' || (data.nameAr && String(data.nameAr).includes('وجبة'))),
+                order: typeof data.order === 'number' ? data.order : (defaultItem?.order ?? 0),
               };
 
               docs.push(menuItem);
@@ -645,9 +649,14 @@ function MenuAndOrdersApp() {
           if (snapshot.exists()) {
             const promo = snapshot.data() as Promotion;
             setActivePromo(promo);
-            localStorage.setItem('simulated_promotion', JSON.stringify(promo));
+            try {
+              localStorage.setItem('simulated_promotion', JSON.stringify(promo));
+            } catch (e) {}
           } else {
-            console.log('No active promotion document in Firestore. Using offline/local.');
+            setActivePromo(null);
+            try {
+              localStorage.removeItem('simulated_promotion');
+            } catch (e) {}
           }
         },
         (error: any) => {
@@ -1245,9 +1254,17 @@ function MenuAndOrdersApp() {
         {activeTab === 'menu' && (
           <div className="space-y-6">
 
-            {/* Active Promotion Countdown bar */}
-            {activePromo && activePromo.isActive && (
-              <PromotionCountdown promotion={activePromo} onExpired={() => console.log('Promotion expired')} />
+            {/* Active Promotion Countdown bar with Real-time Clock */}
+            {activePromo && activePromo.isActive && new Date(activePromo.endsAt).getTime() > Date.now() && (
+              <PromotionCountdown
+                promotion={activePromo}
+                onExpired={() => {
+                  setActivePromo((prev) => (prev ? { ...prev, isActive: false } : null));
+                  try {
+                    setDoc(doc(db, 'promotions', 'active'), { isActive: false }, { merge: true });
+                  } catch (e) {}
+                }}
+              />
             )}
 
             {/* Most Ordered / Featured Real Product Promo Card */}

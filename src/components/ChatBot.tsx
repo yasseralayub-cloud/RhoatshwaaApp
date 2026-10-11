@@ -23,7 +23,6 @@ export function ChatBot({ menuItems, businessSettings, language }: ChatBotProps)
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [showNotification, setShowNotification] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -40,30 +39,21 @@ export function ChatBot({ menuItems, businessSettings, language }: ChatBotProps)
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Initialize with a warm human-like greeting
+  // Initialize with a friendly greeting
   useEffect(() => {
     const isAr = language === 'ar';
     const initialMsg: Message = {
       id: 'welcome',
       sender: 'bot',
       text: isAr
-        ? `يامرحباً تراحيب المطر! 🌸 نورتنا في رحلة شواء. أنا مساعدك الشخصي، متواجد لخدمتك ومساعدتك في اختيار الوجبة المثالية اليوم وتوفير كل التفاصيل اللي تحتاجها لراحة بالك.\n\nتقدر تسألني عن الوجبات، الأسعار، السعرات الحرارية، أوقات العمل، التوصيل، أو حتى تطلب مني ترشيح لأفضل الأصناف على جمر الغضا! وش في خاطرك اليوم يا غالي؟`
-        : `Warm welcome to Rehla BBQ! 🍖 I am your personal assistant, here to help you choose the perfect meal today and provide any details you need.\n\nFeel free to ask me about our flame-grilled items, prices, calories, working hours, delivery fees, or for our absolute best recommendations! What are you craving today?`,
+        ? `يامرحباً تراحيب المطر! 🌸 نورتنا في رحلة شواء. تقدر تسألني عن الوجبات، الأسعار، السعرات الحرارية، أوقات العمل، أو التوصيل. وش في خاطرك اليوم يا غالي؟`
+        : `Warm welcome to Rehla BBQ! 🍖 Feel free to ask about our flame-grilled meals, prices, calories, working hours, or delivery. What are you craving today?`,
       timestamp: new Date(),
       suggestions: isAr
         ? ['🔥 اقترح علي وجبة دسمة', '⏰ فاتحين الحين؟', '🥩 وش أفضل وجبة لحم؟', '📍 وين موقعكم ورقم التواصل؟']
         : ['🔥 Recommend a hearty meal', '⏰ Are you open now?', '🥩 Best meat dish?', '📍 Location & Contact']
     };
     setMessages([initialMsg]);
-
-    // Show floating welcome notification badge after 4 seconds if not opened
-    const timer = setTimeout(() => {
-      if (!isOpen) {
-        setShowNotification(true);
-      }
-    }, 4000);
-
-    return () => clearTimeout(timer);
   }, [language]);
 
   // Scroll to bottom on new messages
@@ -73,7 +63,6 @@ export function ChatBot({ menuItems, businessSettings, language }: ChatBotProps)
 
   const handleOpenChat = () => {
     setIsOpen(true);
-    setShowNotification(false);
   };
 
   const handleSendMessage = (textToSend?: string) => {
@@ -464,43 +453,7 @@ export function ChatBot({ menuItems, businessSettings, language }: ChatBotProps)
       <div className={`fixed bottom-6 ${language === 'ar' ? 'left-6' : 'right-6'} z-[999] flex flex-col items-end gap-2 transition-all duration-500 ${
         isAtBottom && !isOpen ? 'opacity-0 translate-y-24 pointer-events-none' : isScrolled && !isOpen ? 'opacity-30 hover:opacity-100' : 'opacity-100'
       }`}>
-        {/* Floating Notification Promo Badge */}
-        <AnimatePresence>
-          {showNotification && !isOpen && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: 15 }}
-              onClick={handleOpenChat}
-              className="bg-neutral-900 border border-white/10 text-white rounded-2xl p-3 shadow-xl max-w-xs text-start cursor-pointer hover:bg-neutral-800 transition-all font-sans relative"
-            >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowNotification(false);
-                }}
-                className="absolute top-1 right-1 p-0.5 rounded-full text-white/40 hover:text-white/80 transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-              <div className="flex gap-2.5 items-center">
-                <div className="p-2 bg-yellow rounded-xl text-black shrink-0">
-                  <ChefHat className="w-4 h-4 animate-bounce" />
-                </div>
-                <div>
-                  <h5 className="text-[11px] font-black text-yellow leading-tight">
-                    {language === 'ar' ? 'مساعد رحلة شواء' : 'Rehla BBQ Assistant'}
-                  </h5>
-                  <p className="text-[10px] text-white/80 mt-0.5 leading-snug font-medium">
-                    {language === 'ar' 
-                      ? 'مرحباً يا غالي! آمرني وش في خاطرك مشويات اليوم؟ 🍖' 
-                      : 'Hi! Let me help you select the best hot meals today! 🍖'}
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+
 
         {/* The Core Floating Circular Button */}
         <button

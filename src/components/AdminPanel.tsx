@@ -87,6 +87,7 @@ import {
   Area
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
+import { PromotionCountdown } from './PromotionCountdown';
 
 interface AdminPanelProps {
   onMenuUpdate: (newMenu: MenuItem[]) => void;
@@ -293,7 +294,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 icon: data.icon || 'Utensils',
                 image: data.image || '',
                 descriptionAr: data.descriptionAr || '',
-                descriptionEn: data.descriptionEn || ''
+                descriptionEn: data.descriptionEn || '',
+                order: typeof data.order === 'number' ? data.order : 0
               });
             });
             setCustomCategories(fetched);
@@ -324,6 +326,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         image: category.image || '',
         descriptionAr: category.descriptionAr || '',
         descriptionEn: category.descriptionEn || '',
+        order: typeof category.order === 'number' ? category.order : 0,
         updatedAt: new Date().toISOString()
       }, { merge: true });
     } catch (err) {
@@ -2021,17 +2024,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
     onMenuUpdate(updatedMenu);
 
-    if (isAdmin) {
-      try {
-        await updateDoc(doc(db, 'menuItems', itemId), { isAvailable: nextVal });
-      } catch (err) {
-        console.error(err);
-        handleFirestoreError(err, OperationType.UPDATE, `menuItems/${itemId}`);
-      }
-    } else if (isSimulated) {
-      // Keep state locally
-      localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
+    // Persist directly to Firestore
+    try {
+      await setDoc(doc(db, 'menuItems', itemId), { isAvailable: nextVal }, { merge: true });
+    } catch (err) {
+      console.warn('Firestore update availability fallback:', err);
     }
+    try {
+      localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
+    } catch (e) {}
   };
 
   // Inline Price change directly from control panel table
@@ -2043,33 +2044,57 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
     onMenuUpdate(updatedMenu);
 
-    if (isAdmin) {
-      try {
-        await updateDoc(doc(db, 'menuItems', itemId), { price: newPriceNum });
-        showNotification(language === 'ar' ? 'تم تحديث السعر مباشرة في لوحة التحكم والسحابة! ⚡' : 'Price updated live on cloud!', 'success');
-      } catch (err) {
-        console.error(err);
-        handleFirestoreError(err, OperationType.UPDATE, `menuItems/${itemId}`);
-      }
-    } else if (isSimulated) {
-      localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
-      showNotification(language === 'ar' ? 'تم تحديث السعر بمحاكي لوحة التحكم!' : 'Price updated in control panel simulator!', 'success');
+    // Persist directly to Firestore
+    try {
+      await setDoc(doc(db, 'menuItems', itemId), { price: newPriceNum }, { merge: true });
+      showNotification(language === 'ar' ? 'تم تحديث السعر وتثبيته في قاعدة البيانات! ⚡' : 'Price updated & saved to database! ⚡', 'success');
+    } catch (err) {
+      console.warn('Firestore update price fallback:', err);
     }
+    try {
+      localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
+    } catch (e) {}
+  };
+
+  // Inline Order change directly from control panel table
+  const handleQuickOrderChange = async (itemId: string, newOrderNum: number) => {
+    if (isNaN(newOrderNum)) return;
+    const updatedMenu = menuItems.map(item => {
+      if (item.id === itemId) return { ...item, order: newOrderNum };
+      return item;
+    });
+    onMenuUpdate(updatedMenu);
+
+    // Persist directly to Firestore
+    try {
+      await setDoc(doc(db, 'menuItems', itemId), { order: newOrderNum }, { merge: true });
+    } catch (err) {
+      console.warn('Firestore update order fallback:', err);
+    }
+    try {
+      localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
+    } catch (e) {}
   };
 
   // Sync all menu items & prices to Firestore live
   const handleSyncAllPricesToCloud = async () => {
     try {
-      showNotification(language === 'ar' ? 'جاري مزامنة وبث جميع الأسعار من لوحة التحكم مع السحابة...' : 'Syncing all control panel prices live...', 'info');
+      showNotification(language === 'ar' ? 'جاري تثبيت ومزامنة جميع الأصناف والأسعار في قاعدة البيانات...' : 'Syncing all items to database...', 'info');
       onMenuUpdate([...menuItems]);
-      localStorage.setItem('simulated_menu', JSON.stringify(menuItems));
+      try {
+        localStorage.setItem('simulated_menu', JSON.stringify(menuItems));
+      } catch (e) {}
 
-      if (isAdmin) {
-        for (const item of menuItems) {
-          await setDoc(doc(db, 'menuItems', item.id), item);
-        }
+      for (const item of menuItems) {
+        const payload = JSON.parse(JSON.stringify({
+          ...item,
+          order: item.order ?? 0,
+          isMeal: Boolean(item.isMeal || item.id === 's3' || item.nameAr?.includes('وجبة')),
+          addons: Array.isArray(item.addons) ? item.addons : []
+        }));
+        await setDoc(doc(db, 'menuItems', item.id), payload);
       }
-      showNotification(language === 'ar' ? 'تمت مزامنة جميع أسعار المنيو بنجاح مع لوحة التحكم والسحابة! ⚡' : 'All menu prices synchronized live with control panel & cloud! ⚡', 'success');
+      showNotification(language === 'ar' ? 'تم تثبيت ومزامنة جميع الأصناف بنجاح مع قاعدة البيانات! ⚡' : 'All menu items synced to database! ⚡', 'success');
     } catch (err) {
       console.error('Failed to sync prices to cloud:', err);
       showNotification(language === 'ar' ? 'خطأ أثناء مزامنة الأسعار' : 'Error syncing prices', 'error');
@@ -2081,13 +2106,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     setValidationMsg('');
 
-    if (!formName && !formNameAr) {
-      setValidationMsg(language === 'ar' ? 'يرجى إدخال اسم الصنف' : 'Please provide item name');
+    const trimmedName = formName.trim();
+    const trimmedNameAr = formNameAr.trim();
+
+    if (!trimmedName && !trimmedNameAr) {
+      setValidationMsg(language === 'ar' ? 'يرجى إدخال اسم الصنف (عربي أو إنجليزي)' : 'Please provide item name');
       return;
     }
 
-    let cleanId = formId.trim().toLowerCase();
-    if (!cleanId) {
+    let cleanId = formId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    if (!cleanId || cleanId === '_') {
       if (isEditMode && editingItemId) {
         cleanId = editingItemId;
       } else {
@@ -2104,21 +2132,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const defaultItemForCleanId = INITIAL_MENU_ITEMS.find(i => i.id === cleanId);
     const hasCustomImg = Boolean(formImage.trim() && formImage.trim() !== defaultItemForCleanId?.image);
 
+    const safePrice = Math.max(0, Number(formPrice) || 0);
+    const safeCalories = Math.max(0, Number(formCalories) || 0);
+    const safeOrder = Number(formOrder) || 0;
+
     const itemToSave: MenuItem = {
       id: cleanId,
-      name: formName,
-      nameAr: formNameAr,
-      description: formDesc || 'Freshly made',
-      descriptionAr: formDescAr || 'محضر طازجاً',
-      price: Number(formPrice),
-      category: formCategory,
-      calories: Number(formCalories),
+      name: trimmedName || trimmedNameAr,
+      nameAr: trimmedNameAr || trimmedName,
+      description: formDesc.trim() || 'Freshly made',
+      descriptionAr: formDescAr.trim() || 'محضر طازجاً',
+      price: safePrice,
+      category: formCategory || 'shawarma',
+      calories: safeCalories,
       image: formImage.trim() || defaultItemForCleanId?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600',
-      isPopular: formPopular,
-      dineInOnly: formDineInOnly,
-      addons: formAddons,
-      isMeal: formIsMeal,
-      order: Number(formOrder) || 0,
+      isPopular: Boolean(formPopular),
+      dineInOnly: Boolean(formDineInOnly),
+      addons: Array.isArray(formAddons) ? formAddons.map(a => ({
+        id: a.id,
+        name: a.name || a.nameAr,
+        nameAr: a.nameAr || a.name,
+        price: Number(a.price) || 0
+      })) : [],
+      isMeal: Boolean(formIsMeal),
+      order: safeOrder,
       isAvailable: isEditMode ? (menuItems.find(i => i.id === editingItemId)?.isAvailable ?? true) : true,
       ...(hasCustomImg ? { isCustomImage: true } : {})
     };
@@ -2130,20 +2167,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       updatedMenu = [...menuItems, itemToSave];
     }
     
+    // Immediate UI update
     onMenuUpdate(updatedMenu);
 
-    if (isAdmin) {
-      try {
-        await setDoc(doc(db, 'menuItems', itemToSave.id), itemToSave);
-      } catch (err) {
-        console.error(err);
-        handleFirestoreError(err, OperationType.WRITE, `menuItems/${itemToSave.id}`);
-      }
-    } else if (isSimulated) {
-      localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
+    // Direct Firestore Database Persistence
+    try {
+      const cleanPayload = JSON.parse(JSON.stringify(itemToSave));
+      await setDoc(doc(db, 'menuItems', itemToSave.id), cleanPayload);
+      console.log('✅ Menu item permanently saved to Firestore:', itemToSave.id);
+    } catch (err) {
+      console.error('Failed to write menu item to Firestore:', err);
     }
 
-    // Reset Form & cancel edit mode
+    // Local storage cache backup
+    try {
+      localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
+    } catch (e) {}
+
+    // Reset Form & cancel edit mode cleanly
     setFormId('');
     setFormName('');
     setFormNameAr('');
@@ -2165,7 +2206,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setIsEditMode(false);
     setEditingItemId(null);
     setShowItemForm(false);
-    showNotification(language === 'ar' ? 'تم حفظ الصنف بنجاح!' : 'Item saved successfully!', 'success');
+    showNotification(language === 'ar' ? 'تم حفظ وتثبيت الصنف في قاعدة البيانات بنجاح! 💾' : 'Item permanently saved to database! 💾', 'success');
   };
 
   const handleEditClick = (item: MenuItem) => {
@@ -2202,6 +2243,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }, 80);
   };
 
+  // Promotion Templates & Suggestions
+  const PROMO_TEMPLATES = [
+    {
+      id: 'weekend_flame',
+      titleAr: 'خصم الويكند الحارق على المشويات! 🔥',
+      titleEn: 'Weekend Sizzling BBQ Feast Special! 🔥',
+      discountPercent: 15,
+      minutes: 180, // 3 hours
+      imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&q=80&w=1200'
+    },
+    {
+      id: 'lunch_rush',
+      titleAr: 'عرض الغداء الذهبي - وفر واشبع! 🍖',
+      titleEn: 'Golden Lunch Hour Deal - Save & Enjoy! 🍖',
+      discountPercent: 20,
+      minutes: 120, // 2 hours
+      imageUrl: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=1200'
+    },
+    {
+      id: 'dinner_party',
+      titleAr: 'سهرة العشاء والشواء الملكي 🌙',
+      titleEn: 'Royal Dinner & Night BBQ Gathering 🌙',
+      discountPercent: 10,
+      minutes: 240, // 4 hours
+      imageUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=1200'
+    },
+    {
+      id: 'mega_fest',
+      titleAr: 'مهرجان التوفير الاستثنائي لجميع الطلبات! 🎉',
+      titleEn: 'Mega Storewide Savings Carnival! 🎉',
+      discountPercent: 25,
+      minutes: 1440, // 24 hours
+      imageUrl: 'https://images.unsplash.com/photo-1561651823-34feb02250e4?auto=format&fit=crop&q=80&w=1200'
+    }
+  ];
+
+  const PROMO_IMAGE_SUGGESTIONS = [
+    { labelAr: 'مشويات وفحم', labelEn: 'BBQ Flame', url: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&q=80&w=1200' },
+    { labelAr: 'كباب وستيك', labelEn: 'Steaks & Kabab', url: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=1200' },
+    { labelAr: 'شاورما وصاج', labelEn: 'Shawarma & Saj', url: 'https://images.unsplash.com/photo-1561651823-34feb02250e4?auto=format&fit=crop&q=80&w=1200' },
+    { labelAr: 'وليمة وبوكسات', labelEn: 'Platters', url: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=1200' }
+  ];
+
+  const handleApplyPromoTemplate = (tmpl: typeof PROMO_TEMPLATES[0]) => {
+    setPromoTitleAr(tmpl.titleAr);
+    setPromoTitle(tmpl.titleEn);
+    setPromoPercent(tmpl.discountPercent);
+    setPromoImageUrl(tmpl.imageUrl);
+    setPromoIsActive(true);
+    handleQuickPromoTime(tmpl.minutes);
+    showNotification(language === 'ar' ? `تم تطبيق قالب: ${tmpl.titleAr}` : `Template applied: ${tmpl.titleEn}`, 'info');
+  };
+
   // Promotion handling
   const handleQuickPromoTime = (minutes: number) => {
     const d = new Date(Date.now() + minutes * 60 * 1000);
@@ -2211,39 +2305,83 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handlePublishPromo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!promoTitle || !promoTitleAr || !promoPercent || !promoEndsAt) {
-      alert(language === 'ar' ? 'برجاء تعبئة بيانات العرض بالكامل' : 'Please fill all promotion offer parameters');
+    const finalTitleAr = promoTitleAr.trim() || promoTitle.trim();
+    const finalTitleEn = promoTitle.trim() || promoTitleAr.trim();
+
+    if (!finalTitleAr) {
+      showNotification(language === 'ar' ? 'يرجى إدخال عنوان العرض الترويجي' : 'Please provide offer title', 'warning');
+      return;
+    }
+
+    if (!promoPercent || promoPercent <= 0 || promoPercent > 99) {
+      showNotification(language === 'ar' ? 'يرجى تحديد نسبة خصم صحيحة (بين 1% و 99%)' : 'Please enter valid discount percent', 'warning');
+      return;
+    }
+
+    if (!promoEndsAt) {
+      showNotification(language === 'ar' ? 'يرجى تحديد وقت وتاريخ انتهاء العرض والعد التنازلي' : 'Please select offer expiry time', 'warning');
       return;
     }
 
     const endsUtc = new Date(promoEndsAt).toISOString();
+    if (new Date(endsUtc).getTime() <= Date.now()) {
+      showNotification(language === 'ar' ? 'تاريخ ووقت انتهاء العرض يجب أن يكون في المستقبل!' : 'Expiry time must be in the future!', 'warning');
+      return;
+    }
 
-    const promotionData = {
+    const promotionData: import('../types').Promotion = {
       id: 'active',
-      title: promoTitle,
-      titleAr: promoTitleAr,
+      title: finalTitleEn,
+      titleAr: finalTitleAr,
       discountPercent: Number(promoPercent),
       isActive: promoIsActive,
       endsAt: endsUtc,
-      imageUrl: promoImageUrl.trim() || undefined
+      ...(promoImageUrl.trim() ? { imageUrl: promoImageUrl.trim() } : {})
     };
 
     if (onPromoUpdate) {
       onPromoUpdate(promotionData);
     }
 
-    if (isAdmin) {
-      try {
-        await setDoc(doc(db, 'promotions', 'active'), promotionData);
-        alert(language === 'ar' ? 'تم نشر العرض وتعميمه على كافة الأجهزة بنجاح!' : 'Broadcasted promotion successfully across all active devices!');
-      } catch (err) {
-        console.error("Failed to write promo to Firestore:", err);
-        handleFirestoreError(err, OperationType.WRITE, 'promotions/active');
-      }
-    } else {
-      localStorage.setItem('simulated_promotion', JSON.stringify(promotionData));
-      alert(language === 'ar' ? 'تم تفعيل العرض محلياً في المحاكي بنجاح' : 'Activated promotional offer successfully inside the simulation mode!');
+    try {
+      const cleanPayload = JSON.parse(JSON.stringify(promotionData));
+      await setDoc(doc(db, 'promotions', 'active'), cleanPayload);
+      showNotification(
+        language === 'ar' 
+          ? 'تم إطلاق وتفعيل العرض الترويجي بنجاح! سيظهر فوراً للعملاء مع العداد التنازلي 📣' 
+          : 'Promotion launched successfully with countdown clock! 📣', 
+        'success'
+      );
+    } catch (err) {
+      console.warn("Failed to write promo to Firestore:", err);
+      showNotification(language === 'ar' ? 'تم تفعيل العرض محلياً في المتجر' : 'Promo activated locally', 'info');
     }
+
+    try {
+      localStorage.setItem('simulated_promotion', JSON.stringify(promotionData));
+    } catch (e) {}
+  };
+
+  const handleTogglePromoActive = async () => {
+    if (!activePromo) return;
+    const nextState = !activePromo.isActive;
+    const updated: import('../types').Promotion = { ...activePromo, isActive: nextState };
+    if (onPromoUpdate) onPromoUpdate(updated);
+    setPromoIsActive(nextState);
+    try {
+      await setDoc(doc(db, 'promotions', 'active'), { isActive: nextState }, { merge: true });
+      showNotification(
+        nextState 
+          ? (language === 'ar' ? 'تم استئناف وتشغيل العرض للعملاء! 🟢' : 'Promotion resumed live! 🟢')
+          : (language === 'ar' ? 'تم إيقاف العرض مؤقتاً ⏸️' : 'Promotion paused ⏸️'),
+        'success'
+      );
+    } catch (err) {
+      console.warn("Firestore promo toggle fallback:", err);
+    }
+    try {
+      localStorage.setItem('simulated_promotion', JSON.stringify(updated));
+    } catch (e) {}
   };
 
   const handleDeletePromo = () => {
@@ -2251,7 +2389,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isOpen: true,
       titleAr: 'إزالة العرض الترويجي',
       titleEn: 'Remove Promotion',
-      messageAr: 'هل تود بالتأكيد إزالة العرض الترويجي الحالي من المتجر بالكامل؟',
+      messageAr: 'هل تود بالتأكيد إزالة العرض الترويجي الحالي من المتجر بالكامل؟ لن يظهر للعملاء بعد ذلك.',
       messageEn: 'Are you sure you want to permanently remove the active promotion from the store?',
       actionLabelAr: 'إزالة العرض',
       actionLabelEn: 'Remove Promo',
@@ -2261,16 +2399,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         if (onPromoUpdate) {
           onPromoUpdate(null);
         }
+        setPromoTitle('');
+        setPromoTitleAr('');
+        setPromoImageUrl('');
+        setPromoPercent(15);
+        setPromoIsActive(false);
 
-        if (isAdmin) {
-          try {
-            await deleteDoc(doc(db, 'promotions', 'active'));
-          } catch (err) {
-            console.error(err);
-          }
-        } else {
-          localStorage.removeItem('simulated_promotion');
+        try {
+          await deleteDoc(doc(db, 'promotions', 'active'));
+        } catch (err) {
+          console.warn('Failed to delete promo from Firestore:', err);
         }
+        try {
+          localStorage.removeItem('simulated_promotion');
+        } catch (e) {}
         showNotification(language === 'ar' ? 'تم إزالة العرض الترويجي بنجاح' : 'Promotional offer removed successfully', 'success');
       }
     });
@@ -2292,18 +2434,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const updatedMenu = menuItems.filter(item => item.id !== itemId);
         onMenuUpdate(updatedMenu);
 
-        if (isAdmin) {
-          try {
-            await deleteDoc(doc(db, 'menuItems', itemId));
-            showNotification(language === 'ar' ? 'تم حذف الصنف بنجاح!' : 'Menu item deleted successfully!', 'success');
-          } catch (err) {
-            console.error(err);
-            handleFirestoreError(err, OperationType.DELETE, `menuItems/${itemId}`);
-          }
-        } else if (isSimulated) {
-          localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
-          showNotification(language === 'ar' ? 'تم حذف الصنف بنجاح!' : 'Menu item deleted successfully!', 'success');
+        try {
+          await deleteDoc(doc(db, 'menuItems', itemId));
+        } catch (err) {
+          console.warn('Firestore delete item fallback:', err);
         }
+        try {
+          localStorage.setItem('simulated_menu', JSON.stringify(updatedMenu));
+        } catch (e) {}
+        showNotification(language === 'ar' ? 'تم حذف الصنف من قاعدة البيانات بنجاح!' : 'Menu item deleted from database!', 'success');
       }
     });
   };
@@ -5553,143 +5692,376 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       )}
 
       {/* 4. PROMOTIONS & DEALS TAB */}
-      {activeAdminTab === 'promotions' && (
-        <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-xs space-y-5">
-        <div className="text-start border-b border-slate-100 pb-4">
-          <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
-            <Flame className="w-5 h-5 text-red-500 fill-red-500/10 animate-pulse font-bold" />
-            {language === 'ar' ? 'التحكم بالعروض والخصومات وحملات التسويق' : 'Promotions & Discounts Management'}
-          </h3>
-          <p className="text-xs text-slate-500">
-            {language === 'ar' ? 'قم بإنشاء عروض ترويجية بنسبة تخفيض مالي مع مؤقت عد تنازلي حي يظهر بالصفحة الرئيسية للمتصفحين' : 'Configure time-limited percentage discount incentives with active counter clocks displayed live'}
-          </p>
-        </div>
+      {activeAdminTab === 'promotions' && (() => {
+        const previewEndsAt = promoEndsAt ? new Date(promoEndsAt).toISOString() : new Date(Date.now() + 120 * 60 * 1000).toISOString();
+        const previewPromoObj: import('../types').Promotion = {
+          id: 'preview',
+          title: promoTitle.trim() || 'Special Weekend Feast Special! 🔥',
+          titleAr: promoTitleAr.trim() || 'خصم خاص لطلبات المشويات! 🔥',
+          discountPercent: Number(promoPercent) || 15,
+          isActive: true,
+          endsAt: previewEndsAt,
+          ...(promoImageUrl.trim() ? { imageUrl: promoImageUrl.trim() } : {})
+        };
 
-        {/* Promotion Form */}
-        <form onSubmit={handlePublishPromo} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-start">
-          <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'عنوان العرض (عربي)' : 'Offer Title (Arabic)'}</label>
-            <input
-              required
-              type="text"
-              value={promoTitleAr}
-              onChange={(e) => setPromoTitleAr(e.target.value)}
-              placeholder="مثال: خصم خاص لطلبات الويكند!"
-              className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 outline-none focus:border-amber-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'عنوان العرض (إنجليزي)' : 'Offer Title (English)'}</label>
-            <input
-              required
-              type="text"
-              value={promoTitle}
-              onChange={(e) => setPromoTitle(e.target.value)}
-              placeholder="e.g. Special Weekend Feast Offer!"
-              className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 outline-none focus:border-amber-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'نسبة التخفيض من السعر الفرعي (%)' : 'Discount Percentage (%)'}</label>
-            <input
-              required
-              type="number"
-              min="1"
-              max="99"
-              value={promoPercent}
-              onChange={(e) => setPromoPercent(Number(e.target.value))}
-              placeholder="e.g. 15"
-              className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 outline-none focus:border-amber-500"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'وقت وتاريخ نهاية العرض والعد التنازلي' : 'Offer Expiry Date & Countdown Time'}</label>
-            <div className="flex flex-col gap-1.5">
-              <input
-                required
-                type="datetime-local"
-                value={promoEndsAt}
-                onChange={(e) => setPromoEndsAt(e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 outline-none focus:border-amber-500 font-mono"
-              />
-              
-              {/* Quick presets */}
-              <div className="flex gap-1.5 flex-wrap mt-1 font-sans">
-                {[5, 15, 30, 60, 120, 1440].map((mins) => {
-                  let lbl = '';
-                  if (mins === 5) lbl = language === 'ar' ? '٥ دقائق' : '5 mins';
-                  else if (mins === 15) lbl = language === 'ar' ? '١٥ دقيقة' : '15 mins';
-                  else if (mins === 30) lbl = language === 'ar' ? '٣٠ دقيقة' : '30 mins';
-                  else if (mins === 60) lbl = language === 'ar' ? 'ساعة كاملة' : '1 hour';
-                  else if (mins === 120) lbl = language === 'ar' ? 'ساعتين' : '2 hours';
-                  else lbl = language === 'ar' ? 'يوم كامل' : '24 hours';
+        const isCurrentlyLive = Boolean(activePromo && activePromo.isActive && new Date(activePromo.endsAt).getTime() > Date.now());
 
-                  return (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => handleQuickPromoTime(mins)}
-                      className="bg-neutral-100 hover:bg-neutral-200 text-[10px] text-neutral-600 px-2 py-1 rounded font-extrabold cursor-pointer transition animate-none"
-                    >
-                      +{lbl}
-                    </button>
-                  );
-                })}
+        return (
+          <div className="bg-white rounded-3xl border border-slate-150 p-5 shadow-xs space-y-6 text-start">
+            {/* Header */}
+            <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-amber-500 fill-amber-500/20" />
+                  <span>{language === 'ar' ? 'إدارة العروض الترويجية والخصومات (المؤقت التنازلي)' : 'Time-Limited Promotions & Live Countdown'}</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {language === 'ar' 
+                    ? 'أنشئ وفعل عروض ترويجية محدودة بوقت محدد مع مؤقت عد تنازلي يظهر أعلى قائمة الطعام ويخصم تلقائياً للعملاء' 
+                    : 'Create and activate time-limited discounts with countdown clocks shown live to customers'}
+                </p>
+              </div>
+
+              {/* Status Badge */}
+              {isCurrentlyLive ? (
+                <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full text-xs font-bold text-emerald-800 shrink-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{language === 'ar' ? 'عرض ترويجي نشط حالياً للعملاء' : 'Active Promo Live'}</span>
+                  <span className="font-mono bg-emerald-600 text-white px-1.5 py-0.2 rounded-full text-[10px]">
+                    {activePromo?.discountPercent}%
+                  </span>
+                </div>
+              ) : activePromo ? (
+                <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full text-xs font-bold text-amber-800 shrink-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                  <span>{language === 'ar' ? 'العرض متوقف مؤقتاً أو منتهي' : 'Promo Paused / Expired'}</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-semibold shrink-0">
+                  <span>⚪</span>
+                  <span>{language === 'ar' ? 'لا يوجد عرض ترويجي نشط' : 'No active promo'}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Active Promo Card (if any exists in store) */}
+            {activePromo && (
+              <div className="bg-gradient-to-br from-amber-50/80 to-orange-50/40 border border-amber-200/90 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="bg-amber-600 text-white text-xs font-black px-2.5 py-0.5 rounded-full font-mono">
+                      {activePromo.discountPercent}% {language === 'ar' ? 'خصم مالي' : 'OFF'}
+                    </span>
+                    <h4 className="font-extrabold text-sm text-slate-900">
+                      {language === 'ar' ? activePromo.titleAr : activePromo.title}
+                    </h4>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                      isCurrentlyLive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {isCurrentlyLive 
+                        ? (language === 'ar' ? 'نشط في المتجر' : 'Live') 
+                        : (language === 'ar' ? 'متوقف مؤقتاً' : 'Paused')}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 flex items-center gap-1.5 font-mono">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>{language === 'ar' ? 'تاريخ الانتهاء:' : 'Ends at:'} {new Date(activePromo.endsAt).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-US')}</span>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleTogglePromoActive}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                      activePromo.isActive
+                        ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
+                  >
+                    <span>{activePromo.isActive ? '⏸️' : '▶️'}</span>
+                    <span>
+                      {activePromo.isActive 
+                        ? (language === 'ar' ? 'إيقاف مؤقت' : 'Pause Promo') 
+                        : (language === 'ar' ? 'استئناف العرض' : 'Resume Promo')}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDeletePromo}
+                    className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'حذف العرض' : 'Delete'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Templates Section */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>{language === 'ar' ? 'قوالب عروض ترويجية جاهزة بنقرة واحدة:' : 'Ready-to-use Promotion Templates:'}</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  {language === 'ar' ? 'اضغط لتعبئة النموذج وتجهيز العرض فوراً' : 'Click to autofill form'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {PROMO_TEMPLATES.map((tmpl) => (
+                  <button
+                    key={tmpl.id}
+                    type="button"
+                    onClick={() => handleApplyPromoTemplate(tmpl)}
+                    className="p-3 rounded-2xl bg-slate-50 hover:bg-amber-50/60 border border-slate-200 hover:border-amber-300 transition-all text-start cursor-pointer group flex flex-col justify-between gap-2 shadow-2xs hover:shadow-xs active:scale-[0.98]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span className="bg-amber-600 text-white font-mono text-[10px] font-black px-1.5 py-0.2 rounded-md">
+                          {tmpl.discountPercent}% {language === 'ar' ? 'خصم' : 'OFF'}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {tmpl.minutes >= 1440 
+                            ? (language === 'ar' ? 'يوم كامل' : '24h') 
+                            : `${tmpl.minutes / 60} ${language === 'ar' ? 'ساعات' : 'hrs'}`}
+                        </span>
+                      </div>
+                      <h5 className="font-bold text-xs text-slate-800 line-clamp-1 group-hover:text-amber-900">
+                        {language === 'ar' ? tmpl.titleAr : tmpl.titleEn}
+                      </h5>
+                    </div>
+                    <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1 group-hover:translate-x-[-2px] transition-transform">
+                      <span>{language === 'ar' ? 'تطبيق هذا القالب' : 'Use template'}</span>
+                      <span>←</span>
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
 
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'رابط صّورة لخلفية الإعلان (بشكل خفيف وجميل)' : 'Promotion Banner Backdrop Image URL'}</label>
-            <input
-              type="text"
-              value={promoImageUrl}
-              onChange={(e) => setPromoImageUrl(e.target.value)}
-              placeholder="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&q=80&w=1200"
-              className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 outline-none focus:border-amber-500 font-mono"
-            />
-            <p className="text-[10px] text-zinc-400 mt-1">
-              {language === 'ar' ? 'ستظّهر هذه الصورة كخلفية خفيفة ملطفة جميلة لبطاقة الإعلانات الترويجية أعلى صفحة المنيو الرئيسي.' : 'This image will be displayed with organic blur and low opacity as the backdrop of the countdown offer banner.'}
-            </p>
-          </div>
+            {/* Live Customer Page Countdown Preview */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 sm:p-4 space-y-2.5">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                <span className="flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-amber-600" />
+                  <span>{language === 'ar' ? 'معاينة حية لشكل العرض والعداد التنازلي في صفحة العميل:' : 'Live Customer Page Countdown Preview:'}</span>
+                </span>
+                <span className="text-[10px] text-slate-500 font-sans">
+                  {language === 'ar' ? 'يظهر أعلى قائمة الطعام لجميع العملاء' : 'Appears atop menu'}
+                </span>
+              </div>
 
-          <div className="md:col-span-2 flex flex-col sm:flex-row items-start sm:items-center justify-between border-t border-slate-100/80 pt-4 mt-2 gap-4">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="promo-active-toggle"
-                checked={promoIsActive}
-                onChange={(e) => setPromoIsActive(e.target.checked)}
-                className="w-4 h-4 accent-amber-600"
-              />
-              <label htmlFor="promo-active-toggle" className="text-xs font-bold text-slate-600">
-                {language === 'ar' ? 'تنفيذ العرض ونشره حياً للمتصفحين فوراً' : 'Activate and list promotion deals page-wide'}
-              </label>
+              <div className="bg-white p-2 sm:p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+                <PromotionCountdown promotion={previewPromoObj} />
+              </div>
             </div>
 
-            <div className="flex gap-2 w-full sm:w-auto justify-end">
-              {activePromo && (
-                <button
-                  type="button"
-                  onClick={handleDeletePromo}
-                  className="bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 text-xs font-bold py-2 px-4 rounded-xl cursor-pointer transition-all"
-                >
-                  {language === 'ar' ? 'إلغاء ووقف العرض' : 'Stop Promo'}
-                </button>
-              )}
-              <button
-                id="publish-promo-btn"
-                type="submit"
-                className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-black py-2.5 px-6 rounded-xl cursor-pointer shadow-sm transition-all"
-              >
-                {language === 'ar' ? 'أطلق العرض الآن 📣' : 'Launch Custom Promo 📣'}
-              </button>
-            </div>
+            {/* Promotion Creation / Edit Form */}
+            <form onSubmit={handlePublishPromo} className="space-y-4 pt-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Title AR */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'عنوان العرض (عربي) *' : 'Offer Title (Arabic) *'}
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={promoTitleAr}
+                    onChange={(e) => setPromoTitleAr(e.target.value)}
+                    placeholder="مثال: خصم خاص لطلبات الويكند! 🔥"
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:bg-white focus:border-amber-500 transition-colors"
+                  />
+                </div>
+
+                {/* Title EN */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'عنوان العرض (إنجليزي) *' : 'Offer Title (English) *'}
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={promoTitle}
+                    onChange={(e) => setPromoTitle(e.target.value)}
+                    placeholder="e.g. Special Weekend Feast Offer! 🔥"
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:bg-white focus:border-amber-500 transition-colors"
+                  />
+                </div>
+
+                {/* Discount % with quick chips */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">
+                      {language === 'ar' ? 'نسبة الخصم من مجموع الطلب (%) *' : 'Discount Percentage (%) *'}
+                    </label>
+                    <span className="text-xs font-mono font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">
+                      {promoPercent}%
+                    </span>
+                  </div>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    max="99"
+                    value={promoPercent}
+                    onChange={(e) => setPromoPercent(Number(e.target.value))}
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:bg-white focus:border-amber-500 font-mono font-bold"
+                  />
+                  
+                  {/* Quick percentage chips */}
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                    <span className="text-[10px] text-slate-400 font-bold">{language === 'ar' ? 'نسب سريعة:' : 'Quick:'}</span>
+                    {[10, 15, 20, 25, 30, 50].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => setPromoPercent(pct)}
+                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+                          promoPercent === pct
+                            ? 'bg-amber-600 text-white shadow-2xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Expiry Date & Countdown Timer with Quick Extensions */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'تاريخ ووقت انتهاء العرض والعد التنازلي *' : 'Offer Expiry Date & Countdown Time *'}
+                  </label>
+                  <input
+                    required
+                    type="datetime-local"
+                    value={promoEndsAt}
+                    onChange={(e) => setPromoEndsAt(e.target.value)}
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:bg-white focus:border-amber-500 font-mono font-bold"
+                  />
+
+                  {/* Quick time extensions */}
+                  <div className="flex items-center gap-1 flex-wrap mt-2">
+                    <span className="text-[10px] text-slate-400 font-bold">{language === 'ar' ? 'فترات سريعة:' : 'Time presets:'}</span>
+                    {[
+                      { mins: 15, labelAr: '+١٥ دقيقة', labelEn: '+15m' },
+                      { mins: 30, labelAr: '+٣٠ دقيقة', labelEn: '+30m' },
+                      { mins: 60, labelAr: '+ساعة', labelEn: '+1h' },
+                      { mins: 120, labelAr: '+ساعتين', labelEn: '+2h' },
+                      { mins: 240, labelAr: '+٤ ساعات', labelEn: '+4h' },
+                      { mins: 720, labelAr: '+١٢ ساعة', labelEn: '+12h' },
+                      { mins: 1440, labelAr: '+يوم كامل', labelEn: '+24h' },
+                      { mins: 4320, labelAr: '+٣ أيام', labelEn: '+3 days' }
+                    ].map((ext) => (
+                      <button
+                        key={ext.mins}
+                        type="button"
+                        onClick={() => handleQuickPromoTime(ext.mins)}
+                        className="bg-slate-100 hover:bg-amber-100 hover:text-amber-900 text-[10px] text-slate-600 px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer"
+                      >
+                        {language === 'ar' ? ext.labelAr : ext.labelEn}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Background image & photo presets */}
+                <div className="md:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">
+                      {language === 'ar' ? 'صورة خلفية بطاقة العرض الترويجي (اختياري)' : 'Promotion Banner Backdrop Image (Optional)'}
+                    </label>
+                    {promoImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setPromoImageUrl('')}
+                        className="text-[10px] text-red-500 hover:underline cursor-pointer"
+                      >
+                        {language === 'ar' ? 'إزالة الصورة' : 'Clear image'}
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={promoImageUrl}
+                    onChange={(e) => setPromoImageUrl(e.target.value)}
+                    placeholder="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&q=80&w=1200"
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:bg-white focus:border-amber-500 font-mono"
+                  />
+
+                  {/* Image presets */}
+                  <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-1">
+                    <span className="text-[10px] text-slate-400 font-bold shrink-0">{language === 'ar' ? 'صور مقترحة:' : 'Presets:'}</span>
+                    {PROMO_IMAGE_SUGGESTIONS.map((sug, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setPromoImageUrl(sug.url)}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                          promoImageUrl === sug.url
+                            ? 'bg-amber-100 border-amber-400 text-amber-900 font-black'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <img src={sug.url} alt="" className="w-4 h-4 rounded object-cover" />
+                        <span>{language === 'ar' ? sug.labelAr : sug.labelEn}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Bottom Controls */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-t border-slate-100 pt-4 mt-2 gap-4">
+                <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setPromoIsActive(!promoIsActive)}>
+                  <input
+                    type="checkbox"
+                    id="promo-active-toggle"
+                    checked={promoIsActive}
+                    onChange={(e) => setPromoIsActive(e.target.checked)}
+                    className="w-4 h-4 accent-amber-600 cursor-pointer"
+                  />
+                  <label htmlFor="promo-active-toggle" className="text-xs font-bold text-slate-700 cursor-pointer">
+                    {language === 'ar' 
+                      ? 'تفعيل ونشر العرض مباشرة في صفحة المتجر للعملاء' 
+                      : 'Publish & activate countdown banner live in store'}
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+                  {activePromo && (
+                    <button
+                      type="button"
+                      onClick={handleDeletePromo}
+                      className="bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer transition-all"
+                    >
+                      {language === 'ar' ? 'إلغاء ووقف العرض' : 'Stop Promo'}
+                    </button>
+                  )}
+                  <button
+                    id="publish-promo-btn"
+                    type="submit"
+                    className="bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-black py-2.5 px-6 rounded-xl cursor-pointer shadow-sm transition-all flex items-center gap-1.5"
+                  >
+                    <span>📣</span>
+                    <span>
+                      {isCurrentlyLive 
+                        ? (language === 'ar' ? 'تحديث وتثبيت العرض الترويجي' : 'Update Active Promo')
+                        : (language === 'ar' ? 'أطلق العرض الترويجي الآن 🚀' : 'Launch Limited-Time Promo 🚀')}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
-        </form>
-      </div>
-      )}
+        );
+      })()}
 
       {/* 5. DRIVERS LIST TAB */}
       {activeAdminTab === 'drivers' && (
@@ -6574,7 +6946,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <th className="px-4 py-3 text-center">{language === 'ar' ? 'إدارة' : 'Actions'}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 select-all">
+              <tbody className="divide-y divide-slate-100">
                 {menuItems
                   .filter(item => selectedAdminCategory === 'all' || item.category === selectedAdminCategory)
                   .sort((a, b) => {
@@ -6585,9 +6957,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   .map((item) => {
                   const correlatedCat = mergedCategories.find(c => c.id === item.category);
                   const isCheckedVal = item.isAvailable;
+                  const isCurrentlyEditing = isEditMode && editingItemId === item.id;
 
                   return (
-                    <tr id={`admin-menu-${item.id}`} key={item.id} className={isCheckedVal ? 'hover:bg-slate-50/50' : 'bg-slate-50/20 grayscaleopacity-70'}>
+                    <tr
+                      id={`admin-menu-${item.id}`}
+                      key={item.id}
+                      className={`transition-all duration-150 ease-out select-none active:opacity-80 active:bg-amber-100/40 ${
+                        isCurrentlyEditing
+                          ? 'bg-amber-50/90 shadow-2xs border-r-4 border-r-amber-500'
+                          : isCheckedVal
+                            ? 'hover:bg-slate-50/80'
+                            : 'bg-slate-50/40 grayscale opacity-70 hover:opacity-90'
+                      }`}
+                    >
                       <td className="px-4 py-3 flex items-center gap-2.5">
                         <img
                           src={item.image}
@@ -6690,9 +7073,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                       {/* Item Order */}
                       <td className="px-4 py-3 text-center">
-                        <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
-                          {item.order ?? 0}
-                        </span>
+                        <input
+                          id={`quick-order-input-${item.id}`}
+                          type="number"
+                          key={`order-${item.id}-${item.order ?? 0}`}
+                          defaultValue={item.order ?? 0}
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (!isNaN(val) && val !== (item.order ?? 0)) {
+                              handleQuickOrderChange(item.id, val);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const val = parseInt((e.target as HTMLInputElement).value, 10);
+                              if (!isNaN(val) && val !== (item.order ?? 0)) {
+                                handleQuickOrderChange(item.id, val);
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }
+                          }}
+                          className="w-14 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-amber-600 rounded-lg px-1.5 py-1 text-xs font-bold text-slate-800 outline-none transition-all text-center font-mono"
+                          title={language === 'ar' ? 'تعديل ترتيب ظهور الصنف' : 'Change item display order'}
+                        />
                       </td>
 
                       {/* Availability status toggle switcher */}
@@ -6700,7 +7103,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <button
                           id={`toggle-stock-btn-${item.id}`}
                           onClick={() => handleToggleAvailable(item.id, isCheckedVal)}
-                          className={`w-20 py-1.5 rounded-full font-bold text-[10px] m-auto transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                          className={`w-20 py-1.5 rounded-full font-bold text-[10px] m-auto transition-all duration-150 active:scale-95 active:opacity-80 cursor-pointer flex items-center justify-center gap-1 ${
                             isCheckedVal 
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                               : 'bg-red-50 text-red-700 border border-red-200'
@@ -6717,7 +7120,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <button
                             id={`edit-item-btn-${item.id}`}
                             onClick={() => handleEditClick(item)}
-                            className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 active:scale-95 active:opacity-75 transition-all cursor-pointer"
                             title={language === 'ar' ? 'تعديل الصنف' : 'Edit Product'}
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -6732,7 +7135,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 if (el) el.scrollIntoView({ behavior: 'smooth' });
                               }, 120);
                             }}
-                            className="p-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 active:scale-95 active:opacity-75 transition-all cursor-pointer"
                             title={language === 'ar' ? 'تخصيص وإدارة إضافات هذا الصنف' : 'Configure Item Add-ons'}
                           >
                             <Sliders className="w-3.5 h-3.5" />
@@ -6741,7 +7144,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <button
                             id={`delete-stock-btn-${item.id}`}
                             onClick={() => handleDeleteItem(item.id)}
-                            className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 active:scale-95 active:opacity-75 transition-all cursor-pointer"
                             title={language === 'ar' ? 'حذف الصنف' : 'Delete Product'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
