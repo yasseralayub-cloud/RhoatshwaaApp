@@ -2143,7 +2143,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       description: formDesc.trim() || 'Freshly made',
       descriptionAr: formDescAr.trim() || 'محضر طازجاً',
       price: safePrice,
-      category: formCategory || 'shawarma',
+      category: formCategory || (mergedCategories[0]?.id || 'main'),
       calories: safeCalories,
       image: formImage.trim() || defaultItemForCleanId?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600',
       isPopular: Boolean(formPopular),

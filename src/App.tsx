@@ -235,7 +235,8 @@ function MenuAndOrdersApp() {
                 icon: data.icon || 'Utensils',
                 image: data.image || '',
                 descriptionAr: data.descriptionAr || '',
-                descriptionEn: data.descriptionEn || ''
+                descriptionEn: data.descriptionEn || '',
+                order: typeof data.order === 'number' ? data.order : 0
               });
             });
             setCustomCategories(fetched);
@@ -1297,7 +1298,9 @@ function MenuAndOrdersApp() {
               ) : (
                 allCategories.map((category) => {
                   const categoryItems = filteredMenuItems.filter(item => item.category === category.id);
-                  if (categoryItems.length === 0) return null;
+
+                  // If user is searching and no items match in this category, skip to not clutter search
+                  if (searchTerm.trim() && categoryItems.length === 0) return null;
 
                   // Sort items inside category: available first, custom manager order, popular/best-sellers, curated order preserved
                   const sortedCategoryItems = [...categoryItems].sort((a, b) => {
@@ -1357,6 +1360,11 @@ function MenuAndOrdersApp() {
                                   {language === 'ar' ? '🍯 حلى ولذاذة' : 'Desserts'}
                                 </span>
                               )}
+                              {sortedCategoryItems.length === 0 && (
+                                <span className="bg-amber-50 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
+                                  {language === 'ar' ? 'قسم جديد ✨' : 'New Section ✨'}
+                                </span>
+                              )}
                             </div>
                             {(category.descriptionAr || category.descriptionEn) && (
                               <p className="text-xs text-dark/60 mt-0.5 font-sans">
@@ -1373,7 +1381,33 @@ function MenuAndOrdersApp() {
                       </div>
 
                       {isTargetCategoryTransitioning ? (
-                        <MenuGridSkeleton count={Math.min(sortedCategoryItems.length, 3)} />
+                        <MenuGridSkeleton count={Math.min(sortedCategoryItems.length || 3, 3)} />
+                      ) : sortedCategoryItems.length === 0 ? (
+                        <div className="py-10 px-6 rounded-3xl border border-dashed border-amber-300/70 bg-gradient-to-b from-amber-50/40 to-neutral-50/60 flex flex-col items-center justify-center text-center space-y-3">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-800 shadow-2xs">
+                            <CategoryHeaderIcon className="w-6 h-6 stroke-[1.8]" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-slate-800 text-sm">
+                              {language === 'ar' ? `قسم «${category.nameAr}» جديد وجاهز لإضافة الأطباق` : `«${category.name}» section is ready for dishes`}
+                            </h4>
+                            <p className="text-xs text-slate-500 max-w-md mt-1">
+                              {language === 'ar' 
+                                ? 'يمكنك الآن إضافة وتعيين الأصناف والأسعار لهذا القسم مباشرة من لوحة التحكم لتظهر لعملائك فوراً.'
+                                : 'You can assign items to this category directly from the Admin Panel to showcase them to customers.'}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowAdminTab(true);
+                              localStorage.setItem('show_admin_tab', 'true');
+                              setActiveTab('admin');
+                            }}
+                            className="text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-900 py-2 px-4 rounded-xl shadow-xs transition cursor-pointer"
+                          >
+                            {language === 'ar' ? '+ إضافة صنف لهذا القسم في لوحة التحكم' : '+ Add Item to this Section'}
+                          </button>
+                        </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                           <AnimatePresence mode="popLayout">
