@@ -97,6 +97,9 @@ interface AdminPanelProps {
   onSettingsUpdate?: (newSettings: import('../types').BusinessSettings) => void;
   businessSettings?: import('../types').BusinessSettings;
   onHideAdminTab?: () => void;
+  categories?: import('../types').Category[];
+  onSaveCategory?: (category: import('../types').Category) => Promise<void>;
+  onDeleteCategory?: (categoryId: string) => Promise<void>;
 }
 
 const PendingCountdown = ({ createdAt, onTimeout, gracePeriod = 30 }: { createdAt: string; onTimeout?: () => void; gracePeriod?: number }) => {
@@ -164,7 +167,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   activePromo,
   onSettingsUpdate,
   businessSettings,
-  onHideAdminTab
+  onHideAdminTab,
+  categories: propCategories,
+  onSaveCategory: propOnSaveCategory,
+  onDeleteCategory: propOnDeleteCategory
 }) => {
   const { language, t } = useLanguage();
   
@@ -251,6 +257,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   });
 
   const mergedCategories = React.useMemo(() => {
+    if (propCategories && propCategories.length > 0) {
+      return propCategories;
+    }
     const customMap = new Map<string, import('../types').Category>();
     customCategories.forEach(c => customMap.set(c.id, c));
     
@@ -274,7 +283,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const defaultIds = new Set(CATEGORIES.map(c => c.id));
     const newOnes = customCategories.filter(c => !defaultIds.has(c.id));
     return [...mergedDefaults, ...newOnes];
-  }, [customCategories]);
+  }, [propCategories, customCategories]);
 
   // Realtime subscription for categories from Firestore
   useEffect(() => {
@@ -295,11 +304,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 image: data.image || '',
                 descriptionAr: data.descriptionAr || '',
                 descriptionEn: data.descriptionEn || '',
-                order: typeof data.order === 'number' ? data.order : 0
+                order: typeof data.order === 'number' ? data.order : 30
               });
             });
-            setCustomCategories(fetched);
-            localStorage.setItem('simulated_custom_categories', JSON.stringify(fetched));
+            setCustomCategories(prev => {
+              const map = new Map<string, import('../types').Category>();
+              prev.forEach(c => map.set(c.id, c));
+              fetched.forEach(c => map.set(c.id, c));
+              const merged = Array.from(map.values());
+              localStorage.setItem('simulated_custom_categories', JSON.stringify(merged));
+              return merged;
+            });
           }
         },
         (error) => {
@@ -315,18 +330,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }, []);
 
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [showQuickAddCat, setShowQuickAddCat] = useState(false);
+  const [quickCatNameAr, setQuickCatNameAr] = useState('');
+  const [quickCatNameEn, setQuickCatNameEn] = useState('');
 
   const handleSaveCategory = async (category: import('../types').Category) => {
+    if (propOnSaveCategory) {
+      try {
+        await propOnSaveCategory(category);
+      } catch (e) {}
+    }
     try {
       await setDoc(doc(db, 'categories', category.id), {
         id: category.id,
-        name: category.name,
-        nameAr: category.nameAr,
+        name: category.name || category.id,
+        nameAr: category.nameAr || category.name || category.id,
         icon: category.icon || 'Utensils',
         image: category.image || '',
         descriptionAr: category.descriptionAr || '',
         descriptionEn: category.descriptionEn || '',
-        order: typeof category.order === 'number' ? category.order : 0,
+        order: typeof category.order === 'number' ? category.order : 30,
         updatedAt: new Date().toISOString()
       }, { merge: true });
     } catch (err) {
@@ -340,7 +363,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     showNotification(language === 'ar' ? 'تم حفظ وتحديث بيانات وصورة القسم بنجاح!' : 'Category details and banner saved successfully!', 'success');
   };
 
+  const handleQuickAddCategory = async () => {
+    if (!quickCatNameAr.trim()) return;
+    const slug = (quickCatNameEn.trim() || quickCatNameAr.trim()).toLowerCase().replace(/\s+/g, '_');
+    const catId = slug || `cat_${Date.now()}`;
+    const newCat: import('../types').Category = {
+      id: catId,
+      name: quickCatNameEn.trim() || quickCatNameAr.trim(),
+      nameAr: quickCatNameAr.trim(),
+      icon: 'Utensils',
+      order: 30
+    };
+    await handleSaveCategory(newCat);
+    setFormCategory(catId);
+    setQuickCatNameAr('');
+    setQuickCatNameEn('');
+    setShowQuickAddCat(false);
+    showNotification(language === 'ar' ? `تم إنشاء قسم «${newCat.nameAr}» واختياره للصنف!` : `Category «${newCat.name}» created and selected!`, 'success');
+  };
+
   const handleDeleteCategory = async (catId: string) => {
+    if (propOnDeleteCategory) {
+      try {
+        await propOnDeleteCategory(catId);
+      } catch (e) {}
+    }
     try {
       await deleteDoc(doc(db, 'categories', catId));
     } catch (err) {
@@ -6562,7 +6609,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'القسم (Category)' : 'Category Selection'}</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-600">{language === 'ar' ? 'القسم (Category)' : 'Category Selection'}</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickAddCat(!showQuickAddCat)}
+                      className="text-[11px] font-bold text-amber-600 hover:text-amber-700 underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{showQuickAddCat ? (language === 'ar' ? 'إلغاء' : 'Cancel') : (language === 'ar' ? '+ قسم جديد؟' : '+ New Category?')}</span>
+                    </button>
+                  </div>
+
+                  {showQuickAddCat && (
+                    <div className="mb-2.5 p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-start space-y-2">
+                      <p className="text-[10px] font-bold text-amber-800">
+                        {language === 'ar' ? 'إضافة قسم جديد وتعيينه فوراً لهذا الصنف:' : 'Quickly create a category and assign to this item:'}
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          placeholder={language === 'ar' ? 'اسم القسم بالعربي (مثال: ساندوتشات، برجر)' : 'Category Name (Arabic)'}
+                          value={quickCatNameAr}
+                          onChange={(e) => setQuickCatNameAr(e.target.value)}
+                          className="flex-1 text-xs bg-white border border-slate-200 rounded-lg p-2 outline-none"
+                        />
+                        <input
+                          type="text"
+                          placeholder={language === 'ar' ? 'الاسم بالإنجليزي (اختياري)' : 'Category Name (English, optional)'}
+                          value={quickCatNameEn}
+                          onChange={(e) => setQuickCatNameEn(e.target.value)}
+                          className="flex-1 text-xs bg-white border border-slate-200 rounded-lg p-2 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleQuickAddCategory}
+                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3 py-2 rounded-lg shadow-xs cursor-pointer shrink-0 whitespace-nowrap"
+                        >
+                          {language === 'ar' ? 'حفظ واختيار' : 'Save & Select'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}

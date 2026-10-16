@@ -61,7 +61,7 @@ export const CATEGORIES: Category[] = [
     nameAr: 'الألعاب الشعبية',
     icon: 'Gamepad2',
     image: 'https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?auto=format&fit=crop&q=80&w=1200',
-    descriptionAr: 'جلسات وألعاب كيرم وبلوت وشطرنج لأجمل الأوقات العائلية والشبابية',
+    descriptionAr: 'جلسات وألعاب كيرم وبلوت وجاكارو لأجمل الأوقات العائلية والشبابية',
     descriptionEn: 'Traditional board games for joyful gatherings'
   }
 ];

@@ -1357,7 +1357,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
           <div className="flex items-center gap-3.5 min-w-0">
             <div className="relative shrink-0">
               <img 
-                src="/driver-icon.jpg?v=2" 
+                src="/src/assets/images/driver_mandoub_icon_1792183192078.jpg" 
                 alt="مناديب رحلة شواء" 
                 referrerPolicy="no-referrer"
                 className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-amber-400/80 shadow-md"
@@ -2147,7 +2147,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
                     <input
                       type="text"
                       required
-                      placeholder={isAr ? 'مثال: أحمد عبد الله الراجحي' : 'e.g. Ahmad Abdullah Al Rajhi'}
+                      placeholder={isAr ? 'الاسم' : 'Name'}
                       value={bankAccountName}
                       onChange={(e) => setBankAccountName(e.target.value)}
                       className="w-full bg-white text-dark border border-amber-200/60 rounded-xl px-3 py-2 outline-none focus:border-yellow text-xs font-bold"
@@ -3081,7 +3081,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
                             <input
                               type="text"
                               required
-                              placeholder={isAr ? 'مثال: أحمد عبد الله الراجحي' : 'e.g. Ahmad Abdullah Al Rajhi'}
+                              placeholder={isAr ? 'الاسم' : 'Name'}
                               value={editBankAccountName}
                               onChange={(e) => setEditBankAccountName(e.target.value)}
                               className="w-full bg-neutral-50 text-dark border border-black/10 rounded-xl px-3 py-2.5 outline-none focus:border-yellow text-xs font-bold"

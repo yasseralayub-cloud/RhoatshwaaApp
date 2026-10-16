@@ -1,27 +1,36 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import { LanguageProvider, useLanguage } from './components/LanguageContext';
 import { Header } from './components/Header';
 import { CategoryNav } from './components/CategoryNav';
 import { MenuCard, MenuCardSkeleton, MenuGridSkeleton } from './components/MenuCard';
 import { MostOrderedPromo } from './components/MostOrderedPromo';
 import { CartDrawer } from './components/CartDrawer';
-import { OrderTracker } from './components/OrderTracker';
-import { AdminPanel } from './components/AdminPanel';
-import { DriverPortal } from './components/DriverPortal';
-import { MyAccount } from './components/MyAccount';
 import { CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_BUSINESS_SETTINGS } from './initialData';
 import { MenuItem, Promotion, BusinessSettings, CartItem, CartItemOption } from './types';
-import { collection, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import * as Icons from 'lucide-react';
 import { Flame, Star, Coffee, AlertCircle, Building2, ShieldCheck, CheckCircle2, ExternalLink, Code2, Sparkles, Globe, FileText, Eye, Download, X, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PromotionCountdown } from './components/PromotionCountdown';
-import { WelcomePortalModal } from './components/WelcomePortalModal';
 import { SandwichCustomizationModal, isSandwichItem, isFriesItem } from './components/SandwichCustomizationModal';
-import { PrivacyPolicyModal } from './components/PrivacyPolicyModal';
-import { ChatBot } from './components/ChatBot';
 import { getAppVersion } from './version';
+
+// Code-split heavy sub-pages and secondary modals to drastically reduce initial bundle size and boost page speed
+const OrderTracker = lazy(() => import('./components/OrderTracker').then(m => ({ default: m.OrderTracker })));
+const AdminPanel = lazy(() => import('./components/AdminPanel').then(m => ({ default: m.AdminPanel })));
+const DriverPortal = lazy(() => import('./components/DriverPortal').then(m => ({ default: m.DriverPortal })));
+const MyAccount = lazy(() => import('./components/MyAccount').then(m => ({ default: m.MyAccount })));
+const ChatBot = lazy(() => import('./components/ChatBot').then(m => ({ default: m.ChatBot })));
+const WelcomePortalModal = lazy(() => import('./components/WelcomePortalModal').then(m => ({ default: m.WelcomePortalModal })));
+const PrivacyPolicyModal = lazy(() => import('./components/PrivacyPolicyModal').then(m => ({ default: m.PrivacyPolicyModal })));
+
+const TabLoadingFallback = () => (
+  <div className="py-24 flex flex-col items-center justify-center space-y-3">
+    <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+    <span className="text-xs font-bold text-slate-400">جاري التحميل السريع...</span>
+  </div>
+);
 
 const openCertificateFullscreen = async (url: string, defaultFallback: string) => {
   const targetUrl = url || defaultFallback;
@@ -178,6 +187,13 @@ function MenuAndOrdersApp() {
   }, []);
 
   const allCategories = React.useMemo(() => {
+    const sanitizeDesc = (id: string, desc?: string) => {
+      if (id === 'games' && desc && desc.includes('شطرنج')) {
+        return desc.replace(/وشطرنج\s*/g, '').replace(/شطرنج\s*و/g, '').replace(/شطرنج/g, '').trim();
+      }
+      return desc;
+    };
+
     const customMap = new Map<string, import('./types').Category>();
     customCategories.forEach(c => customMap.set(c.id, c));
     
@@ -191,7 +207,7 @@ function MenuAndOrdersApp() {
           image: custom.image !== undefined ? custom.image : def.image,
           nameAr: custom.nameAr || def.nameAr,
           name: custom.name || def.name,
-          descriptionAr: custom.descriptionAr || def.descriptionAr,
+          descriptionAr: sanitizeDesc(def.id, custom.descriptionAr) || def.descriptionAr,
           descriptionEn: custom.descriptionEn || def.descriptionEn
         };
       }
@@ -199,22 +215,100 @@ function MenuAndOrdersApp() {
     });
 
     const defaultIds = new Set(CATEGORIES.map(c => c.id));
-    const newOnes = customCategories.filter(c => !defaultIds.has(c.id) && c.id !== 'sauces');
-    return [...mergedDefaults, ...newOnes]
+    const newOnes = customCategories
+      .filter(c => !defaultIds.has(c.id) && c.id !== 'sauces')
+      .map(c => ({
+        ...c,
+        descriptionAr: sanitizeDesc(c.id, c.descriptionAr)
+      }));
+
+    // Auto-discover any categories used in dishes that are not yet registered
+    const knownIds = new Set([
+      ...CATEGORIES.map(c => c.id.toLowerCase()),
+      ...customCategories.map(c => c.id.toLowerCase()),
+      'sauces'
+    ]);
+    const autoDiscovered: import('./types').Category[] = [];
+    menuItems.forEach(item => {
+      if (item.category && item.category !== 'sauces') {
+        const catClean = item.category.trim();
+        if (!knownIds.has(catClean.toLowerCase())) {
+          knownIds.add(catClean.toLowerCase());
+          autoDiscovered.push({
+            id: catClean,
+            name: catClean,
+            nameAr: catClean,
+            icon: 'Utensils',
+            order: 35
+          });
+        }
+      }
+    });
+
+    return [...mergedDefaults, ...newOnes, ...autoDiscovered]
       .filter(c => c.id !== 'sauces')
       .sort((a, b) => {
-        // If an explicit manager order is set, prioritize it
-        const orderA = a.order !== undefined ? a.order : getCategoryOrderPriority(a.id);
-        const orderB = b.order !== undefined ? b.order : getCategoryOrderPriority(b.id);
+        const orderA = a.order !== undefined && a.order !== 0 ? a.order : getCategoryOrderPriority(a.id);
+        const orderB = b.order !== undefined && b.order !== 0 ? b.order : getCategoryOrderPriority(b.id);
         return orderA - orderB;
       });
-  }, [customCategories]);
+  }, [customCategories, menuItems]);
+
+  const handleSaveCategory = async (category: import('./types').Category) => {
+    setCustomCategories(prev => {
+      const updated = [...prev.filter(c => c.id !== category.id), category];
+      try {
+        localStorage.setItem('simulated_custom_categories', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    try {
+      await setDoc(doc(db, 'categories', category.id), {
+        id: category.id,
+        name: category.name || category.id,
+        nameAr: category.nameAr || category.name || category.id,
+        icon: category.icon || 'Utensils',
+        image: category.image || '',
+        descriptionAr: category.descriptionAr || '',
+        descriptionEn: category.descriptionEn || '',
+        order: typeof category.order === 'number' ? category.order : 30,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.warn("Firestore save category error:", err);
+    }
+  };
+
+  const handleDeleteCategory = async (catId: string) => {
+    setCustomCategories(prev => {
+      const updated = prev.filter(c => c.id !== catId);
+      try {
+        localStorage.setItem('simulated_custom_categories', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    try {
+      await deleteDoc(doc(db, 'categories', catId));
+    } catch (err) {
+      console.warn("Firestore delete category error:", err);
+    }
+  };
 
   // Realtime subscription for categories from Firestore and custom events
   useEffect(() => {
     const handleCategoryEvent = (e: any) => {
       if (e.detail) {
-        setCustomCategories(e.detail);
+        const detailArr = Array.isArray(e.detail) ? e.detail : [e.detail];
+        setCustomCategories(prev => {
+          const map = new Map<string, import('./types').Category>();
+          prev.forEach(c => map.set(c.id, c));
+          detailArr.forEach(c => map.set(c.id, c));
+          const merged = Array.from(map.values());
+          localStorage.setItem('simulated_custom_categories', JSON.stringify(merged));
+          return merged;
+        });
       }
     };
     window.addEventListener('categories-updated', handleCategoryEvent);
@@ -236,11 +330,17 @@ function MenuAndOrdersApp() {
                 image: data.image || '',
                 descriptionAr: data.descriptionAr || '',
                 descriptionEn: data.descriptionEn || '',
-                order: typeof data.order === 'number' ? data.order : 0
+                order: typeof data.order === 'number' ? data.order : 30
               });
             });
-            setCustomCategories(fetched);
-            localStorage.setItem('simulated_custom_categories', JSON.stringify(fetched));
+            setCustomCategories(prev => {
+              const map = new Map<string, import('./types').Category>();
+              prev.forEach(c => map.set(c.id, c));
+              fetched.forEach(c => map.set(c.id, c));
+              const merged = Array.from(map.values());
+              localStorage.setItem('simulated_custom_categories', JSON.stringify(merged));
+              return merged;
+            });
           }
         },
         (error) => {
@@ -424,44 +524,59 @@ function MenuAndOrdersApp() {
   useEffect(() => {
     if (activeTab !== 'menu') return;
 
+    let ticking = false;
+
     const handleScroll = () => {
       if (isManualScrolling.current) return;
-
-      // Find all rendered category sections
-      const categorySections = allCategories
-        .map(cat => ({
-          id: cat.id,
-          element: document.getElementById(`category-sec-${cat.id}`)
-        }))
-        .filter(item => item.element !== null) as { id: string; element: HTMLElement }[];
-
-      if (categorySections.length === 0) return;
-
-      const headerEl = document.querySelector('header');
-      const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 175;
-      const offset = headerHeight + 40;
-
-      let activeId = categorySections[0].id;
-      for (const section of categorySections) {
-        const rect = section.element.getBoundingClientRect();
-        if (rect.top <= offset) {
-          activeId = section.id;
-        } else {
-          break;
-        }
-      }
-
-      setSelectedCategory((prev) => {
-        if (prev !== activeId) {
-          // Gently scroll the CategoryNav tab item into view in the horizontal scrollbar
-          const btn = document.getElementById(`cat-btn-${activeId}`);
-          if (btn) {
-            btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          if (isManualScrolling.current) {
+            ticking = false;
+            return;
           }
-          return activeId;
-        }
-        return prev;
-      });
+
+          // Find all rendered category sections
+          const categorySections = allCategories
+            .map(cat => ({
+              id: cat.id,
+              element: document.getElementById(`category-sec-${cat.id}`)
+            }))
+            .filter(item => item.element !== null) as { id: string; element: HTMLElement }[];
+
+          if (categorySections.length === 0) {
+            ticking = false;
+            return;
+          }
+
+          const headerEl = document.querySelector('header');
+          const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 175;
+          const offset = headerHeight + 40;
+
+          let activeId = categorySections[0].id;
+          for (const section of categorySections) {
+            const rect = section.element.getBoundingClientRect();
+            if (rect.top <= offset) {
+              activeId = section.id;
+            } else {
+              break;
+            }
+          }
+
+          setSelectedCategory((prev) => {
+            if (prev !== activeId) {
+              const btn = document.getElementById(`cat-btn-${activeId}`);
+              if (btn) {
+                btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+              }
+              return activeId;
+            }
+            return prev;
+          });
+
+          ticking = false;
+        });
+        ticking = true;
+      }
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -469,7 +584,7 @@ function MenuAndOrdersApp() {
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [activeTab, allCategories, menuItems]);
+  }, [activeTab, allCategories]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [socialAlertMessage, setSocialAlertMessage] = useState<string | null>(null);
@@ -947,8 +1062,8 @@ function MenuAndOrdersApp() {
     }
   };
 
-  // Cart operations
-  const handleAddToCart = (itemOrCartItem: MenuItem | CartItem) => {
+  // Cart operations (memoized with useCallback so child components like MenuCard don't re-render needlessly)
+  const handleAddToCart = useCallback((itemOrCartItem: MenuItem | CartItem) => {
     // Check if it is a CartItem object (from drawer)
     if ('item' in itemOrCartItem && 'id' in itemOrCartItem) {
       const cartItem = itemOrCartItem as CartItem;
@@ -976,9 +1091,9 @@ function MenuAndOrdersApp() {
         return [...prevCart, { id: item.id, item, quantity: 1 }];
       });
     }
-  };
+  }, []);
 
-  const handleCustomSandwichConfirm = (item: MenuItem, qty: number, options: CartItemOption) => {
+  const handleCustomSandwichConfirm = useCallback((item: MenuItem, qty: number, options: CartItemOption) => {
     setCart((prevCart) => {
       // Unique hash for customized variants
       const optionsHash = JSON.stringify(options);
@@ -998,9 +1113,9 @@ function MenuAndOrdersApp() {
         customizations: options
       }];
     });
-  };
+  }, []);
 
-  const handleRemoveFromCart = (itemOrCartItem: MenuItem | CartItem) => {
+  const handleRemoveFromCart = useCallback((itemOrCartItem: MenuItem | CartItem) => {
     if ('item' in itemOrCartItem && 'id' in itemOrCartItem) {
       const cartItem = itemOrCartItem as CartItem;
       setCart((prevCart) => {
@@ -1025,7 +1140,7 @@ function MenuAndOrdersApp() {
       }
       return prevCart.filter((c) => !(c.item.id === item.id && !c.customizations));
     });
-  };
+  }, []);
 
   const handleClearCart = () => {
     setCart([]);
@@ -1297,7 +1412,21 @@ function MenuAndOrdersApp() {
                 </div>
               ) : (
                 allCategories.map((category) => {
-                  const categoryItems = filteredMenuItems.filter(item => item.category === category.id);
+                  const categoryItems = filteredMenuItems.filter(item => {
+                    if (!item.category) return false;
+                    const itemCat = String(item.category).trim().toLowerCase();
+                    const targetId = String(category.id).trim().toLowerCase();
+                    const targetName = String(category.name || '').trim().toLowerCase();
+                    const targetNameAr = String(category.nameAr || '').trim();
+                    const rawItemCat = String(item.category).trim();
+
+                    return (
+                      itemCat === targetId ||
+                      itemCat === targetName ||
+                      rawItemCat === targetNameAr ||
+                      rawItemCat === String(category.id).trim()
+                    );
+                  });
 
                   // If user is searching and no items match in this category, skip to not clutter search
                   if (searchTerm.trim() && categoryItems.length === 0) return null;
@@ -1336,45 +1465,40 @@ function MenuAndOrdersApp() {
                       {/* Enhanced Organized Category Header */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-black/10 text-start gap-2">
                         <div className="flex items-center gap-3">
-                          <span className="w-10 h-10 rounded-2xl bg-gradient-to-br from-yellow/30 to-amber-500/20 text-yellow-800 flex items-center justify-center shrink-0 shadow-2xs border border-yellow/30">
+                          <span className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400/20 to-amber-500/30 text-amber-900 flex items-center justify-center shrink-0 shadow-2xs border border-amber-500/20">
                             <CategoryHeaderIcon className="w-5 h-5 text-amber-900" />
                           </span>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-extrabold font-serif text-xl sm:text-2xl text-dark tracking-wide">
+                              <h3 className="font-extrabold font-serif text-xl sm:text-2xl text-slate-900 tracking-wide">
                                 {language === 'ar' ? category.nameAr : category.name}
                               </h3>
                               {/* Distinctive badges for food categories */}
                               {(category.id === 'main' || category.id === 'shawarma') && (
-                                <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-300/50 shadow-2xs">
+                                <span className="bg-amber-100 text-amber-950 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-300 shadow-2xs">
                                   {language === 'ar' ? '🔥 وجبات رئيسية' : 'Main Meals'}
                                 </span>
                               )}
                               {category.id === 'appetizers' && (
-                                <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300/50 shadow-2xs">
+                                <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 shadow-2xs">
                                   {language === 'ar' ? '🥗 مقبلات طازجة' : 'Fresh Sides'}
                                 </span>
                               )}
                               {category.id === 'desserts' && (
-                                <span className="bg-pink-50 text-pink-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-pink-300/50 shadow-2xs">
+                                <span className="bg-pink-50 text-pink-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-pink-300 shadow-2xs">
                                   {language === 'ar' ? '🍯 حلى ولذاذة' : 'Desserts'}
-                                </span>
-                              )}
-                              {sortedCategoryItems.length === 0 && (
-                                <span className="bg-amber-50 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
-                                  {language === 'ar' ? 'قسم جديد ✨' : 'New Section ✨'}
                                 </span>
                               )}
                             </div>
                             {(category.descriptionAr || category.descriptionEn) && (
-                              <p className="text-xs text-dark/60 mt-0.5 font-sans">
+                              <p className="text-xs text-slate-500 mt-0.5 font-sans">
                                 {language === 'ar' ? category.descriptionAr : (category.descriptionEn || category.descriptionAr)}
                               </p>
                             )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 self-start sm:self-center">
-                          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-neutral-100 text-dark/70 border border-black/5 font-mono">
+                          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-neutral-100 text-slate-700 border border-black/5 font-mono">
                             {sortedCategoryItems.length} {language === 'ar' ? 'أصناف مختارة' : 'items'}
                           </span>
                         </div>
@@ -1383,30 +1507,18 @@ function MenuAndOrdersApp() {
                       {isTargetCategoryTransitioning ? (
                         <MenuGridSkeleton count={Math.min(sortedCategoryItems.length || 3, 3)} />
                       ) : sortedCategoryItems.length === 0 ? (
-                        <div className="py-10 px-6 rounded-3xl border border-dashed border-amber-300/70 bg-gradient-to-b from-amber-50/40 to-neutral-50/60 flex flex-col items-center justify-center text-center space-y-3">
-                          <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-800 shadow-2xs">
+                        <div className="py-10 px-6 rounded-3xl border border-amber-200/50 bg-gradient-to-b from-amber-50/30 to-white flex flex-col items-center justify-center text-center space-y-2.5">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-100/80 flex items-center justify-center text-amber-800 shadow-2xs">
                             <CategoryHeaderIcon className="w-6 h-6 stroke-[1.8]" />
                           </div>
-                          <div>
-                            <h4 className="font-bold text-slate-800 text-sm">
-                              {language === 'ar' ? `قسم «${category.nameAr}» جديد وجاهز لإضافة الأطباق` : `«${category.name}» section is ready for dishes`}
-                            </h4>
-                            <p className="text-xs text-slate-500 max-w-md mt-1">
-                              {language === 'ar' 
-                                ? 'يمكنك الآن إضافة وتعيين الأصناف والأسعار لهذا القسم مباشرة من لوحة التحكم لتظهر لعملائك فوراً.'
-                                : 'You can assign items to this category directly from the Admin Panel to showcase them to customers.'}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => {
-                              setShowAdminTab(true);
-                              localStorage.setItem('show_admin_tab', 'true');
-                              setActiveTab('admin');
-                            }}
-                            className="text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-900 py-2 px-4 rounded-xl shadow-xs transition cursor-pointer"
-                          >
-                            {language === 'ar' ? '+ إضافة صنف لهذا القسم في لوحة التحكم' : '+ Add Item to this Section'}
-                          </button>
+                          <h4 className="font-extrabold text-slate-800 text-sm sm:text-base font-serif">
+                            {language === 'ar' ? `أطباق «${category.nameAr}» قادمة قريباً ✨` : `«${category.name}» dishes coming soon ✨`}
+                          </h4>
+                          <p className="text-xs text-slate-500 max-w-sm">
+                            {language === 'ar' 
+                              ? 'نقوم بإعداد وتجهيز أشهى الأصناف بعناية فائقة لنقدمها لكم في هذا القسم قريباً.' 
+                              : 'Delicious new dishes are being curated for this section.'}
+                          </p>
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1459,6 +1571,9 @@ function MenuAndOrdersApp() {
               localStorage.removeItem('show_admin_tab');
               setActiveTab('menu');
             }}
+            categories={allCategories}
+            onSaveCategory={handleSaveCategory}
+            onDeleteCategory={handleDeleteCategory}
           />
         )}
 
