@@ -6,11 +6,13 @@ import { doc, getDoc, setDoc, updateDoc, collection, query, where, onSnapshot, o
 import { Order, CartItem } from '../types';
 import { 
   User, Phone, MapPin, LogOut, Globe, ChevronDown, ChevronUp, 
-  ShoppingBag, Check, Plus, Trash2, History, RotateCcw, Loader2, AlertCircle, Edit2, Navigation, Truck
+  ShoppingBag, Check, Plus, Trash2, History, RotateCcw, Loader2, AlertCircle, Edit2, Navigation, Truck,
+  Bell, ShieldCheck, CheckCircle2, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MapPicker from './MapPicker';
 import { normalizePhone, phonesMatch, getPhoneVariants } from '../utils/phone';
+import { triggerRealTestNotification, checkNotificationPermission } from '../utils/pushNotifications';
 
 interface SavedAddress {
   id: string;
@@ -87,6 +89,42 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [showPhoneAuthHelp, setShowPhoneAuthHelp] = useState(false);
+
+  // System Notifications & Permissions test states
+  const [notifTesting, setNotifTesting] = useState(false);
+  const [notifResult, setNotifResult] = useState<{ success: boolean; message: string; isNative?: boolean } | null>(null);
+  const [notifStatus, setNotifStatus] = useState<string>('checking');
+  const [privacyConsent, setPrivacyConsent] = useState<string | null>(() => {
+    return localStorage.getItem('rehla_privacy_consent_v1');
+  });
+
+  useEffect(() => {
+    checkNotificationPermission().then(status => setNotifStatus(status));
+    
+    const handleStorage = () => {
+      setPrivacyConsent(localStorage.getItem('rehla_privacy_consent_v1'));
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const handleTestNotification = async () => {
+    setNotifTesting(true);
+    setNotifResult(null);
+    try {
+      const res = await triggerRealTestNotification();
+      setNotifResult(res);
+      const updatedStatus = await checkNotificationPermission();
+      setNotifStatus(updatedStatus);
+    } catch (err: any) {
+      setNotifResult({
+        success: false,
+        message: err?.message || 'حدث خطأ أثناء محاولة إرسال الإشعار'
+      });
+    } finally {
+      setNotifTesting(false);
+    }
+  };
 
   // Format phone number to E.164 format for Firebase Phone Auth (+9665XXXXXXXX)
   const formatPhoneE164 = (phone: string): string => {
@@ -1749,6 +1787,160 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
             </div>
           </div>
         )}
+
+        {/* System Notifications & Permissions Card */}
+        <div className="bg-white rounded-3xl p-6 border border-black/5 shadow-sm space-y-4 text-start">
+          <div className="flex items-center justify-between pb-3 border-b border-black/5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                <Bell className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-black text-sm text-stone-900">
+                  {language === 'ar' ? 'إعدادات وتجربة إشعارات النظام' : 'System Notifications & Live Test'}
+                </h3>
+                <p className="text-[11px] text-stone-400 font-semibold">
+                  {language === 'ar' ? 'أذونات التنبيهات الفورية لحالة الطلبات وتتبع المندوب' : 'Real-time order updates & driver tracking alerts'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border">
+              {notifStatus === 'granted' ? (
+                <span className="text-emerald-700 bg-emerald-50 border-emerald-200 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {language === 'ar' ? 'مفعلة' : 'Granted'}
+                </span>
+              ) : notifStatus === 'denied' ? (
+                <span className="text-rose-700 bg-rose-50 border-rose-200 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {language === 'ar' ? 'مرفوضة من النظام' : 'Denied'}
+                </span>
+              ) : (
+                <span className="text-amber-700 bg-amber-50 border-amber-200 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  {language === 'ar' ? 'بانتظار الإذن' : 'Prompt / Default'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs text-stone-600 leading-relaxed font-medium">
+              {language === 'ar'
+                ? 'يمكنك تجربة ظهور إشعار حقيقي الآن في شريط إشعارات الهاتف للتأكد من وصول تحديثات طلبك والخصومات الفورية:'
+                : 'Test a real system notification now in your notification shade to ensure you receive live kitchen and delivery alerts:'}
+            </p>
+
+            <button
+              type="button"
+              onClick={handleTestNotification}
+              disabled={notifTesting}
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-stone-900 hover:bg-black text-white disabled:opacity-50 font-black text-xs rounded-2xl shadow-sm transition-all cursor-pointer active:scale-98"
+            >
+              {notifTesting ? (
+                <Loader2 className="w-4 h-4 animate-spin text-yellow" />
+              ) : (
+                <Bell className="w-4 h-4 text-yellow" />
+              )}
+              <span>
+                {notifTesting 
+                  ? (language === 'ar' ? 'جاري فحص وإرسال الإشعار...' : 'Testing Notification...') 
+                  : (language === 'ar' ? 'إرسال إشعار فحص حقيقي لشريط الإشعارات 🔔' : 'Trigger Live Notification Test 🔔')}
+              </span>
+            </button>
+
+            {notifResult && (
+              <div
+                className={`p-3.5 rounded-2xl text-xs font-bold leading-relaxed border flex items-start gap-2.5 transition-all ${
+                  notifResult.success
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                    : 'bg-rose-50 text-rose-900 border-rose-200'
+                }`}
+              >
+                <span className="shrink-0 text-base leading-none">
+                  {notifResult.success ? '✅' : '⚠️'}
+                </span>
+                <span className="flex-1">{notifResult.message}</span>
+              </div>
+            )}
+
+            {/* Technical System Notes & Operating Constraints */}
+            <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-200/70 space-y-1.5 text-[11px] text-stone-500 font-medium leading-relaxed">
+              <div className="font-black text-stone-700 flex items-center gap-1.5">
+                <span>ℹ️</span>
+                <span>{language === 'ar' ? 'معلومات هندسية عن نظام التنبيهات:' : 'Notification Architecture Notes:'}</span>
+              </div>
+              <ul className="list-disc list-inside space-y-1 text-stone-600">
+                <li>
+                  {language === 'ar'
+                    ? 'إشعارات FCM السحابية: يتم استلامها عند تحديث حالة الطلب من لوحة تحكم المطعم.'
+                    : 'Cloud FCM: Delivered whenever the kitchen or driver updates your order status.'}
+                </li>
+                <li>
+                  {language === 'ar'
+                    ? 'الإشعارات المحلية (Local Notifications): تُنشأ برمجياً على جهازك للتذكيرات العاجلة.'
+                    : 'Local Notifications: Scheduled device-side for immediate alerts and reminders.'}
+                </li>
+                <li>
+                  {language === 'ar'
+                    ? 'سلوك نظام أندرويد (Force Stop): في حال قيام المستخدم بـ "فرض إيقاف" التطبيق من إعدادات الهاتف فلن تصل أي إشعارات حتى يقوم بفتح التطبيق مجدداً وفق سياسات أمان أندرويد الصارمة.'
+                    : 'Android OS Constraint: If the app is "Force Stopped" in Android settings, notifications are halted by the OS until manually reopened.'}
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Permanent Privacy Policy & Terms Link Card */}
+        <div className="bg-white rounded-3xl p-6 border border-black/5 shadow-sm space-y-4 text-start">
+          <div className="flex items-center justify-between pb-3 border-b border-black/5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-black text-sm text-stone-900">
+                  {language === 'ar' ? 'الخصوصية والأمان وشروط الاستخدام' : 'Privacy, Security & Terms'}
+                </h3>
+                <p className="text-[11px] text-stone-400 font-semibold">
+                  {language === 'ar' ? 'مراجعة سياسة حماية البيانات واستخدام الـ GPS' : 'Review data protection and GPS terms'}
+                </p>
+              </div>
+            </div>
+
+            <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
+              {privacyConsent === 'accepted'
+                ? (language === 'ar' ? 'تمت الموافقة ✓' : 'Accepted ✓')
+                : (language === 'ar' ? 'موافقة إلزامية ⚠️' : 'Mandatory ⚠️')}
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('open-privacy-policy'));
+              }}
+              className="flex-1 py-3 px-4 bg-yellow hover:bg-yellow/90 text-stone-900 font-black text-xs rounded-2xl shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>{language === 'ar' ? 'عرض ومراجعة سياسة الخصوصية والشروط 🛡️' : 'Review Privacy Policy & Terms 🛡️'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem('rehla_privacy_consent_v1');
+                setPrivacyConsent(null);
+                window.dispatchEvent(new CustomEvent('open-privacy-policy'));
+              }}
+              className="py-3 px-4 border border-stone-200 hover:bg-stone-50 text-stone-600 font-bold text-xs rounded-2xl transition-all cursor-pointer"
+            >
+              {language === 'ar' ? 'إعادة تعيين الخيارات' : 'Reset Consent'}
+            </button>
+          </div>
+        </div>
 
       </div>
 

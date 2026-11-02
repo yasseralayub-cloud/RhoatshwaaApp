@@ -10,7 +10,7 @@ interface MostOrderedPromoProps {
   activePromo?: Promotion | null;
 }
 
-export const MostOrderedPromo: React.FC<MostOrderedPromoProps> = ({
+export const MostOrderedPromo = React.memo<MostOrderedPromoProps>(({
   items,
   onItemClick,
   activePromo
@@ -164,9 +164,13 @@ export const MostOrderedPromo: React.FC<MostOrderedPromoProps> = ({
                 {/* LARGE FULL PRODUCT IMAGE (object-contain, uncropped, preserved aspect ratio) */}
                 <div className="w-full h-48 sm:h-56 md:h-64 flex items-center justify-center p-2 rounded-xl bg-neutral-50/70 border border-black/5 relative overflow-hidden">
                   <img
-                    src={currentItem.image}
+                    src={currentItem.image || '/pwa-icon.jpg'}
                     alt={language === 'ar' ? currentItem.nameAr : currentItem.name}
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = '/pwa-icon.jpg';
+                    }}
                     className="max-w-full max-h-full object-contain transform group-hover:scale-105 transition-transform duration-500"
                     style={{ objectFit: 'contain' }}
                   />
@@ -230,4 +234,4 @@ export const MostOrderedPromo: React.FC<MostOrderedPromoProps> = ({
       </div>
     </div>
   );
-};
+});

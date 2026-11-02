@@ -4,6 +4,7 @@ import { MenuItem, MenuItemAddon, Order, Driver, PendingDriver } from '../types'
 import { useLanguage } from './LanguageContext';
 import { playOrderChime, startContinuousAlarm, stopContinuousAlarm, initSharedAudio } from './AudioAlert';
 import { generateZatcaQr } from '../utils/time';
+import QRCode from 'qrcode';
 import {
   collection,
   doc,
@@ -19,6 +20,7 @@ import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser, sig
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { INITIAL_MENU_ITEMS, CATEGORIES, DEFAULT_BUSINESS_SETTINGS } from '../initialData';
 import { CURRENT_APP_VERSION } from '../version';
+import { compressImageFile } from '../utils/image';
 import {
   TrendingUp,
   ShoppingBag,
@@ -66,7 +68,8 @@ import {
   Send,
   Globe,
   Camera,
-  Layers
+  Layers,
+  QrCode
 } from 'lucide-react';
 import { CategoryManager } from './CategoryManager';
 import {
@@ -422,6 +425,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [formCategory, setFormCategory] = useState('main');
   const [formCalories, setFormCalories] = useState(0);
   const [formImage, setFormImage] = useState('');
+  const [isUploadingItemImage, setIsUploadingItemImage] = useState(false);
+  const [imageUploadMode, setImageUploadMode] = useState<'upload' | 'url'>('upload');
+  const [isDraggingItemImage, setIsDraggingItemImage] = useState(false);
+  const [quickUploadingItemId, setQuickUploadingItemId] = useState<string | null>(null);
   const [formPopular, setFormPopular] = useState(false);
   const [formDineInOnly, setFormDineInOnly] = useState(false);
   const [formIsAddonOnly, setFormIsAddonOnly] = useState(false);
@@ -561,6 +568,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Print & Invoice Settings State
   const [printingOrder, setPrintingOrder] = useState<import('../types').Order | null>(null);
+  const [adminZatcaQrDataUrl, setAdminZatcaQrDataUrl] = useState<string>('');
+
+  const [setReceiptLogoQuality, setSetReceiptLogoQuality] = useState<'crisp' | 'high' | 'monochrome'>('crisp');
+  const [setReceiptQrSize, setSetReceiptQrSize] = useState<number>(110);
+  const [setZatcaQrPhase, setSetZatcaQrPhase] = useState<'phase2' | 'phase1'>('phase2');
+
+  useEffect(() => {
+    if (!printingOrder) return;
+    try {
+      const qrData = generateZatcaQr(
+        language === 'ar' ? setRestaurantNameAr : setRestaurantNameEn,
+        setVatNumber || '310123456700003',
+        new Date(printingOrder.createdAt).toISOString(),
+        ((printingOrder.total || 0)).toFixed(2),
+        ((printingOrder.tax || 0)).toFixed(2),
+        printingOrder.id,
+        setZatcaQrPhase
+      );
+      QRCode.toDataURL(qrData, {
+        width: 200,
+        margin: 1,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#000000', light: '#ffffff' }
+      }).then(url => {
+        setAdminZatcaQrDataUrl(url);
+      }).catch(err => {
+        console.warn('Admin QR code error:', err);
+      });
+    } catch (e) {
+      console.warn('Admin QR generation error:', e);
+    }
+  }, [printingOrder, language, setRestaurantNameAr, setRestaurantNameEn, setVatNumber, setZatcaQrPhase]);
+
   const [isTestPrint, setIsTestPrint] = useState(false);
   const [setReceiptWidth, setSetReceiptWidth] = useState('80mm');
   const [setReceiptFontSize, setSetReceiptFontSize] = useState(11);
@@ -829,6 +869,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setBankQrUrl(businessSettings.bankQrUrl || 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=432608010007890');
       setSetReceiptFontSize(businessSettings.receiptFontSize ?? 11);
       setSetReceiptLogoSize(businessSettings.receiptLogoSize ?? 80);
+      setSetReceiptLogoQuality(businessSettings.receiptLogoQuality || 'crisp');
+      setSetReceiptQrSize(businessSettings.receiptQrSize ?? 110);
+      setSetZatcaQrPhase(businessSettings.zatcaQrPhase || 'phase2');
       setSetShowKitchenSlipOnPrint(businessSettings.showKitchenSlipOnPrint ?? true);
       setSetShowCustomerReceiptOnPrint(businessSettings.showCustomerReceiptOnPrint ?? true);
       setSetKitchenSlipFontSize(businessSettings.kitchenSlipFontSize ?? 12);
@@ -889,6 +932,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       bankQrUrl: bankQrUrl,
       receiptFontSize: Number(setReceiptFontSize),
       receiptLogoSize: Number(setReceiptLogoSize),
+      receiptLogoQuality: setReceiptLogoQuality,
+      receiptQrSize: Number(setReceiptQrSize),
+      zatcaQrPhase: setZatcaQrPhase,
       showKitchenSlipOnPrint: setShowKitchenSlipOnPrint,
       showCustomerReceiptOnPrint: setShowCustomerReceiptOnPrint,
       kitchenSlipFontSize: Number(setKitchenSlipFontSize),
@@ -2148,6 +2194,71 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Handler for uploading item image from local device file in the form
+  const handleItemImageUpload = async (file: File) => {
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      showNotification(language === 'ar' ? 'حجم الملف كبير جداً! يرجى اختيار صورة أقل من 15 ميجابايت.' : 'File too large! Max size 15MB.', 'error');
+      return;
+    }
+    setIsUploadingItemImage(true);
+    try {
+      const compressedDataUrl = await compressImageFile(file, 800, 800, 0.78);
+      setFormImage(compressedDataUrl);
+      showNotification(language === 'ar' ? 'تم رفع ومعالجة صورة الصنف بنجاح! 📸' : 'Dish image uploaded and optimized successfully! 📸', 'success');
+    } catch (err: any) {
+      console.error('Failed to compress/upload image:', err);
+      showNotification(language === 'ar' ? (err.message || 'فشل معالجة الصورة') : 'Failed to process image', 'error');
+    } finally {
+      setIsUploadingItemImage(false);
+      setIsDraggingItemImage(false);
+    }
+  };
+
+  // Direct quick upload for a single menu item in the table list
+  const handleQuickUploadItemImage = async (item: MenuItem, file: File) => {
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      showNotification(language === 'ar' ? 'حجم الملف كبير جداً! يرجى اختيار صورة أقل من 15 ميجابايت.' : 'File too large! Max size 15MB.', 'error');
+      return;
+    }
+    setQuickUploadingItemId(item.id);
+    try {
+      const compressedDataUrl = await compressImageFile(file, 800, 800, 0.78);
+      
+      const updatedItem: MenuItem = {
+        ...item,
+        image: compressedDataUrl,
+        isCustomImage: true
+      };
+
+      const updatedList = menuItems.map(m => m.id === item.id ? updatedItem : m);
+      onMenuUpdate(updatedList);
+      window.dispatchEvent(new CustomEvent('menu-updated', { detail: updatedList }));
+
+      // Save immediately to Firestore
+      const cleanPayload = JSON.parse(JSON.stringify(updatedItem));
+      await setDoc(doc(db, 'menuItems', item.id), cleanPayload);
+
+      // Local storage backup
+      try {
+        localStorage.setItem('simulated_menu', JSON.stringify(updatedList));
+      } catch (e) {}
+
+      showNotification(
+        language === 'ar' 
+          ? `تم رفع واعتماد صورة (${item.nameAr}) في قاعدة البيانات بنجاح! 📸` 
+          : `Image for ${item.name} permanently saved to database! 📸`, 
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Failed quick image upload:', err);
+      showNotification(language === 'ar' ? (err.message || 'فشل رفع صورة الصنف') : 'Failed to upload item image', 'error');
+    } finally {
+      setQuickUploadingItemId(null);
+    }
+  };
+
   // Add/Submit new or edited menu item
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2177,7 +2288,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
 
     const defaultItemForCleanId = INITIAL_MENU_ITEMS.find(i => i.id === cleanId);
-    const hasCustomImg = Boolean(formImage.trim() && formImage.trim() !== defaultItemForCleanId?.image);
+    const chosenImage = formImage.trim() || defaultItemForCleanId?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600';
+    const isCustom = Boolean(formImage.trim() && formImage.trim() !== defaultItemForCleanId?.image);
 
     const safePrice = Math.max(0, Number(formPrice) || 0);
     const safeCalories = Math.max(0, Number(formCalories) || 0);
@@ -2192,7 +2304,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       price: safePrice,
       category: formCategory || (mergedCategories[0]?.id || 'main'),
       calories: safeCalories,
-      image: formImage.trim() || defaultItemForCleanId?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600',
+      image: chosenImage,
       isPopular: Boolean(formPopular),
       dineInOnly: Boolean(formDineInOnly),
       addons: Array.isArray(formAddons) ? formAddons.map(a => ({
@@ -2204,7 +2316,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isMeal: Boolean(formIsMeal),
       order: safeOrder,
       isAvailable: isEditMode ? (menuItems.find(i => i.id === editingItemId)?.isAvailable ?? true) : true,
-      ...(hasCustomImg ? { isCustomImage: true } : {})
+      isCustomImage: isCustom
     };
 
     let updatedMenu: MenuItem[];
@@ -2214,8 +2326,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       updatedMenu = [...menuItems, itemToSave];
     }
     
-    // Immediate UI update
+    // Immediate UI update across all customer & admin views
     onMenuUpdate(updatedMenu);
+    window.dispatchEvent(new CustomEvent('menu-updated', { detail: updatedMenu }));
 
     // Direct Firestore Database Persistence
     try {
@@ -5262,8 +5375,88 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         />
                         <span className="text-xs font-bold font-mono text-emerald-600 shrink-0">{setReceiptLogoSize}px</span>
                       </div>
-                      <span className="text-[10px] text-slate-400 block">
+                      <span className="text-[10px] text-slate-400 block mt-1">
                         {language === 'ar' ? 'قم بتصغير الحجم إذا كان اللوجو كبيراً ويأخذ مساحات ورق كبيرة' : 'Shrink to conserve thermal paper roll resources.'}
+                      </span>
+                    </div>
+
+                    {/* Logo Quality & Sharpness Control */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                        {language === 'ar' ? 'دقة ومعالجة اللوجو في الفاتورة' : 'Receipt Logo Resolution & Filter'}
+                      </label>
+                      <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
+                        {[
+                          { id: 'crisp', labelAr: 'حادة للحراري', labelEn: 'Crisp Edges' },
+                          { id: 'high', labelAr: 'ألوان أصلية', labelEn: 'High Quality' },
+                          { id: 'monochrome', labelAr: 'أبيض وأسود', labelEn: 'Monochrome' }
+                        ].map((q) => (
+                          <button
+                            key={q.id}
+                            type="button"
+                            onClick={() => setSetReceiptLogoQuality(q.id as 'crisp' | 'high' | 'monochrome')}
+                            className={`py-1 text-[10px] font-bold rounded-lg cursor-pointer transition-all ${
+                              setReceiptLogoQuality === q.id
+                                ? 'bg-white text-emerald-700 shadow-xs border border-emerald-500/10'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            {language === 'ar' ? q.labelAr : q.labelEn}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-1">
+                        {language === 'ar' ? 'خيار "حادة للحراري" يعالج التباين لتظهر تفاصيل الشعار بوضوح تام على ورق الطابعات الحرارية' : 'Crisp mode enhances contrast so logos print sharply on thermal papers.'}
+                      </span>
+                    </div>
+
+                    {/* ZATCA QR Code Size Control */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                        {language === 'ar' ? 'حجم باركود الزكاة في الفاتورة' : 'ZATCA QR Barcode Size'}
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="70"
+                          max="160"
+                          value={setReceiptQrSize}
+                          onChange={(e) => setSetReceiptQrSize(Number(e.target.value))}
+                          className="flex-1 accent-emerald-600 cursor-ew-resize"
+                        />
+                        <span className="text-xs font-bold font-mono text-emerald-600 shrink-0">{setReceiptQrSize}px</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-1">
+                        {language === 'ar' ? 'تحكم في أبعاد باركود الزكاة (الرمز المربع) لسهولة قراءته بالماسح وحفظ ورق الإيصال' : 'Adjust QR code dimensions for easy scanning with thermal devices.'}
+                      </span>
+                    </div>
+
+                    {/* ZATCA QR Generation Mode */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                        {language === 'ar' ? 'نمط تشفير باركود الزكاة (ZATCA)' : 'ZATCA Barcode Mode'}
+                      </label>
+                      <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
+                        {[
+                          { id: 'phase2', labelAr: 'المرحلة 2 (الربط والتكامل)', labelEn: 'Phase 2 (Integration)' },
+                          { id: 'phase1', labelAr: 'المرحلة 1 (الأساسية المعتمدة)', labelEn: 'Phase 1 (Standard)' }
+                        ].map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setSetZatcaQrPhase(m.id as 'phase2' | 'phase1')}
+                            className={`py-1 text-[10px] font-bold rounded-lg cursor-pointer transition-all ${
+                              setZatcaQrPhase === m.id
+                                ? 'bg-white text-emerald-700 shadow-xs border border-emerald-500/10'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            {language === 'ar' ? m.labelAr : m.labelEn}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-1">
+                        {language === 'ar' ? 'المرحلة الثانية تتضمن التشفير والختم الرقمي والتجزئة، المرحلة الأولى خفيفة ومتوافقة فورياً مع جميع أجهزة القراءة' : 'Phase 2 includes full cryptographic hash & stamp; Phase 1 is standard 5 tags.'}
                       </span>
                     </div>
                   </div>
@@ -5632,7 +5825,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               className="rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs uppercase overflow-hidden border border-neutral-300 shadow-xs"
                             >
                               {setLogoUrl ? (
-                                <img src={setLogoUrl} alt="Logo" className="w-full h-full object-cover" />
+                                <img 
+                                  src={setLogoUrl} 
+                                  alt="Logo" 
+                                  className="w-full h-full object-cover" 
+                                  style={{
+                                    imageRendering: setReceiptLogoQuality === 'crisp' ? 'crisp-edges' : 'auto',
+                                    filter: setReceiptLogoQuality === 'monochrome' 
+                                      ? 'grayscale(100%) contrast(160%)' 
+                                      : setReceiptLogoQuality === 'crisp' 
+                                      ? 'contrast(1.25) brightness(1.02)' 
+                                      : 'none'
+                                  }}
+                                />
                               ) : (
                                 <span>{language === 'ar' ? setRestaurantNameAr.charAt(0) : setRestaurantNameEn.charAt(0)}</span>
                               )}
@@ -5685,6 +5890,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               <span>٥٨.٦٥ {t('sar')}</span>
                             </div>
                           </div>
+
+                            <div className="flex flex-col items-center justify-center pt-2">
+                              <div className="bg-white p-1 border border-neutral-300 rounded inline-block">
+                                <QrCode 
+                                  style={{ 
+                                    width: `${Math.min(setReceiptQrSize, 80)}px`, 
+                                    height: `${Math.min(setReceiptQrSize, 80)}px` 
+                                  }} 
+                                  className="text-black" 
+                                />
+                              </div>
+                              <span className="text-[7.5px] font-mono text-neutral-400 mt-0.5">
+                                QR {setReceiptQrSize}px • {setZatcaQrPhase === 'phase2' ? 'ZATCA Phase 2' : 'ZATCA Phase 1'}
+                              </span>
+                            </div>
 
                           {/* Footer Mock */}
                           <div className="pt-2 text-center text-[10px] text-neutral-500 border-t border-dotted border-neutral-300 mt-2.5">
@@ -6682,15 +6902,169 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">{language === 'ar' ? 'رابط الصورة (URL)' : 'Unsplash / Image URL'}</label>
-                  <input
-                    type="text"
-                    value={formImage}
-                    onChange={(e) => setFormImage(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none"
-                  />
+                {/* Dish Image Uploader & Live Preview */}
+                <div className="md:col-span-3 bg-slate-50/90 border border-slate-200 rounded-2xl p-4 space-y-3 text-start">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-amber-500/10 text-amber-600 rounded-lg">
+                        <Camera className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-black text-slate-800">
+                          {language === 'ar' ? 'صورة الصنف (رفع ملف من الجهاز أو رابط)' : 'Dish Image (Upload File or URL)'}
+                        </label>
+                        <span className="text-[10px] text-slate-400">
+                          {language === 'ar' ? 'تظهر الصورة للعملاء في القائمة وتُعتمد فوراً في قاعدة بيانات فايربيس' : 'Shown in menu & permanently saved to Firebase'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Mode Toggle: File vs URL */}
+                    <div className="flex bg-white p-0.5 rounded-xl border border-slate-200 text-[11px] font-bold shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => setImageUploadMode('upload')}
+                        className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                          imageUploadMode === 'upload'
+                            ? 'bg-amber-500 text-stone-900 shadow-2xs font-black'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>{language === 'ar' ? 'رفع من الجهاز / كاميرا' : 'Device File / Camera'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setImageUploadMode('url')}
+                        className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                          imageUploadMode === 'url'
+                            ? 'bg-amber-500 text-stone-900 shadow-2xs font-black'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <Globe className="w-3 h-3" />
+                        <span>{language === 'ar' ? 'رابط URL' : 'Image Link'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                    {/* Left: Uploader controls */}
+                    <div className="md:col-span-8 space-y-2">
+                      {imageUploadMode === 'upload' ? (
+                        <div
+                          onDragOver={(e) => { e.preventDefault(); setIsDraggingItemImage(true); }}
+                          onDragLeave={() => setIsDraggingItemImage(false)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDraggingItemImage(false);
+                            const file = e.dataTransfer.files?.[0];
+                            if (file) handleItemImageUpload(file);
+                          }}
+                          className={`border-2 border-dashed rounded-xl p-4 text-center transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
+                            isDraggingItemImage
+                              ? 'border-amber-500 bg-amber-100/50 scale-[1.01]'
+                              : 'border-slate-300 bg-white hover:border-amber-400 hover:bg-amber-50/20'
+                          }`}
+                        >
+                          <input
+                            type="file"
+                            accept="image/*"
+                            id="item-file-input"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleItemImageUpload(file);
+                              e.target.value = '';
+                            }}
+                          />
+                          <label
+                            htmlFor="item-file-input"
+                            className="cursor-pointer flex flex-col items-center gap-1.5 w-full"
+                          >
+                            <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                              {isUploadingItemImage ? (
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                              ) : (
+                                <Upload className="w-5 h-5" />
+                              )}
+                            </div>
+                            <span className="text-xs font-bold text-slate-700">
+                              {isUploadingItemImage 
+                                ? (language === 'ar' ? 'جاري ضغط ومعالجة الصورة لفايربيس...' : 'Optimizing image for Firebase...')
+                                : (language === 'ar' ? 'اضغط لاختيار صورة من جهازك / الكاميرا أو اسحبها هنا' : 'Click to pick image from device/camera or drag here')}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {language === 'ar' ? 'يدعم كافة صيغ الصور (JPG, PNG, WEBP, AVIF) بحد أقصى 15 ميجابايت' : 'Supports all image formats up to 15MB'}
+                            </span>
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <label className="block text-[11px] font-bold text-slate-600 mb-1">{language === 'ar' ? 'رابط الصورة الخارجي (URL)' : 'Direct Image URL'}</label>
+                          <input
+                            type="text"
+                            value={formImage}
+                            onChange={(e) => setFormImage(e.target.value)}
+                            placeholder="https://images.unsplash.com/..."
+                            className="w-full text-xs bg-white border border-slate-200 rounded-xl p-3 outline-none focus:border-amber-500 font-mono"
+                          />
+                          <p className="text-[10px] text-slate-400">
+                            {language === 'ar' ? 'الصق رابط الصورة المباشر من الإنترنت' : 'Paste direct image URL from web'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right: Live Preview Box */}
+                    <div className="md:col-span-4 flex flex-col items-center justify-center p-3 bg-white border border-slate-200 rounded-xl shadow-2xs">
+                      {formImage ? (
+                        <div className="space-y-2 w-full flex flex-col items-center">
+                          <div className="relative w-28 h-24 rounded-lg overflow-hidden border border-slate-200 bg-neutral-100 shadow-2xs flex items-center justify-center">
+                            <img
+                              src={formImage}
+                              alt="Item Preview"
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = '/pwa-icon.jpg';
+                              }}
+                            />
+                            {formImage.startsWith('data:') && (
+                              <span className="absolute bottom-1 right-1 bg-emerald-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-2xs">
+                                {language === 'ar' ? 'مرفوعة 📸' : 'Uploaded 📸'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex gap-1.5 w-full justify-center">
+                            <button
+                              type="button"
+                              onClick={() => setFormImage('')}
+                              className="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg cursor-pointer transition"
+                            >
+                              {language === 'ar' ? 'إزالة' : 'Remove'}
+                            </button>
+                            {imageUploadMode === 'upload' && (
+                              <label
+                                htmlFor="item-file-input"
+                                className="text-[10px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg cursor-pointer transition"
+                              >
+                                {language === 'ar' ? 'استبدال' : 'Replace'}
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-4 text-center text-slate-400 space-y-1">
+                          <Camera className="w-8 h-8 mx-auto opacity-30 text-amber-500" />
+                          <span className="text-[10px] font-bold block">
+                            {language === 'ar' ? 'لم يتم تحديد صورة بعد' : 'No image selected yet'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 md:col-span-3 pt-2">
@@ -7061,12 +7435,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       }`}
                     >
                       <td className="px-4 py-3 flex items-center gap-2.5">
-                        <img
-                          src={item.image}
-                          alt={item.nameAr}
-                          className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-100"
-                          referrerPolicy="no-referrer"
-                        />
+                        <div className="relative group shrink-0">
+                          <img
+                            src={item.image}
+                            alt={item.nameAr}
+                            className="w-11 h-11 rounded-xl object-cover border border-slate-200 shadow-2xs"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = '/pwa-icon.jpg';
+                            }}
+                          />
+                          <label
+                            htmlFor={`quick-image-${item.id}`}
+                            title={language === 'ar' ? 'رفع وتغيير صورة هذا الصنف في قاعدة البيانات مباشرة' : 'Upload & update image in database'}
+                            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center text-white cursor-pointer"
+                          >
+                            {quickUploadingItemId === item.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                            ) : (
+                              <Camera className="w-4 h-4 text-amber-300" />
+                            )}
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            id={`quick-image-${item.id}`}
+                            className="hidden"
+                            disabled={quickUploadingItemId === item.id}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleQuickUploadItemImage(item, file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </div>
                         <div>
                           <div className="font-bold text-slate-800 text-xs md:text-sm flex items-center gap-1.5 flex-wrap">
                             <span>{language === 'ar' ? item.nameAr : item.name}</span>
@@ -7641,20 +8044,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 {isTaxActive && (
                   <div className="flex flex-col items-center justify-center pt-3 text-center space-y-2">
                     <div className="bg-white p-1 rounded-lg border border-black/20">
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(
-                          generateZatcaQr(
-                            language === 'ar' ? setRestaurantNameAr : setRestaurantNameEn,
-                            setVatNumber || '310123456700003',
-                            new Date(printingOrder.createdAt).toISOString(),
-                            printTotal.toFixed(2),
-                            printTax.toFixed(2)
-                          )
-                        )}`}
-                        alt="ZATCA QR Compliance"
-                        referrerPolicy="no-referrer"
-                        className="w-28 h-28 mx-auto"
-                      />
+                      {adminZatcaQrDataUrl ? (
+                        <img
+                          src={adminZatcaQrDataUrl}
+                          alt="ZATCA Phase 2 QR Compliance"
+                          className="w-28 h-28 mx-auto"
+                        />
+                      ) : (
+                        <div className="w-28 h-28 flex items-center justify-center bg-neutral-100 text-[10px] text-neutral-400">
+                          QR ZATCA
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-0.5">
                       <div className="text-[9px] font-black uppercase text-center tracking-wider">

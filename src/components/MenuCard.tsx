@@ -47,6 +47,10 @@ export const MenuCard = React.memo<MenuCardProps>(({
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
           loading="lazy"
           referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = '/pwa-icon.jpg';
+          }}
         />
 
         {/* Subtle bottom gradient scrim */}

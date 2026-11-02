@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
 import { useLanguage } from './LanguageContext';
-import { ShieldCheck, CheckSquare, Square, ArrowLeft, X } from 'lucide-react';
+import { ShieldCheck, CheckSquare, Square, X, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PrivacyPolicyModalProps {
   isOpen: boolean;
   onAccept: () => void;
   onClose?: () => void;
+  isMandatory?: boolean;
   gracePeriod?: number;
 }
 
-export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onAccept, onClose, gracePeriod = 30 }) => {
+export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ 
+  isOpen, 
+  onAccept, 
+  onClose, 
+  isMandatory = true,
+  gracePeriod = 30 
+}) => {
   const { language } = useLanguage();
   const [isChecked, setIsChecked] = useState(false);
 
@@ -18,108 +25,157 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 overflow-y-auto bg-black/75 backdrop-blur-md">
+      <div 
+        className="fixed inset-0 z-[10000] flex items-center justify-center p-4 overflow-y-auto bg-black/80 backdrop-blur-md"
+        onClick={(e) => {
+          // If not mandatory and user clicked outside modal, allow closing
+          if (!isMandatory && onClose && e.target === e.currentTarget) {
+            onClose();
+          }
+        }}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-black/5 overflow-hidden text-start font-sans"
+          onClick={(e) => e.stopPropagation()}
         >
-          {onClose && (
+          {/* Close button only shown if NOT mandatory (i.e. already accepted and just reviewing) */}
+          {!isMandatory && onClose && (
             <button 
+              type="button"
               onClick={onClose}
-              className={`absolute top-4 ${language === 'ar' ? 'left-4' : 'right-4'} z-10 p-2 bg-white/20 hover:bg-white/30 text-white rounded-full transition-colors`}
+              className={`absolute top-4 ${language === 'ar' ? 'left-4' : 'right-4'} z-10 p-2 bg-white/20 hover:bg-white/30 text-white rounded-full transition-colors cursor-pointer`}
+              aria-label="Close"
             >
               <X className="w-5 h-5" />
             </button>
           )}
+
           {/* Header Banner */}
-          <div className="bg-gradient-to-br from-neutral-900 to-amber-950 p-6 text-white relative">
+          <div className="bg-gradient-to-br from-neutral-900 via-amber-950 to-neutral-900 p-6 text-white relative">
             <div className="absolute -top-12 -right-12 w-32 h-32 bg-yellow/10 rounded-full blur-2xl" />
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-yellow rounded-xl text-black">
-                <ShieldCheck className="w-6 h-6" />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-yellow rounded-xl text-black">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black tracking-wide">
+                    {language === 'ar' ? 'سياسة الخصوصية وشروط الاستخدام' : 'Privacy Policy & Terms'}
+                  </h3>
+                  <p className="text-xs text-white/60 font-mono">مطعم رحلة شواء - Rehla BBQ</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-black tracking-wide">
-                  {language === 'ar' ? 'سياسة الخصوصية وشروط الاستخدام' : 'Privacy Policy & Terms'}
-                </h3>
-                <p className="text-xs text-white/60 font-mono">مطعم رحلة شواء - Rehla BBQ</p>
-              </div>
+
+              {isMandatory && (
+                <div className="flex items-center gap-1 bg-amber-500/20 border border-amber-400/40 text-amber-300 px-2.5 py-1 rounded-full text-[10px] font-black shrink-0">
+                  <Lock className="w-3 h-3" />
+                  <span>{language === 'ar' ? 'موافقة إلزامية' : 'Mandatory'}</span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Privacy Terms Content */}
-          <div className="p-6 space-y-4 max-h-[350px] overflow-y-auto text-dark/80 text-xs leading-relaxed border-b border-black/5">
+          <div className="p-6 space-y-4 max-h-[340px] overflow-y-auto text-dark/80 text-xs leading-relaxed border-b border-black/5">
             {language === 'ar' ? (
               <div className="space-y-3.5 text-right font-medium">
-                <p className="text-xs text-dark/40 font-bold">
-                  مرحباً بك في تطبيق مطعم رحلة شواء. يرجى قراءة الشروط والموافقة عليها للتمتع بكافة الخدمات:
-                </p>
-                <div className="p-3 bg-neutral-50 rounded-xl space-y-2 border border-black/5">
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 text-amber-950 text-xs font-bold leading-relaxed flex items-center gap-2">
+                  <span className="text-base shrink-0">⚠️</span>
+                  <span>
+                    لضمان حماية بياناتك وتقديم خدمة التوصيل وتتبع الطلب، تتطلب اللائحة موافقتك الصريحة على الشروط أدناه قبل متابعة استخدام التطبيق.
+                  </span>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-xl space-y-1.5 border border-black/5">
                   <h4 className="font-bold text-dark text-xs flex items-center gap-1.5 justify-end">
-                    <span>حماية البيانات والسرية</span> 🛡️
+                    <span>حماية البيانات والسرية التامة</span> 🛡️
                   </h4>
-                  <p className="text-dark/60 text-[11px]">
-                    نحن نلتزم التزاماً تاماً بحماية خصوصية بياناتك الشخصية، بما في ذلك اسمك الكامل ورقم جوالك. لا يتم مشاركة هذه البيانات نهائياً مع أي أطراف ثالثة أو جهات إعلانية.
+                  <p className="text-dark/65 text-[11px] leading-relaxed">
+                    نلتزم بحماية خصوصية بياناتك الشخصية (الاسم ورقم الجوال). لا يتم بيع أو مشاركة بياناتك إطلاقاً مع أطراف ثالثة أو شركات إعلانية، وتُستخدم فقط لتأكيد ومتابعة طلبك والتواصل بخصوصه.
                   </p>
                 </div>
 
-                <div className="p-3 bg-amber-50/40 rounded-xl space-y-2 border border-amber-100">
+                <div className="p-3 bg-amber-50/50 rounded-xl space-y-1.5 border border-amber-200">
                   <h4 className="font-bold text-amber-950 text-xs flex items-center gap-1.5 justify-end">
-                    <span>استخدام نظام تحديد المواقع الجغرافي GPS</span> 📍
+                    <span>بيانات الموقع الجغرافي (GPS)</span> 📍
                   </h4>
-                  <p className="text-amber-900/70 text-[11px]">
-                    عند طلب التوصيل، يجمع التطبيق إحداثيات موقعك الجغرافي لمساعدتنا في توجيه مندوب التوصيل للفرع والموقع بدقة متناهية. يتم استخدام هذا الموقع فقط وحصرياً لغرض تسليم الطلب الحالي.
+                  <p className="text-amber-900/80 text-[11px] leading-relaxed">
+                    نطلب إذن الموقع فقط عند استخدام ميزة التوصيل أو تحديد عنوانك على الخريطة لتوجيه المندوب بدقة عالية. لا يتم تتبع موقعك في الخلفية ولا يتم طلبه دون حاجة فعلية.
                   </p>
                 </div>
 
-                <div className="p-3 bg-neutral-50 rounded-xl space-y-2 border border-black/5">
+                <div className="p-3 bg-neutral-50 rounded-xl space-y-1.5 border border-black/5">
                   <h4 className="font-bold text-dark text-xs flex items-center gap-1.5 justify-end">
+                    <span>إشعارات النظام والتحديثات الحية</span> 🔔
+                  </h4>
+                  <p className="text-dark/65 text-[11px] leading-relaxed">
+                    تُستخدم الإشعارات لإبلاغك بلحظة قبول الطلب، خروجه مع المندوب، وعروض الخصم الخاصة برحلة شواء. يمكنك التحكم في الإشعارات في أي وقت من إعدادات جهازك.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-xl space-y-1.5 border border-stone-200">
+                  <h4 className="font-bold text-stone-800 text-xs flex items-center gap-1.5 justify-end">
                     <span>تعديل وإلغاء الطلب (مهلة {gracePeriod} ثانية)</span> ⏱️
                   </h4>
-                  <p className="text-dark/60 text-[11px]">
-                    احتراماً لوقتكم ووقت طاقم العمل، يمنحك النظام مهلة تبلغ <span className="font-bold text-amber-600">{gracePeriod} ثانية فقط</span> من لحظة إرسال طلبك للتمكن من تعديله أو إلغائه تلقائياً من شاشة التتبع. بمجرد انتهاء المهلة، يبدأ التنبيه المباشر في لوحة تحكم الفرع ولا يمكن التراجع دون موافقة الإدارة.
+                  <p className="text-stone-600 text-[11px] leading-relaxed">
+                    يمنحك النظام مهلة تبلغ <span className="font-bold text-amber-600">{gracePeriod} ثانية</span> من لحظة اعتماد الطلب للتمكن من تعديله أو إلغائه ذاتياً قبل البدء في تجهيز الشواء في المطبخ.
                   </p>
                 </div>
               </div>
             ) : (
               <div className="space-y-3.5 text-left">
-                <p className="text-xs text-dark/40 font-bold">
-                  Welcome to Rehla BBQ. Please read and agree to our terms to access our ordering services:
-                </p>
-                <div className="p-3 bg-neutral-50 rounded-xl space-y-2 border border-black/5">
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 text-amber-950 text-xs font-bold leading-relaxed flex items-center gap-2">
+                  <span className="text-base shrink-0">⚠️</span>
+                  <span>
+                    To protect your privacy and ensure order fulfillment and delivery, your agreement to these terms is mandatory before using the application.
+                  </span>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-xl space-y-1.5 border border-black/5">
                   <h4 className="font-bold text-dark text-xs flex items-center gap-1.5">
-                    🛡️ <span>Data Security & Privacy</span>
+                    🛡️ <span>Data Security & Confidentiality</span>
                   </h4>
-                  <p className="text-dark/60 text-[11px]">
-                    We strictly guarantee the privacy and confidentiality of your personal details (name and phone). Your contact details are never shared with any external third parties or advertisers.
+                  <p className="text-dark/65 text-[11px] leading-relaxed">
+                    Your personal information (name and phone) is securely stored strictly for handling orders and receipts. We never share or sell your data to any third party.
                   </p>
                 </div>
 
-                <div className="p-3 bg-amber-50/40 rounded-xl space-y-2 border border-amber-100">
+                <div className="p-3 bg-amber-50/50 rounded-xl space-y-1.5 border border-amber-200">
                   <h4 className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
-                    📍 <span>GPS Location Services</span>
+                    📍 <span>GPS Location Access</span>
                   </h4>
-                  <p className="text-amber-900/70 text-[11px]">
-                    For delivery, our system gathers coordinates to direct our driver directly and accurately to your doorstep. Location details are utilized strictly for fulfilling your immediate purchase.
+                  <p className="text-amber-900/80 text-[11px] leading-relaxed">
+                    Location permission is requested only on-demand during delivery checkout to accurately guide drivers to your door. No background location tracking is performed.
                   </p>
                 </div>
 
-                <div className="p-3 bg-neutral-50 rounded-xl space-y-2 border border-black/5">
+                <div className="p-3 bg-neutral-50 rounded-xl space-y-1.5 border border-black/5">
                   <h4 className="font-bold text-dark text-xs flex items-center gap-1.5">
-                    ⏱️ <span>{gracePeriod}-Second Order Adjustments</span>
+                    🔔 <span>System Notifications</span>
                   </h4>
-                  <p className="text-dark/60 text-[11px]">
-                    To optimize kitchen speed, you are allowed a strict <span className="font-bold text-amber-600">{gracePeriod}-second window</span> to edit or cancel your order from the status screen. Once this window expires, the order signals the kitchen, and manual supervisor approval is required.
+                  <p className="text-dark/65 text-[11px] leading-relaxed">
+                    Notifications provide live status updates for kitchen preparation and driver arrival. You can enable or disable them anytime.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-xl space-y-1.5 border border-stone-200">
+                  <h4 className="font-bold text-stone-800 text-xs flex items-center gap-1.5">
+                    ⏱️ <span>{gracePeriod}-Second Grace Period</span>
+                  </h4>
+                  <p className="text-stone-600 text-[11px] leading-relaxed">
+                    You have <span className="font-bold text-amber-600">{gracePeriod} seconds</span> after placing an order to modify or cancel it freely before food preparation begins.
                   </p>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Accept controls */}
-          <div className="p-6 bg-neutral-50 space-y-4">
+          {/* Mandatory Agreement Decision Section */}
+          <div className="p-5 bg-neutral-50 space-y-3">
+            {/* Agreement Checkbox */}
             <button
               type="button"
               onClick={() => setIsChecked(!isChecked)}
@@ -132,21 +188,36 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
                   <Square className="w-5 h-5 text-dark/30" />
                 )}
               </div>
-              <div className="text-xs font-bold text-dark/70">
+              <div className="text-xs font-bold text-dark/85 leading-snug">
                 {language === 'ar'
-                  ? 'أقر بأنني قرأت وفهمت سياسة الخصوصية وشروط الاستخدام وأوافق على مشاركة موقعي لإيصال الطلب.'
-                  : 'I acknowledge that I have read the Privacy Policy and agree to share my GPS location for delivery.'}
+                  ? 'أوافق وأقر بأنني اطلعت على سياسة الخصوصية وشروط الاستخدام وأوافق على الالتزام بها لاستخدام التطبيق وإتمام الطلبات.'
+                  : 'I acknowledge that I have read the Privacy Policy and agree to abide by all terms to use the app and place orders.'}
               </div>
             </button>
 
-            <button
-              type="button"
-              disabled={!isChecked}
-              onClick={onAccept}
-              className="w-full py-3.5 px-4 bg-yellow disabled:bg-neutral-200 disabled:text-dark/30 hover:bg-yellow-500 text-black font-extrabold text-sm rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
-            >
-              <span>{language === 'ar' ? 'أوافق وأرغب في المتابعة' : 'I Agree & Proceed'}</span>
-            </button>
+            {/* Mandatory Action Button */}
+            <div className="flex gap-2 pt-1">
+              {!isMandatory && onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="py-3 px-4 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+                >
+                  {language === 'ar' ? 'إغلاق' : 'Close'}
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={!isChecked}
+                onClick={onAccept}
+                className={`flex-1 py-3.5 px-4 bg-yellow text-stone-900 font-black text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  !isChecked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-yellow/90 active:scale-98'
+                }`}
+              >
+                <span>{language === 'ar' ? 'أوافق على الشروط وأرغب في المتابعة ✓' : 'I Agree & Proceed ✓'}</span>
+              </button>
+            </div>
           </div>
         </motion.div>
       </div>

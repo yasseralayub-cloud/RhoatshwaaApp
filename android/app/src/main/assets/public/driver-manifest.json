@@ -1,0 +1,24 @@
+{
+  "short_name": "مناديب رحلة شواء",
+  "name": "تطبيق مناديب رحلة شواء - التوصيل السريع",
+  "description": "تطبيق المناديب الخاص بمطعم رحلة شواء لمتابعة واستلام وتوصيل الطلبات بسرعة وسهولة",
+  "icons": [
+    {
+      "src": "/driver-icon.jpg",
+      "type": "image/jpeg",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/driver-icon.jpg",
+      "type": "image/jpeg",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/?portal=driver#driver",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "portrait"
+}

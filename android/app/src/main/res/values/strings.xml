@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">رحلة شواء</string>
+    <string name="title_activity_main">رحلة شواء</string>
+    <string name="package_name">com.mycompany.rehlatshwaa</string>
+    <string name="custom_url_scheme">com.mycompany.rehlatshwaa</string>
+</resources>

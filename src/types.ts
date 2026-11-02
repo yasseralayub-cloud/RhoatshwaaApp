@@ -126,6 +126,9 @@ export interface BusinessSettings {
   receiptWidth?: string; // e.g., '80mm', '58mm'
   receiptFontSize?: number; // e.g., 12
   receiptLogoSize?: number; // e.g., 80
+  receiptLogoQuality?: 'crisp' | 'high' | 'monochrome'; // Resolution and contrast for thermal printing
+  receiptQrSize?: number; // ZATCA QR code size in px (e.g. 110)
+  zatcaQrPhase?: 'phase2' | 'phase1'; // ZATCA QR Code Mode (Phase 2 with encryption or Phase 1 standard)
   showKitchenSlipOnPrint?: boolean;
   showCustomerReceiptOnPrint?: boolean;
   kitchenSlipFontSize?: number;

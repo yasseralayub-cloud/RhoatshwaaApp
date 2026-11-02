@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>مطعم رحلة شواء - تتبع وتوصيل فوري</title>
+    <!-- Web App & PWA capabilities Meta tags -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="رحلة شواء" />
+    <link rel="apple-touch-icon" href="/pwa-icon.jpg" />
+    <meta name="theme-color" content="#0f172a" />
+    <script>
+      // Register Service Worker for PWA installation support
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            console.log('PWA ServiceWorker registered successfully:', reg.scope);
+          }).catch(function(err) {
+            console.warn('PWA ServiceWorker registration failed:', err);
+          });
+        });
+      }
+      
+      // Capture PWA installation prompt for Android / Chrome one-click install
+      window.deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.deferredPrompt = e;
+        window.dispatchEvent(new CustomEvent('pwa-install-ready'));
+        console.log('PWA beforeinstallprompt event captured for driver app!');
+      });
+    </script>
+    <script type="module" crossorigin src="/assets/index-BwmgKBnp.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BqsSQpqe.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="recaptcha-container"></div>
+  </body>
+</html>
+

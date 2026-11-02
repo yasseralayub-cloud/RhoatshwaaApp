@@ -1357,9 +1357,13 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({ businessSettings, on
           <div className="flex items-center gap-3.5 min-w-0">
             <div className="relative shrink-0">
               <img 
-                src="/src/assets/images/driver_mandoub_icon_1792183192078.jpg" 
+                src="/driver-mandoub.jpg" 
                 alt="مناديب رحلة شواء" 
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = '/driver-icon.jpg';
+                }}
                 className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-amber-400/80 shadow-md"
               />
               <span className="absolute -bottom-1 -end-1 bg-amber-400 text-black text-[9px] font-black px-1.5 py-0.5 rounded-full border border-slate-900 whitespace-nowrap">

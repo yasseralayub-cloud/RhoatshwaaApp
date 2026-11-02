@@ -16,13 +16,15 @@ import { PromotionCountdown } from './components/PromotionCountdown';
 import { SandwichCustomizationModal, isSandwichItem, isFriesItem } from './components/SandwichCustomizationModal';
 import { getAppVersion } from './version';
 
+import { initializePushNotifications } from './utils/pushNotifications';
+import { playOrderChime } from './components/AudioAlert';
+
 // Code-split heavy sub-pages and secondary modals to drastically reduce initial bundle size and boost page speed
 const OrderTracker = lazy(() => import('./components/OrderTracker').then(m => ({ default: m.OrderTracker })));
 const AdminPanel = lazy(() => import('./components/AdminPanel').then(m => ({ default: m.AdminPanel })));
 const DriverPortal = lazy(() => import('./components/DriverPortal').then(m => ({ default: m.DriverPortal })));
 const MyAccount = lazy(() => import('./components/MyAccount').then(m => ({ default: m.MyAccount })));
 const ChatBot = lazy(() => import('./components/ChatBot').then(m => ({ default: m.ChatBot })));
-const WelcomePortalModal = lazy(() => import('./components/WelcomePortalModal').then(m => ({ default: m.WelcomePortalModal })));
 const PrivacyPolicyModal = lazy(() => import('./components/PrivacyPolicyModal').then(m => ({ default: m.PrivacyPolicyModal })));
 
 const TabLoadingFallback = () => (
@@ -68,9 +70,18 @@ function MenuAndOrdersApp() {
     type: 'cr' | 'tax' | 'sbc';
   } | null>(null);
 
-  // PWA & iOS install prompt detectors
+  // PWA, Privacy & iOS install prompt detectors
   useEffect(() => {
-    localStorage.setItem('rehla_privacy_accepted', 'true');
+    // Check mandatory privacy consent: Must be 'accepted' to proceed, otherwise open modal
+    const existingConsent = localStorage.getItem('rehla_privacy_consent_v1');
+    if (existingConsent !== 'accepted') {
+      setIsPrivacyOpen(true);
+    }
+
+    const handleOpenPrivacy = () => {
+      setIsPrivacyOpen(true);
+    };
+    window.addEventListener('open-privacy-policy', handleOpenPrivacy);
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -89,6 +100,7 @@ function MenuAndOrdersApp() {
     }
 
     return () => {
+      window.removeEventListener('open-privacy-policy', handleOpenPrivacy);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
@@ -114,10 +126,10 @@ function MenuAndOrdersApp() {
         setShowInstallBanner(false);
       } catch (err) {
         console.error("Error launching native PWA prompt:", err);
-        setIsWelcomeOpen(true);
       }
     } else {
-      setIsWelcomeOpen(true);
+      // Trigger native Capacitor push notifications or web notifications
+      initializePushNotifications();
     }
   };
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
@@ -136,11 +148,12 @@ function MenuAndOrdersApp() {
           } else {
             map.set(def.id, {
               ...existing,
-              category: def.category,
+              category: existing.category || def.category,
               nameAr: existing.nameAr || def.nameAr,
               name: existing.name || def.name,
               price: (typeof existing.price === 'number' && !isNaN(existing.price) && existing.price >= 0) ? existing.price : def.price,
-              image: existing.isCustomImage ? existing.image : def.image
+              image: (typeof existing.image === 'string' && existing.image.trim()) ? existing.image.trim() : def.image,
+              isCustomImage: Boolean(existing.image && existing.image !== def.image)
             });
           }
         });
@@ -313,6 +326,13 @@ function MenuAndOrdersApp() {
     };
     window.addEventListener('categories-updated', handleCategoryEvent);
 
+    const handleMenuEvent = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setMenuItems(e.detail);
+      }
+    };
+    window.addEventListener('menu-updated', handleMenuEvent);
+
     let unsub: (() => void) | null = null;
     try {
       unsub = onSnapshot(
@@ -353,6 +373,7 @@ function MenuAndOrdersApp() {
 
     return () => {
       window.removeEventListener('categories-updated', handleCategoryEvent);
+      window.removeEventListener('menu-updated', handleMenuEvent);
       if (unsub) unsub();
     };
   }, []);
@@ -548,12 +569,10 @@ function MenuAndOrdersApp() {
             return;
           }
 
-          const headerEl = document.querySelector('header');
-          const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 175;
-          const offset = headerHeight + 40;
-
           let activeId = categorySections[0].id;
-          for (const section of categorySections) {
+          const offset = 215; // default comfortable sticky header offset
+          for (let i = 0; i < categorySections.length; i++) {
+            const section = categorySections[i];
             const rect = section.element.getBoundingClientRect();
             if (rect.top <= offset) {
               activeId = section.id;
@@ -586,7 +605,6 @@ function MenuAndOrdersApp() {
     };
   }, [activeTab, allCategories]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [socialAlertMessage, setSocialAlertMessage] = useState<string | null>(null);
 
   const handleSocialClick = (e: React.MouseEvent, url?: string) => {
@@ -663,16 +681,18 @@ function MenuAndOrdersApp() {
                 structuralConflicts.push({ id: docId, issues, rawData: data });
               }
 
-              // Find matching default item to preserve original image links and data
+              // Find matching default item to preserve default details if missing
               const defaultItem = INITIAL_MENU_ITEMS.find((item) => item.id === docId);
 
               // Image Resolution Strategy:
-              // Strictly rely on defaultItem.image from INITIAL_MENU_ITEMS for pre-defined menu items,
-              // unless data.isCustomImage is true OR the item was newly created by the admin (!defaultItem).
-              let resolvedImage = defaultItem !== undefined ? defaultItem.image : String(data.image || '');
-              if (data.isCustomImage && data.image !== undefined) {
-                resolvedImage = String(data.image);
-              }
+              // Give absolute priority to the Firestore document's image (custom upload, DataURL, or link).
+              // Only fall back to defaultItem.image if Firestore has no image specified.
+              const firestoreImg = typeof data.image === 'string' && data.image.trim() ? data.image.trim() : '';
+              const resolvedImage = firestoreImg || defaultItem?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600';
+              const isCustom = Boolean(
+                data.isCustomImage || 
+                (firestoreImg && defaultItem ? firestoreImg !== defaultItem.image : Boolean(firestoreImg))
+              );
 
               // Precise mapping with strict document ID binding and type safe coercions
               const menuItem: MenuItem = {
@@ -690,7 +710,7 @@ function MenuAndOrdersApp() {
                 isPopular: data.isPopular !== undefined ? Boolean(data.isPopular) : Boolean(defaultItem?.isPopular),
                 isAvailable: data.isAvailable !== undefined ? Boolean(data.isAvailable) : (defaultItem?.isAvailable ?? true),
                 dineInOnly: data.dineInOnly !== undefined ? Boolean(data.dineInOnly) : Boolean(defaultItem?.dineInOnly),
-                isCustomImage: Boolean(data.isCustomImage),
+                isCustomImage: isCustom,
                 isAddonOnly: Boolean(data.isAddonOnly),
                 addons: Array.isArray(data.addons) ? data.addons : (defaultItem?.addons || []),
                 isMeal: data.isMeal !== undefined ? Boolean(data.isMeal) : Boolean(defaultItem?.isMeal || docId === 's3' || (data.nameAr && String(data.nameAr).includes('وجبة'))),
@@ -710,8 +730,19 @@ function MenuAndOrdersApp() {
             }
 
             setMenuItems(docs);
-            localStorage.setItem('simulated_menu', JSON.stringify(docs));
             setIsInitialMenuLoading(false);
+            try {
+              localStorage.setItem('simulated_menu', JSON.stringify(docs));
+            } catch (storageErr) {
+              console.warn('LocalStorage quota exceeded when storing menu; caching lightweight copy without large base64 data URLs:', storageErr);
+              try {
+                const lightweight = docs.map(d => ({
+                  ...d,
+                  image: (typeof d.image === 'string' && d.image.startsWith('data:')) ? '' : d.image
+                }));
+                localStorage.setItem('simulated_menu', JSON.stringify(lightweight));
+              } catch (e2) {}
+            }
           } else {
             console.log('Firestore menuItems collection is empty. Showing default items.');
             setIsInitialMenuLoading(false);
@@ -926,16 +957,22 @@ function MenuAndOrdersApp() {
     }
   }, [currentPath]);
 
-  // 1.95 Check if PWA installer / welcome wizard should show automatically on first visit
+  // Initialize official push notification permissions on app launch (POST_NOTIFICATIONS)
   useEffect(() => {
-    const hasSeenWelcome = localStorage.getItem('has_seen_welcome_wizard_rehlabbq_v2');
-    if (!hasSeenWelcome) {
-      const timer = setTimeout(() => {
-        setIsWelcomeOpen(true);
-      }, 1200); // Elegant delay for clean entrance and visual weight
-      localStorage.setItem('has_seen_welcome_wizard_rehlabbq_v2', 'true');
-      return () => clearTimeout(timer);
-    }
+    initializePushNotifications({
+      onNotificationReceived: (notification) => {
+        console.log('Push notification received in foreground:', notification);
+        playOrderChime();
+      },
+      onNotificationActionPerformed: (action) => {
+        console.log('Push notification action tapped:', action);
+        const orderId = action.notification.data?.orderId;
+        if (orderId) {
+          setActiveTab('tracker');
+          setLastPlacedOrderId(orderId);
+        }
+      }
+    });
   }, []);
 
   // 1.9 Parse Tap Payment URL Parameters on mount to verify and auto-track checkout receipts!
@@ -1256,34 +1293,98 @@ function MenuAndOrdersApp() {
     setIsCartOpen(true);
   };
 
-  // Filters catalog list matching both Arabic & English titles / descriptions plus keywords
-  const filteredMenuItems = menuItems.filter((item) => {
-    // Exclude redundant merged items from display, add-on only items, and standalone sauces
+  // Filters catalog list matching both Arabic & English titles / descriptions plus keywords (memoized for fast rendering)
+  const filteredMenuItems = useMemo(() => {
     const MERGED_IDS_TO_EXCLUDE = new Set([
       'g2', 'g8', 'g9', 'g4', 's5'
     ]);
-    if (
-      MERGED_IDS_TO_EXCLUDE.has(item.id) || 
-      item.isAddonOnly || 
-      item.category === 'sauces' || 
-      item.id.startsWith('sauce')
-    ) {
-      return false;
+    const cleanSearch = searchTerm.trim().toLowerCase();
+
+    return menuItems.filter((item) => {
+      if (
+        MERGED_IDS_TO_EXCLUDE.has(item.id) || 
+        item.isAddonOnly || 
+        item.category === 'sauces' || 
+        item.id.startsWith('sauce')
+      ) {
+        return false;
+      }
+
+      if (!cleanSearch) return true;
+      
+      return (
+        item.name.toLowerCase().includes(cleanSearch) ||
+        item.nameAr.includes(cleanSearch) ||
+        (item.description && item.description.toLowerCase().includes(cleanSearch)) ||
+        (item.descriptionAr && item.descriptionAr.includes(cleanSearch))
+      );
+    });
+  }, [menuItems, searchTerm]);
+
+  // Pre-calculate cart quantity map for O(1) instant badge lookups across all dishes
+  const cartQuantityMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < cart.length; i++) {
+      const c = cart[i];
+      map.set(c.item.id, (map.get(c.item.id) || 0) + c.quantity);
     }
+    return map;
+  }, [cart]);
 
-    // Filter by input search text
-    if (!searchTerm.trim()) return true;
-    const cleanSearch = searchTerm.toLowerCase();
-    
-    return (
-      item.name.toLowerCase().includes(cleanSearch) ||
-      item.nameAr.includes(cleanSearch) ||
-      (item.description && item.description.toLowerCase().includes(cleanSearch)) ||
-      (item.descriptionAr && item.descriptionAr.includes(cleanSearch))
-    );
-  });
+  // Pre-group and sort category dishes with useMemo to avoid repeated re-filtering during scroll or micro-renders
+  const categorizedItemsMap = useMemo(() => {
+    const map = new Map<string, MenuItem[]>();
 
-  const cartTotalItemsCount = cart.reduce((sum, c) => sum + c.quantity, 0);
+    allCategories.forEach((category) => {
+      const targetId = String(category.id).trim().toLowerCase();
+      const targetName = String(category.name || '').trim().toLowerCase();
+      const targetNameAr = String(category.nameAr || '').trim();
+      const rawTargetId = String(category.id).trim();
+
+      const categoryItems = filteredMenuItems.filter(item => {
+        if (!item.category) return false;
+        const itemCat = String(item.category).trim().toLowerCase();
+        const rawItemCat = String(item.category).trim();
+
+        return (
+          itemCat === targetId ||
+          itemCat === targetName ||
+          rawItemCat === targetNameAr ||
+          rawItemCat === rawTargetId
+        );
+      });
+
+      const sorted = [...categoryItems].sort((a, b) => {
+        if (a.isAvailable !== b.isAvailable) {
+          return a.isAvailable ? -1 : 1;
+        }
+        if (a.order !== undefined && b.order !== undefined && a.order !== b.order) {
+          return a.order - b.order;
+        }
+        if (a.order !== undefined && b.order === undefined) return -1;
+        if (a.order === undefined && b.order !== undefined) return 1;
+
+        if (a.isPopular && !b.isPopular) return -1;
+        if (!a.isPopular && b.isPopular) return 1;
+
+        const idxA = initialOrderMap.has(a.id) ? initialOrderMap.get(a.id)! : 999;
+        const idxB = initialOrderMap.has(b.id) ? initialOrderMap.get(b.id)! : 999;
+        return idxA - idxB;
+      });
+
+      map.set(category.id, sorted);
+    });
+
+    return map;
+  }, [allCategories, filteredMenuItems, initialOrderMap]);
+
+  const cartTotalItemsCount = useMemo(() => {
+    let sum = 0;
+    for (let i = 0; i < cart.length; i++) {
+      sum += cart[i].quantity;
+    }
+    return sum;
+  }, [cart]);
 
   // Check if we are on standalone sub-pages
   const isStandaloneDriver = currentPath === '/driver' || currentPath.startsWith('/driver/') || window.location.search.includes('driver=true') || window.location.search.includes('mode=driver');
@@ -1293,7 +1394,9 @@ function MenuAndOrdersApp() {
     return (
       <div className="min-h-screen bg-[#F9F9FB] text-dark select-none py-6 px-4">
         <div className="max-w-7xl mx-auto">
-          <DriverPortal businessSettings={businessSettings} />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <DriverPortal businessSettings={businessSettings} />
+          </Suspense>
         </div>
       </div>
     );
@@ -1303,17 +1406,19 @@ function MenuAndOrdersApp() {
     return (
       <div className="min-h-screen bg-[#F9F9FB] text-dark select-none py-2 md:py-6 px-1 md:px-4">
         <div className="max-w-full w-full mx-auto">
-          <AdminPanel 
-            onMenuUpdate={handleMenuUpdate} 
-            menuItems={menuItems} 
-            onPromoUpdate={handlePromoUpdate}
-            activePromo={activePromo}
-            businessSettings={businessSettings}
-            onSettingsUpdate={handleSettingsUpdate}
-            onHideAdminTab={() => {
-              window.location.href = '/';
-            }}
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <AdminPanel 
+              onMenuUpdate={handleMenuUpdate} 
+              menuItems={menuItems} 
+              onPromoUpdate={handlePromoUpdate}
+              activePromo={activePromo}
+              businessSettings={businessSettings}
+              onSettingsUpdate={handleSettingsUpdate}
+              onHideAdminTab={() => {
+                window.location.href = '/';
+              }}
+            />
+          </Suspense>
         </div>
       </div>
     );
@@ -1324,10 +1429,12 @@ function MenuAndOrdersApp() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 font-sans select-none text-start">
         <main className="max-w-4xl mx-auto p-2 sm:p-6">
-          <DriverPortal 
-            businessSettings={businessSettings} 
-            onExitToClient={() => setActiveTab('menu')}
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <DriverPortal 
+              businessSettings={businessSettings} 
+              onExitToClient={() => setActiveTab('menu')}
+            />
+          </Suspense>
         </main>
       </div>
     );
@@ -1412,46 +1519,10 @@ function MenuAndOrdersApp() {
                 </div>
               ) : (
                 allCategories.map((category) => {
-                  const categoryItems = filteredMenuItems.filter(item => {
-                    if (!item.category) return false;
-                    const itemCat = String(item.category).trim().toLowerCase();
-                    const targetId = String(category.id).trim().toLowerCase();
-                    const targetName = String(category.name || '').trim().toLowerCase();
-                    const targetNameAr = String(category.nameAr || '').trim();
-                    const rawItemCat = String(item.category).trim();
-
-                    return (
-                      itemCat === targetId ||
-                      itemCat === targetName ||
-                      rawItemCat === targetNameAr ||
-                      rawItemCat === String(category.id).trim()
-                    );
-                  });
+                  const sortedCategoryItems = categorizedItemsMap.get(category.id) || [];
 
                   // If user is searching and no items match in this category, skip to not clutter search
-                  if (searchTerm.trim() && categoryItems.length === 0) return null;
-
-                  // Sort items inside category: available first, custom manager order, popular/best-sellers, curated order preserved
-                  const sortedCategoryItems = [...categoryItems].sort((a, b) => {
-                    // 1. Available dishes first
-                    if (a.isAvailable !== b.isAvailable) {
-                      return a.isAvailable ? -1 : 1;
-                    }
-                    // 2. Explicit manager item order if set
-                    if (a.order !== undefined && b.order !== undefined && a.order !== b.order) {
-                      return a.order - b.order;
-                    }
-                    if (a.order !== undefined && b.order === undefined) return -1;
-                    if (a.order === undefined && b.order !== undefined) return 1;
-
-                    // 3. Best-sellers & popular dishes at the front
-                    if (a.isPopular && !b.isPopular) return -1;
-                    if (!a.isPopular && b.isPopular) return 1;
-                    // 4. Keep curated culinary order
-                    const idxA = initialOrderMap.has(a.id) ? initialOrderMap.get(a.id)! : 999;
-                    const idxB = initialOrderMap.has(b.id) ? initialOrderMap.get(b.id)! : 999;
-                    return idxA - idxB;
-                  });
+                  if (searchTerm.trim() && sortedCategoryItems.length === 0) return null;
 
                   const isTargetCategoryTransitioning = isCategoryTransitioning && selectedCategory === category.id;
                   const CategoryHeaderIcon = (Icons as any)[category.icon] || Flame;
@@ -1524,7 +1595,7 @@ function MenuAndOrdersApp() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                           <AnimatePresence mode="popLayout">
                             {sortedCategoryItems.map((item) => {
-                              const cartQty = cart.filter((c) => c.item.id === item.id).reduce((sum, c) => sum + c.quantity, 0);
+                              const cartQty = cartQuantityMap.get(item.id) || 0;
                               return (
                                 <MenuCard
                                   key={item.id}
@@ -1550,39 +1621,45 @@ function MenuAndOrdersApp() {
 
         {/* Tracker status panel */}
         {activeTab === 'tracker' && (
-          <OrderTracker 
-            initialOrderId={lastPlacedOrderId} 
-            businessSettings={businessSettings} 
-            onModifyOrder={handleModifyOrder}
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <OrderTracker 
+              initialOrderId={lastPlacedOrderId} 
+              businessSettings={businessSettings} 
+              onModifyOrder={handleModifyOrder}
+            />
+          </Suspense>
         )}
 
         {/* Admin administrative controllers */}
         {activeTab === 'admin' && (
-          <AdminPanel 
-            onMenuUpdate={handleMenuUpdate} 
-            menuItems={menuItems} 
-            onPromoUpdate={handlePromoUpdate}
-            activePromo={activePromo}
-            businessSettings={businessSettings}
-            onSettingsUpdate={handleSettingsUpdate}
-            onHideAdminTab={() => {
-              setShowAdminTab(false);
-              localStorage.removeItem('show_admin_tab');
-              setActiveTab('menu');
-            }}
-            categories={allCategories}
-            onSaveCategory={handleSaveCategory}
-            onDeleteCategory={handleDeleteCategory}
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <AdminPanel 
+              onMenuUpdate={handleMenuUpdate} 
+              menuItems={menuItems} 
+              onPromoUpdate={handlePromoUpdate}
+              activePromo={activePromo}
+              businessSettings={businessSettings}
+              onSettingsUpdate={handleSettingsUpdate}
+              onHideAdminTab={() => {
+                setShowAdminTab(false);
+                localStorage.removeItem('show_admin_tab');
+                setActiveTab('menu');
+              }}
+              categories={allCategories}
+              onSaveCategory={handleSaveCategory}
+              onDeleteCategory={handleDeleteCategory}
+            />
+          </Suspense>
         )}
 
         {/* Customer Account & Addresses portal */}
         {activeTab === 'account' && (
-          <MyAccount 
-            onReorder={handleReorder} 
-            activePromo={activePromo} 
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <MyAccount 
+              onReorder={handleReorder} 
+              activePromo={activePromo} 
+            />
+          </Suspense>
         )}
 
       </main>
@@ -1735,13 +1812,6 @@ function MenuAndOrdersApp() {
         </div>
       </footer>
 
-      {/* Welcome & PWA Onboarding Modal Wizard */}
-      <WelcomePortalModal 
-        isOpen={isWelcomeOpen} 
-        onClose={() => setIsWelcomeOpen(false)} 
-        businessSettings={businessSettings}
-      />
-
       {/* Sandwich Customization Options Sheet Modal */}
       <SandwichCustomizationModal
         isOpen={!!customizingItem}
@@ -1752,15 +1822,22 @@ function MenuAndOrdersApp() {
       />
 
       {/* Mandatory Privacy Policy & Terms Modal */}
-      <PrivacyPolicyModal
-        isOpen={isPrivacyOpen}
-        gracePeriod={businessSettings?.gracePeriod}
-        onAccept={() => {
-          localStorage.setItem('rehla_privacy_accepted', 'true');
-          setIsPrivacyOpen(false);
-        }}
-        onClose={() => setIsPrivacyOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <PrivacyPolicyModal
+          isOpen={isPrivacyOpen}
+          isMandatory={localStorage.getItem('rehla_privacy_consent_v1') !== 'accepted'}
+          gracePeriod={businessSettings?.gracePeriod}
+          onAccept={() => {
+            localStorage.setItem('rehla_privacy_consent_v1', 'accepted');
+            setIsPrivacyOpen(false);
+          }}
+          onClose={() => {
+            if (localStorage.getItem('rehla_privacy_consent_v1') === 'accepted') {
+              setIsPrivacyOpen(false);
+            }
+          }}
+        />
+      </Suspense>
 
       {/* Official Certificate Lightbox Modal */}
       {activeCertificateModal && (
@@ -1936,7 +2013,9 @@ function MenuAndOrdersApp() {
 
       {/* Interactive ChatBot Smart Assistant */}
       {activeTab === 'menu' && !isCartOpen && !customizingItem && (
-        <ChatBot menuItems={menuItems} businessSettings={businessSettings} language={language} />
+        <Suspense fallback={null}>
+          <ChatBot menuItems={menuItems} businessSettings={businessSettings} language={language} />
+        </Suspense>
       )}
 
       {/* Social Media Link Alert Toast */}

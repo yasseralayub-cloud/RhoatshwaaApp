@@ -31,11 +31,12 @@ export const ZatcaFatooraCard: React.FC<ZatcaFatooraCardProps> = ({
       const totalAmount = order.total.toFixed(2);
       const vatAmount = order.tax.toFixed(2);
 
-      const qrRawData = generateZatcaQr(sellerName, vatNumber, timestamp, totalAmount, vatAmount);
+      const qrRawData = generateZatcaQr(sellerName, vatNumber, timestamp, totalAmount, vatAmount, order.id, businessSettings.zatcaQrPhase || 'phase2');
       
       QRCode.toDataURL(qrRawData, {
-        width: 180,
+        width: 200,
         margin: 1,
+        errorCorrectionLevel: 'M',
         color: {
           dark: '#0f172a', // Slate 900
           light: '#ffffff', // White
@@ -79,8 +80,8 @@ export const ZatcaFatooraCard: React.FC<ZatcaFatooraCardProps> = ({
             </h4>
             <p className="text-[10px] text-emerald-700 font-medium mt-0.5">
               {isAr 
-                ? 'متوافقة مع متطلبات هيئة الزكاة والضريبة والجمارك' 
-                : 'Compliant with Saudi ZATCA Phase 1 Specifications'}
+                ? 'متوافقة مع متطلبات هيئة الزكاة والضريبة والجمارك (المرحلة الثانية - الربط والتكامل)' 
+                : 'Compliant with Saudi ZATCA Phase 2 Specifications'}
             </p>
           </div>
         </div>

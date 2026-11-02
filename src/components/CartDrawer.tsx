@@ -50,6 +50,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [longitude, setLongitude] = useState<number | undefined>(undefined);
   const [locating, setLocating] = useState(false);
   const [locSuccess, setLocSuccess] = useState(false);
+  const [locError, setLocError] = useState<string | null>(null);
 
   // User Profile state for auto-populating saved data
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -469,6 +470,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const handleGetLocation = () => {
     setLocating(true);
     setLocSuccess(false);
+    setLocError(null);
 
     getHighAccuracyLocation(
       (result) => {
@@ -478,6 +480,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         setLongitude(lng);
         setLocating(false);
         setLocSuccess(true);
+        setLocError(null);
         
         const mapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
         const fallbackAddress = language === 'ar' ? `الموقع المحدد: ${mapsLink}` : `Selected Location: ${mapsLink}`;
@@ -502,15 +505,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       (error: any) => {
         console.warn("High accuracy GPS error:", error);
         setLocating(false);
-        if (error.code === 1) { // PERMISSION_DENIED
-          alert(language === 'ar' 
-            ? 'يرجى تفعيل خدمات الموقع وسماح المتصفح بالوصول لموقعك للحصول على الدقة العالية.'
-            : 'Please enable location permissions in browser settings for accurate positioning.');
-        } else {
-          alert(language === 'ar' 
-            ? 'تعذر جلب الموقع بدقة تلقائياً. يمكنك اختيار الموقع يدوياً عبر الخريطة بالأسفل.' 
-            : 'Unable to pinpoint position. Please pick your address on the map below.');
-        }
+        const errMsg = language === 'ar' 
+          ? (error?.messageAr || 'تعذر تحديد موقعك بدقة. يرجى التأكد من تشغيل الـ GPS ومنح الإذن أو اختيار موقعك من الخريطة.') 
+          : (error?.messageEn || 'Unable to determine your accurate location. Please ensure GPS is active or pick from map.');
+        setLocError(errMsg);
       }
     );
   };
@@ -1011,10 +1009,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <div key={c.id || item.id} className="flex gap-3 py-2 text-start flex-col sm:flex-row">
                       <div className="flex gap-3 flex-1">
                         <img
-                          src={item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600'}
+                          src={item.image || '/pwa-icon.jpg'}
                           alt={language === 'ar' ? item.nameAr : item.name}
                           className="w-16 h-16 rounded-xl object-cover border border-black/5 bg-white shadow-xs shrink-0 self-start"
                           referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = '/pwa-icon.jpg';
+                          }}
                         />
                         <div className="flex-1 flex flex-col justify-between">
                           <div>
@@ -1551,6 +1553,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                             : (language === 'ar' ? 'تحديد موقعي الحالي 📍' : 'Determine my current location 📍')}
                         </span>
                       </button>
+
+                      {locError && (
+                        <div className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-start flex items-start gap-2">
+                          <span className="shrink-0 text-sm">📍</span>
+                          <span className="flex-1">{locError}</span>
+                          <button
+                            type="button"
+                            onClick={() => setLocError(null)}
+                            className="text-stone-400 hover:text-stone-700 text-xs font-bold px-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
 
                       {/* GPS coordinates & Google Maps link finder */}
                       <div className="pt-2">

@@ -21,7 +21,7 @@ interface HeaderProps {
   onSelectCategory?: (id: string) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+export const Header = React.memo<HeaderProps>(({
   cartCount,
   onCartClick,
   searchTerm,
@@ -234,4 +234,4 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
     </header>
   );
-};
+});

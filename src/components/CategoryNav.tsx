@@ -11,7 +11,7 @@ interface CategoryNavProps {
   onSelectCategory: (id: string) => void;
 }
 
-export const CategoryNav: React.FC<CategoryNavProps> = ({
+export const CategoryNav = React.memo<CategoryNavProps>(({
   categories,
   selectedCategory,
   onSelectCategory
@@ -21,20 +21,20 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  const checkScroll = () => {
+  const checkScroll = React.useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const scrollLeft = Math.abs(el.scrollLeft);
     const maxScroll = el.scrollWidth - el.clientWidth;
     setCanScrollLeft(scrollLeft > 5);
     setCanScrollRight(scrollLeft < maxScroll - 5);
-  };
+  }, []);
 
   useEffect(() => {
     checkScroll();
-    window.addEventListener('resize', checkScroll);
+    window.addEventListener('resize', checkScroll, { passive: true });
     return () => window.removeEventListener('resize', checkScroll);
-  }, [categories, language]);
+  }, [checkScroll, categories, language]);
 
   const handleScroll = (direction: 'left' | 'right') => {
     if (!scrollContainerRef.current) return;
@@ -144,4 +144,4 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
       )}
     </div>
   );
-};
+});

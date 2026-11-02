@@ -38,6 +38,7 @@ export default function MapPicker({ latitude, longitude, onChange, onAddressSele
   const [locating, setLocating] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [tileLayerType, setTileLayerType] = useState<'standard' | 'satellite' | 'terrain'>('standard');
+  const [locationNotice, setLocationNotice] = useState<{ type: 'error' | 'warning' | 'info'; message: string } | null>(null);
 
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -459,6 +460,7 @@ export default function MapPicker({ latitude, longitude, onChange, onAddressSele
 
   const handleLocateMe = () => {
     setLocating(true);
+    setLocationNotice(null);
 
     getHighAccuracyLocation(
       (result) => {
@@ -467,23 +469,23 @@ export default function MapPicker({ latitude, longitude, onChange, onAddressSele
         onChange(result.latitude, result.longitude);
         fetchAddress(result.latitude, result.longitude);
         setLocating(false);
-      },
-      (error: any) => {
-        console.warn('High accuracy geolocation error:', error);
-        setLocating(false);
-        if (error.code === 1) { // PERMISSION_DENIED
-          alert(
-            language === 'ar'
-              ? 'تنبيه: يرجى تفعيل إذونات الموقع في إعدادات متصفحك للوصول لموقعك بدقة، أو ابحث باسم الحي يدوياً.'
-              : 'For iPhone & iOS users: Please enable location permissions in browser settings, or search manually.'
-          );
-        } else {
-          alert(
-            language === 'ar'
-              ? 'تعذر تحديد موقعك بدقة تلقائياً. يرجى البحث بكتابة اسم الحي في خانة البحث بالأعلى، أو تحريك الخريطة لتحديد المنزل.'
-              : 'Unable to locate you accurately. Please type neighborhood name or drag the map pin.'
-          );
+
+        if (result.isApproximate) {
+          setLocationNotice({
+            type: 'info',
+            message: language === 'ar'
+              ? 'تم استلام موقع تقريبي. يمكنك تحريك الدبوس على الخريطة لتثبيت الموقع الدقيق لمنزلك.'
+              : 'Approximate location detected. You can drag the map pin to refine your address.'
+          });
         }
+      },
+      (error) => {
+        console.warn('Geolocation error:', error);
+        setLocating(false);
+        setLocationNotice({
+          type: error.code === 'PERMISSION_DENIED' ? 'warning' : 'error',
+          message: language === 'ar' ? error.messageAr : error.messageEn
+        });
       }
     );
   };
@@ -663,6 +665,30 @@ export default function MapPicker({ latitude, longitude, onChange, onAddressSele
         )}
         <span>{language === 'ar' ? 'تحديد موقعي الفعلي بشكل دقيق' : 'Locate My Precise Position'}</span>
       </button>
+
+      {locationNotice && (
+        <div
+          className={`p-3 rounded-xl text-xs font-bold leading-relaxed border flex items-start gap-2 transition-all ${
+            locationNotice.type === 'error'
+              ? 'bg-red-50 text-red-800 border-red-200'
+              : locationNotice.type === 'warning'
+              ? 'bg-amber-50 text-amber-900 border-amber-200'
+              : 'bg-blue-50 text-blue-800 border-blue-200'
+          }`}
+        >
+          <span className="shrink-0 text-base leading-none">
+            {locationNotice.type === 'error' ? '⚠️' : locationNotice.type === 'warning' ? '📍' : 'ℹ️'}
+          </span>
+          <div className="flex-1">{locationNotice.message}</div>
+          <button
+            type="button"
+            onClick={() => setLocationNotice(null)}
+            className="text-stone-400 hover:text-stone-700 font-bold px-1 text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Actual Interactive Map Container */}
       <div className="relative">

@@ -13,6 +13,7 @@ interface OrderTrackerProps {
 }
 
 import { generateZatcaQr } from '../utils/time';
+import QRCode from 'qrcode';
 import { ZatcaFatooraCard } from './ZatcaFatooraCard';
 import { normalizePhone, phonesMatch, getPhoneVariants } from '../utils/phone';
 import InteractiveOrderMap from './InteractiveOrderMap';
@@ -62,13 +63,142 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const printAreaRef = useRef<HTMLDivElement>(null);
+  const [zatcaQrDataUrl, setZatcaQrDataUrl] = useState<string>('');
 
-  // Directly trigger print system for thermal receipt printer layout
+
+  // Clean, instantaneous isolated thermal receipt printer (Zero delay, Zero blank pages)
+  const executeCleanReceiptPrint = () => {
+    const el = document.getElementById('recept-print-area') || printAreaRef.current;
+    if (!el) {
+      window.print();
+      return;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      window.print();
+      return;
+    }
+
+    const isAr = language === 'ar';
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html dir="${isAr ? 'rtl' : 'ltr'}" lang="${language}">
+      <head>
+        <meta charset="utf-8">
+        <title>${isAr ? 'فاتورة إلكترونية - ' + (order?.id || '') : 'E-Invoice - ' + (order?.id || '')}</title>
+        <style>
+          @page {
+            size: 80mm auto;
+            margin: 2mm 3mm;
+          }
+          * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Arabic", "Inter", sans-serif;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #000000;
+            background: #ffffff;
+            width: 76mm;
+            max-width: 76mm;
+            margin: 0 auto;
+            padding: 2mm;
+            direction: ${isAr ? 'rtl' : 'ltr'};
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+            display: inline-block;
+          }
+          .text-center { text-align: center; }
+          .flex { display: flex; }
+          .flex-col { flex-direction: column; }
+          .justify-between { justify-content: space-between; }
+          .justify-center { justify-content: center; }
+          .items-center { align-items: center; }
+          .font-bold { font-weight: 700; }
+          .font-black, .font-extrabold { font-weight: 900; }
+          .font-mono { font-family: monospace, monospace; }
+          .border-b { border-bottom: 1px dashed #333333; }
+          .border-t { border-top: 1px dashed #333333; }
+          .pb-2 { padding-bottom: 5px; }
+          .pb-3 { padding-bottom: 8px; }
+          .pb-4 { padding-bottom: 10px; }
+          .pb-5 { padding-bottom: 12px; }
+          .pt-1 { padding-top: 3px; }
+          .pt-2 { padding-top: 5px; }
+          .pt-3 { padding-top: 8px; }
+          .py-1 { padding-top: 3px; padding-bottom: 3px; }
+          .py-3 { padding-top: 8px; padding-bottom: 8px; }
+          .mt-1 { margin-top: 3px; }
+          .mt-2 { margin-top: 6px; }
+          .mt-3 { margin-top: 8px; }
+          .mt-4 { margin-top: 10px; }
+          .space-y-1 > * + * { margin-top: 3px; }
+          .space-y-2 > * + * { margin-top: 5px; }
+          .space-y-3 > * + * { margin-top: 8px; }
+          .space-y-6 > * + * { margin-top: 14px; }
+          .text-xs { font-size: 11px; }
+          .text-sm { font-size: 12px; }
+          .text-xl { font-size: 15px; }
+          .text-2xl { font-size: 17px; }
+          .text-[10px], .text-[11px], .text-[9px] { font-size: 10px; }
+          .rounded-full { border-radius: 9999px; }
+          .rounded-xl { border-radius: 8px; }
+          .mx-auto { margin-left: auto; margin-right: auto; }
+          .w-20 { width: 45px; }
+          .h-20 { height: 45px; }
+          .w-28 { width: 115px; }
+          .h-28 { height: 115px; }
+          .w-full { width: 100%; }
+        </style>
+      </head>
+      <body>
+        ${el.innerHTML}
+      </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (err) {
+        window.print();
+      } finally {
+        setTimeout(() => {
+          try {
+            document.body.removeChild(iframe);
+          } catch (e) {}
+        }, 1500);
+      }
+    }, 120);
+  };
+
+  // Directly trigger instant clean thermal receipt print
   const handleDirectPrint = () => {
     setIsInvoiceOpen(true);
     setTimeout(() => {
-      window.print();
-    }, 250);
+      executeCleanReceiptPrint();
+    }, 150);
   };
 
   // States & Refs for Visual Toast Notifications
@@ -468,6 +598,38 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
     );
     return () => unsub();
   }, [passedSettings]);
+
+  // Generate ZATCA Phase 2 QR code locally with zero external network requests
+  useEffect(() => {
+    if (!order || !businessSettings?.taxEnabled) return;
+    try {
+      const qrData = generateZatcaQr(
+        businessSettings.restaurantNameAr || 'رحلة شواء',
+        businessSettings.vatNumber || '310123456700003',
+        new Date(order.createdAt).toISOString(),
+        order.total.toFixed(2),
+        order.tax.toFixed(2),
+        order.id,
+        businessSettings.zatcaQrPhase || 'phase2'
+      );
+
+      QRCode.toDataURL(qrData, {
+        width: 200,
+        margin: 1,
+        errorCorrectionLevel: 'M',
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
+        }
+      }).then(url => {
+        setZatcaQrDataUrl(url);
+      }).catch(err => {
+        console.warn('QR code generation error:', err);
+      });
+    } catch (e) {
+      console.warn('ZATCA Phase 2 QR generation error:', e);
+    }
+  }, [order, businessSettings]);
 
   // Subscribe to the customer's active/ongoing orders
   useEffect(() => {
@@ -1342,11 +1504,31 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
               
               {/* Receipt Header */}
               <div className="text-center space-y-2 border-b border-dashed border-black/10 pb-5 print:border-black/30">
-                <div className="w-20 h-20 rounded-full bg-yellow/15 flex items-center justify-center font-bold text-dark text-2xl mx-auto shadow-sm overflow-hidden border border-yellow/20 print-large-logo">
+                <div 
+                  className="rounded-full bg-yellow/15 flex items-center justify-center font-bold text-dark mx-auto shadow-sm overflow-hidden border border-yellow/20 print-large-logo"
+                  style={{
+                    width: `${businessSettings?.receiptLogoSize || 75}px`,
+                    height: `${businessSettings?.receiptLogoSize || 75}px`
+                  }}
+                >
                   {businessSettings?.logoUrl ? (
-                    <img src={businessSettings.logoUrl} alt="Logo" className="w-[100%] h-[100%] object-cover animate-fade-in print:w-[100%] print:h-[100%]" />
+                    <img 
+                      src={businessSettings.logoUrl} 
+                      alt="Logo" 
+                      className="w-full h-full object-cover animate-fade-in"
+                      style={{
+                        imageRendering: businessSettings?.receiptLogoQuality === 'crisp' ? 'crisp-edges' : 'auto',
+                        filter: businessSettings?.receiptLogoQuality === 'monochrome' 
+                          ? 'grayscale(100%) contrast(160%)' 
+                          : businessSettings?.receiptLogoQuality === 'crisp' 
+                          ? 'contrast(1.25) brightness(1.02)' 
+                          : 'none'
+                      }}
+                    />
                   ) : (
-                    <span>{language === 'ar' ? businessSettings.restaurantNameAr.charAt(0) : businessSettings.restaurantNameEn.charAt(0)}</span>
+                    <span style={{ fontSize: `${(businessSettings?.receiptLogoSize || 75) * 0.4}px` }}>
+                      {language === 'ar' ? businessSettings?.restaurantNameAr?.charAt(0) : businessSettings?.restaurantNameEn?.charAt(0)}
+                    </span>
                   )}
                 </div>
                 
@@ -1525,48 +1707,47 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({
 
               {/* QR and Compliance Block */}
               {businessSettings.taxEnabled && (
-                <div className="flex flex-col items-center justify-center pt-2 text-center space-y-2 print:break-inside-avoid">
-                  <div className="bg-white p-2 inline-block rounded-xl border border-black/5">
-                    {/* Real Cryptographic TLV QR code */}
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
-                        generateZatcaQr(
-                          businessSettings.restaurantNameAr || 'رحلة شواء',
-                          businessSettings.vatNumber || '310123456700003',
-                          new Date(order.createdAt).toISOString(),
-                          order.total.toFixed(2),
-                          order.tax.toFixed(2)
-                        )
-                      )}`}
-                      alt="ZATCA VAT QR Code"
-                      referrerPolicy="no-referrer"
-                      className="w-28 h-28 mx-auto"
-                    />
+                <div className="flex flex-col items-center justify-center pt-2 text-center print:break-inside-avoid">
+                  <div className="bg-white p-1.5 inline-block rounded-xl border border-black/10">
+                    {/* ZATCA Phase 2 Cryptographic TLV QR code */}
+                    {zatcaQrDataUrl ? (
+                      <img
+                        src={zatcaQrDataUrl}
+                        alt="ZATCA Phase 2 QR Code"
+                        className="mx-auto block"
+                        style={{
+                          width: `${businessSettings?.receiptQrSize || 110}px`,
+                          height: `${businessSettings?.receiptQrSize || 110}px`,
+                          imageRendering: 'pixelated'
+                        }}
+                      />
+                    ) : (
+                      <div 
+                        className="flex items-center justify-center bg-slate-50 text-slate-400"
+                        style={{
+                          width: `${businessSettings?.receiptQrSize || 110}px`,
+                          height: `${businessSettings?.receiptQrSize || 110}px`
+                        }}
+                      >
+                        <QrCode className="w-8 h-8 animate-pulse" />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
-
-              {/* Receipt Footer Message */}
-              <div className="text-center pt-3 border-t border-dashed border-black/10 print:border-black/30 mt-4">
-                <p className="font-serif italic font-bold text-xs text-dark/70 print:text-black">
-                  {language === 'ar' ? 'طعمنا غير...........وجودتنا تميزنا' : 'Our taste is unique...........Our quality is our signature'}
-                </p>
-                <p className="text-[9px] text-dark/40 font-mono mt-1">
-                  {language === 'ar' ? 'شكراً لزيارتكم ونتمنى لكم وجبة هنيئة! ❤️' : 'Thank you for your visit, enjoy your meal! ❤️'}
-                </p>
-              </div>
 
             </div>
 
             {/* Modal Bottom Actions Row (Hidden in Print) */}
             <div className="p-4 bg-neutral-50 border-t border-black/5 flex print:hidden">
               <button
+                id="modal-print-receipt-btn"
                 type="button"
-                onClick={() => window.print()}
-                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-zinc-100 hover:bg-zinc-200 text-dark rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all border border-black/5"
+                onClick={executeCleanReceiptPrint}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs md:text-sm cursor-pointer transition-all shadow-xs"
               >
-                <Printer className="w-4 h-4 text-dark" />
-                <span>{language === 'ar' ? 'طباعة / حفظ PDF' : 'Print / Save PDF'}</span>
+                <Printer className="w-4 h-4 text-white" />
+                <span>{language === 'ar' ? 'طباعة الفاتورة الفورية (إيصال حراري)' : 'Print Instant Receipt'}</span>
               </button>
             </div>
 
