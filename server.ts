@@ -1366,16 +1366,49 @@ try {
         .where("customerUid", "==", customerUid)
         .get();
 
+      const statusArabic: Record<string, string> = {
+        pending: "قيد الانتظار",
+        confirmed: "تم تأكيد الطلب",
+        preparing: "قيد التحضير",
+        ready: "الطلب جاهز",
+        out_for_delivery: "خرج الطلب للتوصيل",
+        delivering: "جاري توصيل الطلب",
+        delivered: "تم توصيل الطلب",
+        completed: "اكتمل الطلب",
+        cancelled: "تم إلغاء الطلب",
+        rejected: "تم رفض الطلب"
+      };
+
+      const statusEnglish: Record<string, string> = {
+        pending: "Pending",
+        confirmed: "Confirmed",
+        preparing: "Preparing",
+        ready: "Ready",
+        out_for_delivery: "Out for delivery",
+        delivering: "Delivering",
+        delivered: "Delivered",
+        completed: "Completed",
+        cancelled: "Cancelled",
+        rejected: "Rejected"
+      };
+
+      const translatedStatusAr = statusArabic[status] || status;
+      const translatedStatusEn = statusEnglish[status] || status;
+
       const result = await sendPushToDeviceDocs(
         devicesSnapshot.docs,
         {
-          title: "Order update",
-          body: `Your order status has changed: ${status}`
+          title: "تحديث حالة طلبك",
+          body: `تم تحديث حالة طلبك إلى: ${translatedStatusAr}`
         },
         {
           type: "order_status",
           orderId,
-          status
+          status,
+          titleAr: "تحديث حالة طلبك",
+          bodyAr: `تم تحديث حالة طلبك إلى: ${translatedStatusAr}`,
+          titleEn: "Order update",
+          bodyEn: `Your order status has changed: ${translatedStatusEn}`
         }
       );
 
