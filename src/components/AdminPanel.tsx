@@ -91,6 +91,7 @@ import {
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import { PromotionCountdown } from './PromotionCountdown';
+import { sendAdminPushNotification } from '../utils/pushNotifications';
 
 interface AdminPanelProps {
   onMenuUpdate: (newMenu: MenuItem[]) => void;
@@ -1613,6 +1614,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (isAdmin) {
       try {
         await updateDoc(doc(db, 'orders', orderId), { status: nextStatus });
+
+try {
+  const adminUser = auth.currentUser;
+  if (!adminUser) {
+    throw new Error('Admin Firebase user is not authenticated');
+  }
+
+  const adminToken = await adminUser.getIdToken();
+
+  await sendAdminPushNotification(
+    adminToken,
+    'notify-order-status',
+    { orderId }
+  );
+
+  console.log('[PUSH] Order status notification sent:', orderId);
+} catch (pushError) {
+  console.error('[PUSH] Order status notification failed:', pushError);
+}
       } catch (err) {
         console.error("Failed to commit order status, rolling back:", err);
         setOrders(originalOrders);
