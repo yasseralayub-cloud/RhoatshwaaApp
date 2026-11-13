@@ -1367,6 +1367,7 @@ try {
         .get();
 
       const statusArabic: Record<string, string> = {
+        received: "تم استلام الطلب",
         pending: "قيد الانتظار",
         confirmed: "تم تأكيد الطلب",
         preparing: "قيد التحضير",
