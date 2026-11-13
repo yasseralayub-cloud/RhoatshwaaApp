@@ -1,47 +1,108 @@
-import dotenv from "dotenv";
-dotenv.config();
-
+﻿import dotenv from "dotenv";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getMessaging } from "firebase-admin/messaging";
+import { getFirestore } from "firebase-admin/firestore";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dns from "dns";
 import { GoogleGenAI } from "@google/genai";
 
-dns.setDefaultResultOrder("ipv4first"); // Accelerate local name resolutions
+dotenv.config();
+
+// Firebase Admin initialization for secure server-side FCM
+const firebaseAdminApp = (() => {
+  const existingApp = getApps()[0];
+  if (existingApp) return existingApp;
+
+  const encodedServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+  if (!encodedServiceAccount) return null;
+
+  try {
+    const serviceAccountJson = Buffer
+      .from(encodedServiceAccount, "base64")
+      .toString("utf8");
+
+    const serviceAccount = JSON.parse(serviceAccountJson);
+
+    return initializeApp({
+      credential: cert(serviceAccount),
+    });
+  } catch {
+    throw new Error("Firebase Admin initialization failed. Check server credentials.");
+  }
+})();
+
+const firebaseAdminAuth = firebaseAdminApp
+  ? getAuth(firebaseAdminApp)
+  : null;
+
+const firebaseAdminMessaging = firebaseAdminApp
+  ? getMessaging(firebaseAdminApp)
+  : null;
+const firebaseAdminDb = firebaseAdminApp
+  ? getFirestore(firebaseAdminApp, "ai-studio-9e243b44-104d-44d1-bf9e-c7d522d5b155")
+  : null;
+dns.setDefaultResultOrder("ipv4first");
 
 // Extremely fast and reliable local address parser to format both Google Maps and Nominatim addresses,
 // completely bypassing Gemini for reverse geocoding to prevent any 429 quota/rate limit errors.
 function cleanAddressLocal(raw: string): string {
-  if (!raw) return "موقع مجهول";
+  if (!raw) return "ظ…ظˆظ‚ط¹ ظ…ط¬ظ‡ظˆظ„";
   
   // Remove 5-digit postal codes from anywhere in the string
   let cleaned = raw.replace(/\b\d{5}\b/g, "").trim();
   
   // Split by standard or Arabic comma
-  const parts = cleaned.split(/[،,]/).map(p => p.trim()).filter(Boolean);
+  const parts = cleaned.split(/[طŒ,]/).map(p => p.trim()).filter(Boolean);
   
   // Filter out redundant country and general elements
   const cleanedParts = parts.filter(part => {
     const lowerPart = part.toLowerCase();
-    const isCountry = /^(السعودية|المملكة العربية السعودية|Saudi Arabia|KSA)$/i.test(part);
+    const isCountry = /^(ط§ظ„ط³ط¹ظˆط¯ظٹط©|ط§ظ„ظ…ظ…ظ„ظƒط© ط§ظ„ط¹ط±ط¨ظٹط© ط§ظ„ط³ط¹ظˆط¯ظٹط©|Saudi Arabia|KSA)$/i.test(part);
     const isPostalCode = /^\d{5}$/.test(part);
     const isShortPostal = /^\d{4}$/.test(part);
-    const isRedundantAlQassim = lowerPart === "منطقة القصيم" && parts.some(p => p.includes("عيون الجواء"));
+    const isRedundantAlQassim = lowerPart === "ظ…ظ†ط·ظ‚ط© ط§ظ„ظ‚طµظٹظ…" && parts.some(p => p.includes("ط¹ظٹظˆظ† ط§ظ„ط¬ظˆط§ط،"));
     
     return !isCountry && !isPostalCode && !isShortPostal && !isRedundantAlQassim && part.length > 0;
   });
 
-  let result = cleanedParts.join("، ");
+  let result = cleanedParts.join("طŒ ");
   
   // Clean up any double commas or spaces
-  result = result.replace(/\s+/g, " ").replace(/،\s*،/g, "،").trim();
-  if (result.startsWith("،")) result = result.slice(1).trim();
-  if (result.endsWith("،")) result = result.slice(0, -1).trim();
+  result = result.replace(/\s+/g, " ").replace(/طŒ\s*طŒ/g, "طŒ").trim();
+  if (result.startsWith("طŒ")) result = result.slice(1).trim();
+  if (result.endsWith("طŒ")) result = result.slice(0, -1).trim();
   
-  return result || "موقع مجهول";
+  return result || "ظ…ظˆظ‚ط¹ ظ…ط¬ظ‡ظˆظ„";
 }
 
 const app = express();
+// CORS configuration for Android Capacitor and web app
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  const allowedOrigins = [
+    'https://localhost',
+    'capacitor://localhost',
+    'http://localhost',
+    'https://rhoatshwaa-app.vercel.app'
+  ];
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
 const PORT = 3000;
 
 // Accept and parse body payloads with high limit for driver photo/document uploads
@@ -352,40 +413,40 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
       // Format elegant, beautiful order message for real-time delivery notification
       const itemsList = order.items.map((it: any) => {
-        return `• *${it.nameAr || it.name}*\n   العدد: ${it.quantity} | السعر: ${it.price.toFixed(1)} ريال`;
+        return `â€¢ *${it.nameAr || it.name}*\n   ط§ظ„ط¹ط¯ط¯: ${it.quantity} | ط§ظ„ط³ط¹ط±: ${it.price.toFixed(1)} ط±ظٹط§ظ„`;
       }).join('\n\n');
 
       const orderType = order.tableOrDelivery === 'table' 
-        ? `🍽️ طلب محلي (داخل الصالة)` 
-        : `🛍️ طلب سفري (خارج المطعم)`;
+        ? `ًںچ½ï¸ڈ ط·ظ„ط¨ ظ…ط­ظ„ظٹ (ط¯ط§ط®ظ„ ط§ظ„طµط§ظ„ط©)` 
+        : `ًں›چï¸ڈ ط·ظ„ط¨ ط³ظپط±ظٹ (ط®ط§ط±ط¬ ط§ظ„ظ…ط·ط¹ظ…)`;
 
       const notesText = order.notes 
-        ? `📝 *ملاحظات الطلب:* ${order.notes}\n` 
+        ? `ًں“‌ *ظ…ظ„ط§ط­ط¸ط§طھ ط§ظ„ط·ظ„ط¨:* ${order.notes}\n` 
         : '';
 
       const payMethod = order.paymentMethod === 'cod' 
-        ? '💵 الدفع عند الاستلام (كاش)' 
+        ? 'ًں’µ ط§ظ„ط¯ظپط¹ ط¹ظ†ط¯ ط§ظ„ط§ط³طھظ„ط§ظ… (ظƒط§ط´)' 
         : order.paymentMethod === 'applepay' 
-          ? '🍎 آبل باي (مدفوع إلكتروني)' 
-          : '💳 مدى / بطاقة بنكية (مدفوع إلكتروني)';
+          ? 'ًںچژ ط¢ط¨ظ„ ط¨ط§ظٹ (ظ…ط¯ظپظˆط¹ ط¥ظ„ظƒطھط±ظˆظ†ظٹ)' 
+          : 'ًں’³ ظ…ط¯ظ‰ / ط¨ط·ط§ظ‚ط© ط¨ظ†ظƒظٹط© (ظ…ط¯ظپظˆط¹ ط¥ظ„ظƒطھط±ظˆظ†ظٹ)';
 
       const promoText = order.promoDiscount && order.promoDiscount > 0 
-        ? `*خصم الكوبون:* -${order.promoDiscount.toFixed(2)} ريال\n` 
+        ? `*ط®طµظ… ط§ظ„ظƒظˆط¨ظˆظ†:* -${order.promoDiscount.toFixed(2)} ط±ظٹط§ظ„\n` 
         : '';
 
-      const messageText = `🔔 *طلب جديد في Grill Journey!* 🍢🥤\n\n` +
-        `*رقم الطلب:* \`${order.id}\`\n` +
-        `*اسم العميل:* ${order.customerName}\n` +
-        `*رقم الجوال:* \`${order.customerPhone}\`\n` +
-        `*نوع الطلب:* ${orderType}\n` +
+      const messageText = `ًں”” *ط·ظ„ط¨ ط¬ط¯ظٹط¯ ظپظٹ Grill Journey!* ًںچ¢ًں¥¤\n\n` +
+        `*ط±ظ‚ظ… ط§ظ„ط·ظ„ط¨:* \`${order.id}\`\n` +
+        `*ط§ط³ظ… ط§ظ„ط¹ظ…ظٹظ„:* ${order.customerName}\n` +
+        `*ط±ظ‚ظ… ط§ظ„ط¬ظˆط§ظ„:* \`${order.customerPhone}\`\n` +
+        `*ظ†ظˆط¹ ط§ظ„ط·ظ„ط¨:* ${orderType}\n` +
         notesText + `\n` +
-        `*الأصناف المطلوبة:*\n\n${itemsList}\n\n` +
-        `*المجموع الفرعي:* ${order.subtotal.toFixed(2)} ريال\n` +
+        `*ط§ظ„ط£طµظ†ط§ظپ ط§ظ„ظ…ط·ظ„ظˆط¨ط©:*\n\n${itemsList}\n\n` +
+        `*ط§ظ„ظ…ط¬ظ…ظˆط¹ ط§ظ„ظپط±ط¹ظٹ:* ${order.subtotal.toFixed(2)} ط±ظٹط§ظ„\n` +
         promoText +
-        `*الضريبة المضافة:* ${order.tax.toFixed(2)} ريال\n` +
-        `*الإجمالي النهائي:* *${order.total.toFixed(2)} ريال*\n\n` +
-        `*طريقة الدفع:* ${payMethod}\n\n` +
-        `⚡ _تم إرسال هذا التنبيه فور تسجيل الطلب في جهاز العميل_`;
+        `*ط§ظ„ط¶ط±ظٹط¨ط© ط§ظ„ظ…ط¶ط§ظپط©:* ${order.tax.toFixed(2)} ط±ظٹط§ظ„\n` +
+        `*ط§ظ„ط¥ط¬ظ…ط§ظ„ظٹ ط§ظ„ظ†ظ‡ط§ط¦ظٹ:* *${order.total.toFixed(2)} ط±ظٹط§ظ„*\n\n` +
+        `*ط·ط±ظٹظ‚ط© ط§ظ„ط¯ظپط¹:* ${payMethod}\n\n` +
+        `âڑ، _طھظ… ط¥ط±ط³ط§ظ„ ظ‡ط°ط§ ط§ظ„طھظ†ط¨ظٹظ‡ ظپظˆط± طھط³ط¬ظٹظ„ ط§ظ„ط·ظ„ط¨ ظپظٹ ط¬ظ‡ط§ط² ط§ظ„ط¹ظ…ظٹظ„_`;
 
       const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
       const response = await fetch(telegramUrl, {
@@ -435,7 +496,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
       const lang = language === "ar" ? "ar" : "en";
       const messageText = lang === "ar"
-        ? `رمز التحقق الخاص بك لتسجيل الدخول في تطبيق رحلة شواء هو: ${code}`
+        ? `ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط®ط§طµ ط¨ظƒ ظ„طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„ ظپظٹ طھط·ط¨ظٹظ‚ ط±ط­ظ„ط© ط´ظˆط§ط، ظ‡ظˆ: ${code}`
         : `Your verification code for Grill Journey app is: ${code}`;
 
       // Normalize phone number formats
@@ -579,10 +640,10 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
         });
       }
 
-      const captionText = `🚴 *طلب تسجيل كابتن (مندوب) جديد!* 📋\n\n` +
-        `👤 *الاسم الثنائي:* ${name}\n` +
-        `📞 *رقم الجوال:* \`${phone}\`\n\n` +
-        `⚡ _يرجى مراجعة لوحة الإدارة للموافقة عليه أو رفضه._`;
+      const captionText = `ًںڑ´ *ط·ظ„ط¨ طھط³ط¬ظٹظ„ ظƒط§ط¨طھظ† (ظ…ظ†ط¯ظˆط¨) ط¬ط¯ظٹط¯!* ًں“‹\n\n` +
+        `ًں‘¤ *ط§ظ„ط§ط³ظ… ط§ظ„ط«ظ†ط§ط¦ظٹ:* ${name}\n` +
+        `ًں“‍ *ط±ظ‚ظ… ط§ظ„ط¬ظˆط§ظ„:* \`${phone}\`\n\n` +
+        `âڑ، _ظٹط±ط¬ظ‰ ظ…ط±ط§ط¬ط¹ط© ظ„ظˆط­ط© ط§ظ„ط¥ط¯ط§ط±ط© ظ„ظ„ظ…ظˆط§ظپظ‚ط© ط¹ظ„ظٹظ‡ ط£ظˆ ط±ظپط¶ظ‡._`;
 
       let telegramResponse;
       
@@ -620,7 +681,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
           },
           body: JSON.stringify({
             chat_id: chatId,
-            text: captionText + `\n\n⚠️ _(تعذر إرفاق صورة الاستمارة بالتلجرام، يرجى رؤيتها بلوحة الإدارة)_`,
+            text: captionText + `\n\nâڑ ï¸ڈ _(طھط¹ط°ط± ط¥ط±ظپط§ظ‚ طµظˆط±ط© ط§ظ„ط§ط³طھظ…ط§ط±ط© ط¨ط§ظ„طھظ„ط¬ط±ط§ظ…طŒ ظٹط±ط¬ظ‰ ط±ط¤ظٹطھظ‡ط§ ط¨ظ„ظˆط­ط© ط§ظ„ط¥ط¯ط§ط±ط©)_`,
             parse_mode: "Markdown"
           })
         });
@@ -778,20 +839,20 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
         try {
           let localizedQuery = queryStr;
           const lowerQ = queryStr.toLowerCase();
-          const isBuraidah = lowerQ.includes("بريدة") || lowerQ.includes("buraidah") || lowerQ.includes("buraydah");
+          const isBuraidah = lowerQ.includes("ط¨ط±ظٹط¯ط©") || lowerQ.includes("buraidah") || lowerQ.includes("buraydah");
 
           if (isBuraidah) {
-            if (!lowerQ.includes("قصيم") && !lowerQ.includes("qassim")) {
-              localizedQuery = `${queryStr}، بريدة، القصيم`;
+            if (!lowerQ.includes("ظ‚طµظٹظ…") && !lowerQ.includes("qassim")) {
+              localizedQuery = `${queryStr}طŒ ط¨ط±ظٹط¯ط©طŒ ط§ظ„ظ‚طµظٹظ…`;
             }
-          } else if (!lowerQ.includes("سعود") && !lowerQ.includes("saudi") && !lowerQ.includes("قصيم") && !lowerQ.includes("جواء")) {
-            const buraidahNeighborhoods = ["فايزية", "fayziyah", "إسكان", "eskan", "ريان", "rayan", "صفراء", "safra", "أفق", "ofuq", "بساتين", "basatin", "سلطانة", "sultanah", "غدير", "ghadir"];
+          } else if (!lowerQ.includes("ط³ط¹ظˆط¯") && !lowerQ.includes("saudi") && !lowerQ.includes("ظ‚طµظٹظ…") && !lowerQ.includes("ط¬ظˆط§ط،")) {
+            const buraidahNeighborhoods = ["ظپط§ظٹط²ظٹط©", "fayziyah", "ط¥ط³ظƒط§ظ†", "eskan", "ط±ظٹط§ظ†", "rayan", "طµظپط±ط§ط،", "safra", "ط£ظپظ‚", "ofuq", "ط¨ط³ط§طھظٹظ†", "basatin", "ط³ظ„ط·ط§ظ†ط©", "sultanah", "ط؛ط¯ظٹط±", "ghadir"];
             const isLikelyBuraidah = buraidahNeighborhoods.some(n => lowerQ.includes(n));
             
             if (isLikelyBuraidah) {
-              localizedQuery = `${queryStr}، بريدة، القصيم`;
+              localizedQuery = `${queryStr}طŒ ط¨ط±ظٹط¯ط©طŒ ط§ظ„ظ‚طµظٹظ…`;
             } else {
-              localizedQuery = `${queryStr}، القصيم، السعودية`;
+              localizedQuery = `${queryStr}طŒ ط§ظ„ظ‚طµظٹظ…طŒ ط§ظ„ط³ط¹ظˆط¯ظٹط©`;
             }
           }
 
@@ -818,22 +879,22 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
         try {
           let localizedQuery = queryStr;
           const lowerQ = queryStr.toLowerCase();
-          const isBuraidah = lowerQ.includes("بريدة") || lowerQ.includes("buraidah") || lowerQ.includes("buraydah");
+          const isBuraidah = lowerQ.includes("ط¨ط±ظٹط¯ط©") || lowerQ.includes("buraidah") || lowerQ.includes("buraydah");
 
           if (isBuraidah) {
-            if (!lowerQ.includes("قصيم") && !lowerQ.includes("qassim")) {
-              localizedQuery = `${queryStr}، بريدة، القصيم`;
+            if (!lowerQ.includes("ظ‚طµظٹظ…") && !lowerQ.includes("qassim")) {
+              localizedQuery = `${queryStr}طŒ ط¨ط±ظٹط¯ط©طŒ ط§ظ„ظ‚طµظٹظ…`;
             }
-          } else if (!lowerQ.includes("سعود") && !lowerQ.includes("saudi") && !lowerQ.includes("قصيم") && !lowerQ.includes("جواء")) {
-            const buraidahNeighborhoods = ["فايزية", "fayziyah", "إسكان", "eskan", "ريان", "rayan", "صفراء", "safra", "أفق", "ofuq", "بساتين", "basatin", "سلطانة", "sultanah", "غدير", "ghadir"];
+          } else if (!lowerQ.includes("ط³ط¹ظˆط¯") && !lowerQ.includes("saudi") && !lowerQ.includes("ظ‚طµظٹظ…") && !lowerQ.includes("ط¬ظˆط§ط،")) {
+            const buraidahNeighborhoods = ["ظپط§ظٹط²ظٹط©", "fayziyah", "ط¥ط³ظƒط§ظ†", "eskan", "ط±ظٹط§ظ†", "rayan", "طµظپط±ط§ط،", "safra", "ط£ظپظ‚", "ofuq", "ط¨ط³ط§طھظٹظ†", "basatin", "ط³ظ„ط·ط§ظ†ط©", "sultanah", "ط؛ط¯ظٹط±", "ghadir"];
             const isLikelyBuraidah = buraidahNeighborhoods.some(n => lowerQ.includes(n));
             
             if (isLikelyBuraidah) {
-              localizedQuery = `${queryStr}• بريدة، القصيم`;
+              localizedQuery = `${queryStr}â€¢ ط¨ط±ظٹط¯ط©طŒ ط§ظ„ظ‚طµظٹظ…`;
               // Let's replace the bullet with standard Arabic comma to match the rest of the file
-              localizedQuery = `${queryStr}، بريدة، القصيم`;
+              localizedQuery = `${queryStr}طŒ ط¨ط±ظٹط¯ط©طŒ ط§ظ„ظ‚طµظٹظ…`;
             } else {
-              localizedQuery = `${queryStr}، القصيم، السعودية`;
+              localizedQuery = `${queryStr}طŒ ط§ظ„ظ‚طµظٹظ…طŒ ط§ظ„ط³ط¹ظˆط¯ظٹط©`;
             }
           }
 
@@ -876,14 +937,14 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
       if (process.env.GEMINI_API_KEY) {
         try {
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const prompt = `You are an expert geocoding AI assistant for both Buraidah (بريدة) and Uyun Al-Jiwa (عيون الجواء) in the Al-Qassim region, Saudi Arabia.
+          const prompt = `You are an expert geocoding AI assistant for both Buraidah (ط¨ط±ظٹط¯ط©) and Uyun Al-Jiwa (ط¹ظٹظˆظ† ط§ظ„ط¬ظˆط§ط،) in the Al-Qassim region, Saudi Arabia.
 The user searched for this location text: "${queryStr}".
 Google/OSM returned this potential coordinate: None.
 
 Determine the best latitude and longitude coordinates in Saudi Arabia for this search query.
 Focus highly on Buraidah (approx Lat 26.3260, Lng 43.9750) and Uyun Al-Jiwa (approx Lat 26.5057, Lng 43.7915) in the Al-Qassim province.
-If the search query mentions a Buraidah neighborhood (such as حي الإسكان، حي الفايزية، حي الصفراء، حي الريان، حي الأفق، حي سلطانة، حي الغدير، حي البساتين، إلخ), return the accurate or approximate coordinates of that neighborhood in Buraidah.
-If the search query mentions a neighborhood in Uyun Al-Jiwa (like حي الروضة، حي الملك فهد، حي الخالدية، حي المنتزه، حي السليمية، إلخ), return the exact or approximate coordinates of that neighborhood in Uyun Al-Jiwa.
+If the search query mentions a Buraidah neighborhood (such as ط­ظٹ ط§ظ„ط¥ط³ظƒط§ظ†طŒ ط­ظٹ ط§ظ„ظپط§ظٹط²ظٹط©طŒ ط­ظٹ ط§ظ„طµظپط±ط§ط،طŒ ط­ظٹ ط§ظ„ط±ظٹط§ظ†طŒ ط­ظٹ ط§ظ„ط£ظپظ‚طŒ ط­ظٹ ط³ظ„ط·ط§ظ†ط©طŒ ط­ظٹ ط§ظ„ط؛ط¯ظٹط±طŒ ط­ظٹ ط§ظ„ط¨ط³ط§طھظٹظ†طŒ ط¥ظ„ط®), return the accurate or approximate coordinates of that neighborhood in Buraidah.
+If the search query mentions a neighborhood in Uyun Al-Jiwa (like ط­ظٹ ط§ظ„ط±ظˆط¶ط©طŒ ط­ظٹ ط§ظ„ظ…ظ„ظƒ ظپظ‡ط¯طŒ ط­ظٹ ط§ظ„ط®ط§ظ„ط¯ظٹط©طŒ ط­ظٹ ط§ظ„ظ…ظ†طھط²ظ‡طŒ ط­ظٹ ط§ظ„ط³ظ„ظٹظ…ظٹط©طŒ ط¥ظ„ط®), return the exact or approximate coordinates of that neighborhood in Uyun Al-Jiwa.
 If the query is generic, default to the center of Buraidah (Lat 26.3260, Lng 43.9750) or Uyun Al-Jiwa (Lat 26.5057, Lng 43.7915) or Al-Qassim.
 
 Return ONLY a valid JSON object. Do not wrap in markdown blocks.
@@ -892,12 +953,12 @@ JSON format:
   "success": true,
   "lat": 26.5057,
   "lng": 43.7915,
-  "address": "حي الروضة، عيون الجواء"
+  "address": "ط­ظٹ ط§ظ„ط±ظˆط¶ط©طŒ ط¹ظٹظˆظ† ط§ظ„ط¬ظˆط§ط،"
 }
 If you cannot find or approximate the location at all, return:
 {
   "success": false,
-  "message": "لم نتمكن من العثور على هذا الموقع بدقة، يرجى كتابة اسم الحي والشارع بشكل أوضح"
+  "message": "ظ„ظ… ظ†طھظ…ظƒظ† ظ…ظ† ط§ظ„ط¹ط«ظˆط± ط¹ظ„ظ‰ ظ‡ط°ط§ ط§ظ„ظ…ظˆظ‚ط¹ ط¨ط¯ظ‚ط©طŒ ظٹط±ط¬ظ‰ ظƒطھط§ط¨ط© ط§ط³ظ… ط§ظ„ط­ظٹ ظˆط§ظ„ط´ط§ط±ط¹ ط¨ط´ظƒظ„ ط£ظˆط¶ط­"
 }`;
 
           const geminiResponse = await ai.models.generateContent({
@@ -923,7 +984,7 @@ If you cannot find or approximate the location at all, return:
       } else {
         return res.json({
           success: false,
-          message: "تعذر العثور على الموقع بدقة، يرجى كتابة اسم الحي والشارع بشكل أوضح"
+          message: "طھط¹ط°ط± ط§ظ„ط¹ط«ظˆط± ط¹ظ„ظ‰ ط§ظ„ظ…ظˆظ‚ط¹ ط¨ط¯ظ‚ط©طŒ ظٹط±ط¬ظ‰ ظƒطھط§ط¨ط© ط§ط³ظ… ط§ظ„ط­ظٹ ظˆط§ظ„ط´ط§ط±ط¹ ط¨ط´ظƒظ„ ط£ظˆط¶ط­"
         });
       }
 
@@ -933,6 +994,493 @@ If you cannot find or approximate the location at all, return:
     }
   });
 
+  // ==========================================
+  // Secure Firebase Cloud Messaging Device APIs
+  // ==========================================
+
+  // Verify Firebase identity and the server-side push administrator allowlist.
+  const verifyPushAdmin = async (
+    req: express.Request,
+    res: express.Response
+  ): Promise<boolean> => {
+    if (!firebaseAdminAuth) {
+      res.status(503).json({ success: false, message: "Push authentication is not configured" });
+      return false;
+    }
+
+    const authorization = req.headers.authorization || "";
+    const idToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+
+    if (!idToken) {
+      res.status(401).json({ success: false, message: "Authentication token is required" });
+      return false;
+    }
+
+    try {
+      const decoded = await firebaseAdminAuth.verifyIdToken(idToken);
+      const allowedEmail = (process.env.PUSH_ADMIN_EMAIL || "yasseralayub@gmail.com").trim().toLowerCase();
+      const verifiedEmail = typeof decoded.email === "string" ? decoded.email.trim().toLowerCase() : "";
+
+      if (!verifiedEmail || verifiedEmail !== allowedEmail || decoded.email_verified !== true) {
+        res.status(403).json({ success: false, message: "Administrator access denied" });
+        return false;
+      }
+
+      return true;
+    } catch {
+      res.status(401).json({ success: false, message: "Invalid or expired authentication token" });
+      return false;
+    }
+  };
+  // Register a device for general promotion notifications.
+  // This endpoint intentionally works without login.
+  app.post("/api/push/register-device", async (req: express.Request, res: express.Response) => {
+    try {
+      if (!firebaseAdminDb) {
+        return res.status(503).json({ success: false, message: "Push service is not configured" });
+      }
+
+      const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+      const platform =
+         req.body?.platform === "android" ? "android" :
+         req.body?.platform === "ios" ? "ios" :
+  "web";
+      if (!token || token.length > 4096 || token.includes("/")) {
+        return res.status(400).json({ success: false, message: "Invalid device token" });
+      }
+
+      await firebaseAdminDb.collection("push_devices").doc(token).set({
+        token,
+        platform,
+        enabled: true,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Push device registration failed:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Device registration failed"
+      });
+    }
+  });
+
+  // Attach a device to the currently authenticated Firebase customer.
+  app.post("/api/push/attach-customer", async (req: express.Request, res: express.Response) => {
+    try {
+      if (!firebaseAdminAuth || !firebaseAdminDb) {
+        return res.status(503).json({ success: false, message: "Push service is not configured" });
+      }
+
+      const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+      const authorization = req.headers.authorization || "";
+      const idToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+
+      if (!token || token.length > 4096 || token.includes("/") || !idToken) {
+        return res.status(400).json({ success: false, message: "Device token and Firebase authentication are required" });
+      }
+
+let decoded;
+
+try {
+  decoded = await firebaseAdminAuth.verifyIdToken(idToken);
+} catch {
+  return res.status(401).json({
+    success: false,
+    message: "Customer authentication failed"
+  });
+}
+
+      await firebaseAdminDb.collection("push_devices").doc(token).set({
+        token,
+        customerUid: decoded.uid,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Customer device association failed:", error);
+      return res.status(401).json({ success: false, message: "Customer authentication failed" });
+    }
+  });
+
+  // Detach the customer account on logout, but KEEP the device token
+  // so the device can continue receiving public promotions.
+  app.post("/api/push/detach-customer", async (req: express.Request, res: express.Response) => {
+    try {
+      if (!firebaseAdminAuth || !firebaseAdminDb) {
+        return res.status(503).json({ success: false, message: "Push service is not configured" });
+      }
+
+      const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+      const authorization = req.headers.authorization || "";
+      const idToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+
+      if (!token || token.length > 4096 || token.includes("/") || !idToken) {
+        return res.status(400).json({ success: false, message: "Device token and Firebase authentication are required" });
+      }
+
+    
+      let decoded;
+
+      try {
+        decoded = await firebaseAdminAuth.verifyIdToken(idToken);
+      } catch {
+        return res.status(401).json({
+          success: false,
+          message: "Customer authentication failed"
+        });
+      }
+      const deviceRef = firebaseAdminDb.collection("push_devices").doc(token);
+      const deviceSnapshot = await deviceRef.get();
+
+      if (deviceSnapshot.exists && deviceSnapshot.data()?.customerUid === decoded.uid) {
+        await deviceRef.update({
+          customerUid: null,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Customer device association failed:", error);
+      return res.status(500).json({
+        success: false,
+       message: "Device association failed"
+      });
+    }
+  });
+
+  // Attach a device to a driver only after Firebase verifies the driver's phone.
+  app.post("/api/push/attach-driver", async (req: express.Request, res: express.Response) => {
+    try {
+      if (!firebaseAdminAuth || !firebaseAdminDb) {
+        return res.status(503).json({ success: false, message: "Push service is not configured" });
+      }
+
+      const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+      const authorization = req.headers.authorization || "";
+      const idToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+
+      if (!token || token.length > 4096 || token.includes("/") || !idToken) {
+        return res.status(400).json({ success: false, message: "Device token and Firebase authentication are required" });
+      }
+
+      let decoded;
+      try {
+        decoded = await firebaseAdminAuth.verifyIdToken(idToken);
+      } catch {
+        return res.status(401).json({ success: false, message: "Driver authentication failed" });
+      }
+
+      const verifiedPhone = typeof decoded.phone_number === "string" ? decoded.phone_number : "";
+      const normalizePhone = (value: string) => {
+        let digits = value.replace(/\D/g, "");
+        if (digits.startsWith("00966")) digits = digits.substring(2);
+        if (digits.startsWith("966")) digits = digits.substring(3);
+        if (digits.startsWith("0")) digits = digits.substring(1);
+        return digits;
+      };
+
+      if (!verifiedPhone) {
+        return res.status(403).json({ success: false, message: "Verified Firebase phone number is required" });
+      }
+
+      const verifiedDigits = normalizePhone(verifiedPhone);
+      const driversSnapshot = await firebaseAdminDb.collection("drivers").get();
+      const matches = driversSnapshot.docs.filter((driverDoc) => {
+        const phone = driverDoc.data()?.phone;
+        return typeof phone === "string" && normalizePhone(phone) === verifiedDigits;
+      });
+
+      if (matches.length !== 1) {
+        return res.status(matches.length === 0 ? 404 : 409).json({
+          success: false,
+          message: matches.length === 0 ? "Driver profile not found" : "Driver phone matches multiple profiles"
+        });
+      }
+
+      const deviceRef = firebaseAdminDb.collection("push_devices").doc(token);
+      const deviceSnapshot = await deviceRef.get();
+
+      if (!deviceSnapshot.exists) {
+        return res.status(404).json({ success: false, message: "Device token is not registered" });
+      }
+
+      await deviceRef.update({
+        driverId: matches[0].id,
+        driverPhone: verifiedPhone,
+        updatedAt: new Date().toISOString()
+      });
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Driver device association failed:", error);
+      return res.status(500).json({ success: false, message: "Driver device association failed" });
+    }
+  });
+
+  // Detach only the verified driver's association; preserve customer and public-promotion registration.
+  app.post("/api/push/detach-driver", async (req: express.Request, res: express.Response) => {
+    try {
+      if (!firebaseAdminAuth || !firebaseAdminDb) {
+        return res.status(503).json({ success: false, message: "Push service is not configured" });
+      }
+
+      const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+      const authorization = req.headers.authorization || "";
+      const idToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+
+      if (!token || token.length > 4096 || token.includes("/") || !idToken) {
+        return res.status(400).json({ success: false, message: "Device token and Firebase authentication are required" });
+      }
+
+      let decoded;
+      try {
+        decoded = await firebaseAdminAuth.verifyIdToken(idToken);
+      } catch {
+        return res.status(401).json({ success: false, message: "Driver authentication failed" });
+      }
+
+      const verifiedPhone = typeof decoded.phone_number === "string" ? decoded.phone_number : "";
+      const normalizePhone = (value: string) => {
+        let digits = value.replace(/\D/g, "");
+        if (digits.startsWith("00966")) digits = digits.substring(2);
+        if (digits.startsWith("966")) digits = digits.substring(3);
+        if (digits.startsWith("0")) digits = digits.substring(1);
+        return digits;
+      };
+
+      if (!verifiedPhone) {
+        return res.status(403).json({ success: false, message: "Verified Firebase phone number is required" });
+      }
+
+      const verifiedDigits = normalizePhone(verifiedPhone);
+      const driversSnapshot = await firebaseAdminDb.collection("drivers").get();
+      const matches = driversSnapshot.docs.filter((driverDoc) => {
+        const phone = driverDoc.data()?.phone;
+        return typeof phone === "string" && normalizePhone(phone) === verifiedDigits;
+      });
+
+      if (matches.length !== 1) {
+        return res.status(matches.length === 0 ? 404 : 409).json({
+          success: false,
+          message: matches.length === 0 ? "Driver profile not found" : "Driver phone matches multiple profiles"
+        });
+      }
+
+      const deviceRef = firebaseAdminDb.collection("push_devices").doc(token);
+      const deviceSnapshot = await deviceRef.get();
+
+      if (deviceSnapshot.exists && deviceSnapshot.data()?.driverId === matches[0].id) {
+        await deviceRef.update({
+          driverId: null,
+          driverPhone: null,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Driver device detachment failed:", error);
+      return res.status(500).json({ success: false, message: "Driver device detachment failed" });
+    }
+  });
+  // Send FCM notifications in batches of up to 500 registered devices.
+  // Invalid tokens are counted but are not deleted or detached automatically.
+  const sendPushToDeviceDocs = async (
+    deviceDocs: any[],
+    notification: { title: string; body: string },
+    data: Record<string, string>
+  ) => {
+    if (!firebaseAdminMessaging) {
+      throw new Error("Firebase Admin Messaging is not configured");
+    }
+
+    const tokens = deviceDocs
+      .map((deviceDoc: any) => {
+        const deviceData = deviceDoc.data();
+        return typeof deviceData?.token === "string" ? deviceData.token : deviceDoc.id;
+      })
+      .filter((token: string) => typeof token === "string" && token.length > 0);
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (let index = 0; index < tokens.length; index += 500) {
+      const batch = tokens.slice(index, index + 500);
+      if (batch.length === 0) continue;
+
+      const result = await firebaseAdminMessaging.sendEachForMulticast({
+        tokens: batch,
+        notification,
+        data
+      });
+
+      successCount += result.successCount;
+      failureCount += result.failureCount;
+    }
+
+    return {
+      requested: tokens.length,
+      successCount,
+      failureCount
+    };
+  };
+
+  // Notify the customer after the order status has been committed to Firestore.
+  app.post("/api/push/notify-order-status", async (req: express.Request, res: express.Response) => {
+    try {
+      if (!firebaseAdminDb || !firebaseAdminMessaging) {
+        return res.status(503).json({ success: false, message: "Push service is not configured" });
+      }
+
+      if (!(await verifyPushAdmin(req, res))) return;
+
+      const orderId = typeof req.body?.orderId === "string" ? req.body.orderId.trim() : "";
+      if (!orderId || orderId.length > 200 || orderId.includes("/")) {
+        return res.status(400).json({ success: false, message: "A valid order ID is required" });
+      }
+
+      const orderSnapshot = await firebaseAdminDb.collection("orders").doc(orderId).get();
+      if (!orderSnapshot.exists) {
+        return res.status(404).json({ success: false, message: "Order not found" });
+      }
+
+      const orderData = orderSnapshot.data();
+      const customerUid = orderData?.customerUid;
+      const status = orderData?.status;
+
+      if (typeof customerUid !== "string" || !customerUid) {
+        return res.json({ success: true, skipped: true, reason: "No verified customer association", sent: 0 });
+      }
+
+      if (typeof status !== "string" || !status) {
+        return res.status(409).json({ success: false, message: "Order status is unavailable" });
+      }
+
+      const devicesSnapshot = await firebaseAdminDb
+        .collection("push_devices")
+        .where("enabled", "==", true)
+        .where("customerUid", "==", customerUid)
+        .get();
+
+      const result = await sendPushToDeviceDocs(
+        devicesSnapshot.docs,
+        {
+          title: "Order update",
+          body: `Your order status has changed: ${status}`
+        },
+        {
+          type: "order_status",
+          orderId,
+          status
+        }
+      );
+
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Order status push failed:", error);
+      return res.status(500).json({ success: false, message: "Order status notification failed" });
+    }
+  });
+
+  // Notify only devices currently associated with the assigned driver.
+  app.post("/api/push/notify-driver-assigned", async (req: express.Request, res: express.Response) => {
+    try {
+      if (!firebaseAdminDb || !firebaseAdminMessaging) {
+        return res.status(503).json({ success: false, message: "Push service is not configured" });
+      }
+
+      if (!(await verifyPushAdmin(req, res))) return;
+
+      const orderId = typeof req.body?.orderId === "string" ? req.body.orderId.trim() : "";
+      if (!orderId || orderId.length > 200 || orderId.includes("/")) {
+        return res.status(400).json({ success: false, message: "A valid order ID is required" });
+      }
+
+      const orderSnapshot = await firebaseAdminDb.collection("orders").doc(orderId).get();
+      if (!orderSnapshot.exists) {
+        return res.status(404).json({ success: false, message: "Order not found" });
+      }
+
+      const driverId = orderSnapshot.data()?.driverId;
+      if (typeof driverId !== "string" || !driverId || driverId === "broadcast") {
+        return res.json({ success: true, skipped: true, reason: "No individual driver assigned", sent: 0 });
+      }
+
+      const devicesSnapshot = await firebaseAdminDb
+        .collection("push_devices")
+        .where("enabled", "==", true)
+        .where("driverId", "==", driverId)
+        .get();
+
+      const result = await sendPushToDeviceDocs(
+        devicesSnapshot.docs,
+        {
+          title: "New order assigned",
+          body: "A new order has been assigned to you."
+        },
+        {
+          type: "driver_assignment",
+          orderId
+        }
+      );
+
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Driver assignment push failed:", error);
+      return res.status(500).json({ success: false, message: "Driver assignment notification failed" });
+    }
+  });
+
+  // Broadcast a published active promotion to every registered enabled device,
+  // including devices that are not currently associated with a customer account.
+  app.post("/api/push/notify-promotion", async (req: express.Request, res: express.Response) => {
+    try {
+      if (!firebaseAdminDb || !firebaseAdminMessaging) {
+        return res.status(503).json({ success: false, message: "Push service is not configured" });
+      }
+
+      if (!(await verifyPushAdmin(req, res))) return;
+
+      const promotionSnapshot = await firebaseAdminDb.collection("promotions").doc("active").get();
+      if (!promotionSnapshot.exists || promotionSnapshot.data()?.isActive !== true) {
+        return res.json({ success: true, skipped: true, reason: "No active promotion", sent: 0 });
+      }
+
+      const promotion = promotionSnapshot.data() || {};
+      const promotionTitle =
+        typeof promotion.titleAr === "string" && promotion.titleAr.trim()
+          ? promotion.titleAr.trim()
+          : typeof promotion.title === "string" && promotion.title.trim()
+            ? promotion.title.trim()
+            : "A new offer is available.";
+
+      const devicesSnapshot = await firebaseAdminDb
+        .collection("push_devices")
+        .where("enabled", "==", true)
+        .get();
+
+      const result = await sendPushToDeviceDocs(
+        devicesSnapshot.docs,
+        {
+          title: "New promotion",
+          body: promotionTitle
+        },
+        {
+          type: "promotion",
+          promotionId: "active"
+        }
+      );
+
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Promotion push failed:", error);
+      return res.status(500).json({ success: false, message: "Promotion notification failed" });
+    }
+  });
   // Dynamic manifest.json endpoint to allow installing separate PWAs for customers, drivers, and admin panel on the same domain
   app.get("/manifest.json", (req, res) => {
     const type = req.query.type || "";
@@ -941,9 +1489,9 @@ If you cannot find or approximate the location at all, return:
     if (type === "driver" || referer.includes("/driver")) {
       return res.json({
         "id": "/driver",
-        "short_name": "بوابة الكابتن",
-        "name": "بوابة كابتن التوصيل - رحلة شواء",
-        "description": "بوابة تتبع وتوصيل طلبات مطعم رحلة شواء",
+        "short_name": "ط¨ظˆط§ط¨ط© ط§ظ„ظƒط§ط¨طھظ†",
+        "name": "ط¨ظˆط§ط¨ط© ظƒط§ط¨طھظ† ط§ظ„طھظˆطµظٹظ„ - ط±ط­ظ„ط© ط´ظˆط§ط،",
+        "description": "ط¨ظˆط§ط¨ط© طھطھط¨ط¹ ظˆطھظˆطµظٹظ„ ط·ظ„ط¨ط§طھ ظ…ط·ط¹ظ… ط±ط­ظ„ط© ط´ظˆط§ط،",
         "icons": [
           {
             "src": "/pwa-icon.jpg",
@@ -967,9 +1515,9 @@ If you cannot find or approximate the location at all, return:
     } else if (type === "admin" || referer.includes("/admin")) {
       return res.json({
         "id": "/admin",
-        "short_name": "لوحة التحكم",
-        "name": "لوحة تحكم مطعم رحلة شواء",
-        "description": "لوحة تحكم وإدارة طلبات ومناديب مطعم رحلة شواء",
+        "short_name": "ظ„ظˆط­ط© ط§ظ„طھط­ظƒظ…",
+        "name": "ظ„ظˆط­ط© طھط­ظƒظ… ظ…ط·ط¹ظ… ط±ط­ظ„ط© ط´ظˆط§ط،",
+        "description": "ظ„ظˆط­ط© طھط­ظƒظ… ظˆط¥ط¯ط§ط±ط© ط·ظ„ط¨ط§طھ ظˆظ…ظ†ط§ط¯ظٹط¨ ظ…ط·ط¹ظ… ط±ط­ظ„ط© ط´ظˆط§ط،",
         "icons": [
           {
             "src": "/pwa-icon.jpg",
@@ -993,9 +1541,9 @@ If you cannot find or approximate the location at all, return:
     } else {
       return res.json({
         "id": "/",
-        "short_name": "رحلة شواء",
-        "name": "مطعم رحلة شواء - منيو وتتبع الطلبات",
-        "description": "منيو مطعم رحلة شواء - اطلب ألذ المشويات الفاخرة وتابع طلبك خطوة بخطوة",
+        "short_name": "ط±ط­ظ„ط© ط´ظˆط§ط،",
+        "name": "ظ…ط·ط¹ظ… ط±ط­ظ„ط© ط´ظˆط§ط، - ظ…ظ†ظٹظˆ ظˆطھطھط¨ط¹ ط§ظ„ط·ظ„ط¨ط§طھ",
+        "description": "ظ…ظ†ظٹظˆ ظ…ط·ط¹ظ… ط±ط­ظ„ط© ط´ظˆط§ط، - ط§ط·ظ„ط¨ ط£ظ„ط° ط§ظ„ظ…ط´ظˆظٹط§طھ ط§ظ„ظپط§ط®ط±ط© ظˆطھط§ط¨ط¹ ط·ظ„ط¨ظƒ ط®ط·ظˆط© ط¨ط®ط·ظˆط©",
         "icons": [
           {
             "src": "/pwa-icon.jpg",
@@ -1045,3 +1593,6 @@ If you cannot find or approximate the location at all, return:
   }
 
   export default app;
+
+
+
