@@ -1,3 +1,4 @@
+/// <reference types="@capacitor-firebase/authentication" />
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
@@ -8,6 +9,10 @@ const config: CapacitorConfig = {
     androidScheme: 'https'
   },
   plugins: {
+    FirebaseAuthentication: {
+      skipNativeAuth: true,
+      providers: ['phone']
+    },
     PushNotifications: {
       presentationOptions: ['badge', 'sound', 'alert']
     },

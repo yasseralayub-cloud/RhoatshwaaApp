@@ -6,6 +6,12 @@
 		"androidScheme": "https"
 	},
 	"plugins": {
+		"FirebaseAuthentication": {
+			"skipNativeAuth": true,
+			"providers": [
+				"phone"
+			]
+		},
 		"PushNotifications": {
 			"presentationOptions": [
 				"badge",

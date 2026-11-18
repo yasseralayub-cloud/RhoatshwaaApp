@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
-import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { User as FirebaseUser, signOut } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { db, auth } from '../firebase';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { Order, CartItem } from '../types';
 import { 
@@ -13,6 +14,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import MapPicker from './MapPicker';
 import { normalizePhone, phonesMatch, getPhoneVariants } from '../utils/phone';
 import { triggerRealTestNotification, checkNotificationPermission } from '../utils/pushNotifications';
+import {
+  PhoneAuthSession,
+  cleanupPhoneAuthListeners,
+  clearWebRecaptchaVerifier,
+  mapPhoneAuthError,
+  rollbackStaleFirebaseSignIn,
+  sendPhoneVerificationCode,
+  toLocalSaudiPhone,
+  verifyPhoneOtpCode
+} from '../utils/phoneAuth';
 
 interface SavedAddress {
   id: string;
@@ -85,10 +96,35 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRegisteringNewUser, setIsRegisteringNewUser] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [phoneAuthSession, setPhoneAuthSession] = useState<PhoneAuthSession | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [showPhoneAuthHelp, setShowPhoneAuthHelp] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  const ACCOUNT_RECAPTCHA_ID = 'account-recaptcha-container';
+  const isCompletingAuthRef = React.useRef(false);
+  const completingAuthPromiseRef = React.useRef<Promise<void> | null>(null);
+  const authFlowVersionRef = React.useRef(0);
+  const isMountedRef = React.useRef(true);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setInterval(() => {
+      setResendCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      authFlowVersionRef.current += 1;
+      void cleanupPhoneAuthListeners(ACCOUNT_RECAPTCHA_ID);
+      clearWebRecaptchaVerifier(ACCOUNT_RECAPTCHA_ID);
+    };
+  }, []);
 
   // System Notifications & Permissions test states
   const [notifTesting, setNotifTesting] = useState(false);
@@ -126,30 +162,6 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     }
   };
 
-  // Format phone number to E.164 format for Firebase Phone Auth (+9665XXXXXXXX)
-  const formatPhoneE164 = (phone: string): string => {
-    let clean = phone.trim().replace(/\D/g, '');
-    if (clean.startsWith('05') && clean.length === 10) {
-      return '+966' + clean.substring(1);
-    }
-    if (clean.startsWith('5') && clean.length === 9) {
-      return '+966' + clean;
-    }
-    if (clean.startsWith('9665') && clean.length === 12) {
-      return '+' + clean;
-    }
-    if (clean.length === 9) {
-      return '+966' + clean;
-    }
-    if (clean.startsWith('00966') && clean.length === 14) {
-      return '+' + clean.substring(2);
-    }
-    if (!phone.startsWith('+')) {
-      return '+' + clean;
-    }
-    return phone;
-  };
-
   // Skip Phone Auth and use a pre-set Demo Customer account for testing
   const handleDemoBypass = () => {
     const demoProfile = {
@@ -162,7 +174,8 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     setIsVerifying(false);
     setPhoneInput('');
     setVerificationCode('');
-    setConfirmationResult(null);
+    setPhoneAuthSession(null);
+    setResendCooldown(0);
     setAuthError('');
     setShowPhoneAuthHelp(false);
     window.dispatchEvent(new Event('storage'));
@@ -286,104 +299,47 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     return () => unsubscribe();
   }, [user?.phone]);
 
-  // Handle Login request (Sends OTP first via Firebase Phone Auth)
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    setShowPhoneAuthHelp(false);
-    
-    // Clean phone number input
-    const cleanPhone = phoneInput.trim();
-    if (cleanPhone.length !== 9 || !cleanPhone.startsWith('5')) {
-      setAuthError(language === 'ar' 
-        ? 'الرجاء إدخال رقم جوال سعودي صحيح يتكون من 9 أرقام ويبدأ بـ 5 (مثال: 506572881)' 
-        : 'Please enter a valid 9-digit Saudi mobile starting with 5 (e.g., 506572881)');
+  // Shared post-auth handler after Firebase JS SDK user session is established
+  const completeCustomerLogin = async (
+    fbUser: FirebaseUser,
+    rawPhone: string,
+    expectedFlowVersion?: number,
+    verifySeq?: number
+  ) => {
+    const flowVersion = expectedFlowVersion ?? authFlowVersionRef.current;
+    const isStaleFlow = () => !isMountedRef.current || flowVersion !== authFlowVersionRef.current;
+
+    if (isStaleFlow()) {
+      void rollbackStaleFirebaseSignIn(fbUser, verifySeq);
       return;
     }
 
-    setAuthLoading(true);
-
-    try {
-      const e164Phone = formatPhoneE164(phoneInput);
-
-      // Initialize reCAPTCHA verifier if not already initialized
-      if (!(window as any).recaptchaVerifier) {
-        (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-          size: 'invisible',
-          callback: () => {
-            // reCAPTCHA solved
-          },
-          'expired-callback': () => {
-            // Response expired
-          }
-        });
+    if (isCompletingAuthRef.current) {
+      if (completingAuthPromiseRef.current) {
+        await completingAuthPromiseRef.current;
       }
-
-      const appVerifier = (window as any).recaptchaVerifier;
-
-      // Send OTP via Firebase Phone Auth
-      const confirmationResultObj = await signInWithPhoneNumber(auth, e164Phone, appVerifier);
-      setConfirmationResult(confirmationResultObj);
-      setIsVerifying(true);
-      setVerificationCode('');
-    } catch (err: any) {
-      console.error('Firebase Phone Auth Error:', err);
-      let friendlyError = language === 'ar'
-        ? 'فشل إرسال رمز التحقق عبر Firebase Phone Auth. يرجى التحقق من رقم الجوال أو إعدادات المشروع.'
-        : 'Failed to send verification code via Firebase Phone Auth. Please verify your mobile number or project configuration.';
-      
-      if (err?.code === 'auth/invalid-phone-number') {
-        friendlyError = language === 'ar' ? 'رقم الهاتف غير صالح!' : 'Invalid phone number!';
-      } else if (err?.code === 'auth/too-many-requests') {
-        friendlyError = language === 'ar' ? 'تم حظر الطلبات لكثرة المحاولات. يرجى المحاولة لاحقاً.' : 'Too many requests. Please try again later.';
-      } else if (err?.message?.includes('captcha') || err?.code?.includes('captcha')) {
-        friendlyError = language === 'ar' ? 'خطأ في التحقق من reCAPTCHA. يرجى المحاولة لاحقاً.' : 'reCAPTCHA verification error. Please try again later.';
-      } else if (
-        err?.code === 'auth/operation-not-allowed' || 
-        err?.message?.includes('operation-not-allowed') ||
-        err?.message?.includes('region') ||
-        err?.message?.includes('SMS unable to be sent')
-      ) {
-        setShowPhoneAuthHelp(true);
-        friendlyError = language === 'ar'
-          ? '⚠️ لم يتم إرسال الرمز: خيار Phone Sign-In غير مفعل أو تحتاج لتفعيل منطقة المملكة العربية السعودية (+966) من إعدادات الـ SMS في Firebase Console.'
-          : '⚠️ SMS not sent: Phone Sign-In is disabled or you need to allow Saudi Arabia (+966) region in Firebase Console SMS Settings.';
-      } else {
-        // Append raw error details for other unhandled errors
-        friendlyError += ` (${err?.code || err?.message || ''})`;
-      }
-      setAuthError(friendlyError);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  // Complete OTP verification and load or move to register profile
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-
-    if (!verificationCode || verificationCode.length < 6) {
-      setAuthError(language === 'ar' ? 'الرجاء إدخال رمز التحقق المكون من 6 أرقام' : 'Please enter the correct 6-digit verification code');
       return;
     }
 
-    setAuthLoading(true);
+    isCompletingAuthRef.current = true;
+    let abortedAsStale = false;
 
-    let cleanPhone = phoneInput.trim();
-    if (cleanPhone.startsWith('5')) cleanPhone = '0' + cleanPhone;
-    else if (cleanPhone.startsWith('9665')) cleanPhone = '0' + cleanPhone.substring(3);
-    else if (cleanPhone.startsWith('+9665')) cleanPhone = '0' + cleanPhone.substring(4);
-
-    try {
-      if (!confirmationResult) {
-        throw new Error('No confirmation result found');
-      }
-
-      // Confirm OTP code using Firebase Phone Auth confirmationResult
-      const userCredential = await confirmationResult.confirm(verificationCode);
-      const fbUser = userCredential.user;
+    const task = (async () => {
+      const cleanPhone = toLocalSaudiPhone(rawPhone);
       console.log('Firebase Phone Auth successful login:', fbUser.uid);
+
+      // Fetch Firebase ID Token right after sign-in (available for FCM/server sync)
+      try {
+        await fbUser.getIdToken();
+      } catch (tokenErr) {
+        console.warn('Failed to fetch Firebase ID Token:', tokenErr);
+      }
+
+      if (isStaleFlow()) {
+        abortedAsStale = true;
+        await rollbackStaleFirebaseSignIn(fbUser, verifySeq);
+        return;
+      }
 
       const userRef = doc(db, 'users', cleanPhone);
       let userSnap = null;
@@ -392,11 +348,21 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
 
       try {
         userSnap = await withTimeout(getDoc(userRef));
+        if (isStaleFlow()) {
+          abortedAsStale = true;
+          await rollbackStaleFirebaseSignIn(fbUser, verifySeq);
+          return;
+        }
         if (userSnap && userSnap.exists()) {
           existingData = userSnap.data();
           found = true;
         }
       } catch (dbErr) {
+        if (isStaleFlow()) {
+          abortedAsStale = true;
+          await rollbackStaleFirebaseSignIn(fbUser, verifySeq);
+          return;
+        }
         console.warn('Firebase query failed (likely quota exceeded), using local cache:', dbErr);
         // Fallback to local storage
         const cachedStr = localStorage.getItem('rehla_user_profile');
@@ -411,6 +377,12 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
             console.warn('Stale cache parse error:', e);
           }
         }
+      }
+
+      if (isStaleFlow()) {
+        abortedAsStale = true;
+        await rollbackStaleFirebaseSignIn(fbUser, verifySeq);
+        return;
       }
 
       if (found && existingData) {
@@ -436,25 +408,184 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
         setIsVerifying(false);
         setPhoneInput('');
         setVerificationCode('');
-        setConfirmationResult(null);
+        setPhoneAuthSession(null);
+        setResendCooldown(0);
+        setAuthError('');
+        setShowPhoneAuthHelp(false);
       } else {
-        // New user - Transition to profile registration view
+        // New user - Reset OTP verification screen while keeping phoneInput for profile registration
         setIsRegisteringNewUser(true);
+        setIsVerifying(false);
+        setVerificationCode('');
+        setPhoneAuthSession(null);
+        setResendCooldown(0);
+        setAuthError('');
+        setShowPhoneAuthHelp(false);
         setNameInput('');
       }
-    } catch (err: any) {
-      console.error('OTP Verification Error:', err);
-      let friendlyError = language === 'ar' 
-        ? 'رمز التحقق غير صحيح أو منتهي الصلاحية.' 
-        : 'Incorrect or expired verification code.';
-      if (err?.code === 'auth/invalid-verification-code') {
-        friendlyError = language === 'ar' ? 'رمز التحقق الذي أدخلته غير صحيح!' : 'The verification code entered is incorrect!';
-      } else if (err?.code === 'auth/code-expired') {
-        friendlyError = language === 'ar' ? 'انتهت صلاحية الرمز، يرجى طلب رمز جديد.' : 'The code has expired, please request a new one.';
-      }
-      setAuthError(friendlyError);
+    })();
+
+    completingAuthPromiseRef.current = task;
+    try {
+      await task;
+    } catch (err) {
+      isCompletingAuthRef.current = false;
+      throw err;
     } finally {
-      setAuthLoading(false);
+      if (completingAuthPromiseRef.current === task) {
+        completingAuthPromiseRef.current = null;
+        if (abortedAsStale) {
+          isCompletingAuthRef.current = false;
+        }
+      }
+    }
+  };
+
+  // Internal helper for sending or resending OTP via Native Plugin or Web reCAPTCHA
+  const dispatchVerificationCode = async (isResend: boolean) => {
+    if (completingAuthPromiseRef.current) return;
+
+    setAuthError('');
+    setShowPhoneAuthHelp(false);
+
+    const cleanPhone = phoneInput.trim();
+    if (cleanPhone.length !== 9 || !cleanPhone.startsWith('5')) {
+      setAuthError(language === 'ar' 
+        ? 'الرجاء إدخال رقم جوال سعودي صحيح يتكون من 9 أرقام ويبدأ بـ 5 (مثال: 506572881)' 
+        : 'Please enter a valid 9-digit Saudi mobile starting with 5 (e.g., 506572881)');
+      return;
+    }
+
+    const flowVersion = ++authFlowVersionRef.current;
+    isCompletingAuthRef.current = false;
+    setAuthLoading(true);
+    try {
+      const session = await sendPhoneVerificationCode({
+        phoneInput: cleanPhone,
+        recaptchaContainerId: ACCOUNT_RECAPTCHA_ID,
+        isResend,
+        onAutoVerified: async (fbUser, verifySeq) => {
+          if (!isMountedRef.current || flowVersion !== authFlowVersionRef.current) {
+            await rollbackStaleFirebaseSignIn(fbUser, verifySeq);
+            return;
+          }
+          if (isCompletingAuthRef.current) {
+            if (completingAuthPromiseRef.current) {
+              await completingAuthPromiseRef.current;
+            }
+            return;
+          }
+          setAuthLoading(true);
+          try {
+            await completeCustomerLogin(fbUser, cleanPhone, flowVersion, verifySeq);
+          } catch (err) {
+            if (isMountedRef.current && flowVersion === authFlowVersionRef.current) {
+              const mapped = mapPhoneAuthError(err, language, 'verify');
+              setAuthError(mapped.message);
+            }
+          } finally {
+            if (isMountedRef.current && flowVersion === authFlowVersionRef.current) {
+              setAuthLoading(false);
+            }
+          }
+        },
+        onAutoVerifyError: (err) => {
+          if (!isMountedRef.current || flowVersion !== authFlowVersionRef.current) return;
+          const mapped = mapPhoneAuthError(err, language, 'verify');
+          setAuthError(mapped.message);
+          if (mapped.showHelp) setShowPhoneAuthHelp(true);
+        }
+      });
+
+      if (!isMountedRef.current || flowVersion !== authFlowVersionRef.current) {
+        if (session.mode === 'native') {
+          void cleanupPhoneAuthListeners(ACCOUNT_RECAPTCHA_ID);
+        } else {
+          clearWebRecaptchaVerifier(ACCOUNT_RECAPTCHA_ID);
+        }
+        return;
+      }
+
+      setPhoneAuthSession(session);
+      setIsVerifying(true);
+      setVerificationCode('');
+      setResendCooldown(60);
+    } catch (err: any) {
+      if (!isMountedRef.current || flowVersion !== authFlowVersionRef.current) return;
+      console.error('Firebase Phone Auth Error:', err);
+      const mapped = mapPhoneAuthError(err, language, 'send');
+      setAuthError(mapped.message);
+      if (mapped.showHelp) {
+        setShowPhoneAuthHelp(true);
+      }
+    } finally {
+      if (isMountedRef.current && flowVersion === authFlowVersionRef.current) {
+        setAuthLoading(false);
+      }
+    }
+  };
+
+  // Handle Login request (Sends OTP first via Native Phone Auth on Android/iOS or Web reCAPTCHA in Browser)
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await dispatchVerificationCode(false);
+  };
+
+  // Resend OTP code
+  const handleResendOtp = async () => {
+    if (authLoading || resendCooldown > 0 || completingAuthPromiseRef.current) return;
+    await dispatchVerificationCode(true);
+  };
+
+  // Complete OTP verification and load or move to register profile
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const flowVersion = authFlowVersionRef.current;
+
+    if (isCompletingAuthRef.current) {
+      if (completingAuthPromiseRef.current) {
+        setAuthLoading(true);
+        try {
+          await completingAuthPromiseRef.current;
+        } finally {
+          if (isMountedRef.current && flowVersion === authFlowVersionRef.current) {
+            setAuthLoading(false);
+          }
+        }
+      }
+      return;
+    }
+
+    setAuthError('');
+
+    if (!verificationCode || verificationCode.trim().length < 6) {
+      setAuthError(language === 'ar' ? 'الرجاء إدخال رمز التحقق المكون من 6 أرقام' : 'Please enter the correct 6-digit verification code');
+      return;
+    }
+
+    setAuthLoading(true);
+
+    try {
+      if (!phoneAuthSession) {
+        throw new Error('No verification session found');
+      }
+
+      // Confirm OTP code and sync directly into Firebase JS SDK (auth.currentUser)
+      const { user: fbUser, verifySeq } = await verifyPhoneOtpCode(phoneAuthSession, verificationCode);
+      if (!isMountedRef.current || flowVersion !== authFlowVersionRef.current) {
+        await rollbackStaleFirebaseSignIn(fbUser, verifySeq);
+        return;
+      }
+      await completeCustomerLogin(fbUser, phoneInput, flowVersion, verifySeq);
+    } catch (err: any) {
+      if (!isMountedRef.current || flowVersion !== authFlowVersionRef.current) return;
+      console.error('OTP Verification Error:', err);
+      const mapped = mapPhoneAuthError(err, language, 'verify');
+      setAuthError(mapped.message);
+    } finally {
+      if (isMountedRef.current && flowVersion === authFlowVersionRef.current) {
+        setAuthLoading(false);
+      }
     }
   };
 
@@ -500,6 +631,8 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
       setPhoneInput('');
       setNameInput('');
       setVerificationCode('');
+      setPhoneAuthSession(null);
+      setResendCooldown(0);
     } catch (err) {
       console.error(err);
       setAuthError(language === 'ar' ? 'فشل حفظ الحساب بقاعدة البيانات' : 'Failed to register account');
@@ -556,14 +689,25 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
     setShowLogoutConfirm(true);
   };
 
-  const executeLogout = () => {
+  const executeLogout = async () => {
+    authFlowVersionRef.current += 1;
     setUser(null);
+    if (!completingAuthPromiseRef.current) {
+      isCompletingAuthRef.current = false;
+    }
+    void cleanupPhoneAuthListeners(ACCOUNT_RECAPTCHA_ID);
+    clearWebRecaptchaVerifier(ACCOUNT_RECAPTCHA_ID);
     localStorage.removeItem('rehla_user_profile');
     localStorage.removeItem('checkout_phone');
     localStorage.removeItem('checkout_name');
     setShowLogoutConfirm(false);
     window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('user-profile-updated'));
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn('Firebase signOut error:', err);
+    }
   };
 
   // Submit Technical Support or Complaint Message
@@ -880,8 +1024,10 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                 </div>
               )}
 
-              {/* Recaptcha container for invisible verification */}
-              <div id="recaptcha-container" className="my-1"></div>
+              {/* Recaptcha container for invisible verification on Web only */}
+              {!Capacitor.isNativePlatform() && (
+                <div id={ACCOUNT_RECAPTCHA_ID} className="my-1"></div>
+              )}
 
               <button
                 type="submit"
@@ -912,9 +1058,10 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                 <input
                   required
                   type="text"
+                  inputMode="numeric"
                   maxLength={6}
                   value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
                   placeholder="xxxxxx"
                   className="w-full text-center text-xl font-mono tracking-widest bg-stone-50 border border-stone-200 rounded-xl py-3.5 outline-none focus:border-yellow focus:bg-white transition-all font-black"
                 />
@@ -927,11 +1074,37 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onReorder, onCloseCart, ac
                 </div>
               )}
 
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={authLoading || resendCooldown > 0}
+                  className="text-xs font-bold text-amber-700 hover:text-amber-800 disabled:text-stone-400 transition-colors cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {resendCooldown > 0
+                    ? (language === 'ar'
+                        ? `إعادة إرسال الرمز خلال ${resendCooldown} ث`
+                        : `Resend code in ${resendCooldown}s`)
+                    : (language === 'ar' ? 'إعادة إرسال رمز التحقق' : 'Resend Verification Code')}
+                </button>
+              </div>
+
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsVerifying(false)}
-                  className="w-1/3 border border-stone-200 hover:bg-stone-50 text-stone-600 py-3.5 rounded-2xl text-xs font-bold transition-all cursor-pointer"
+                  disabled={authLoading}
+                  onClick={() => {
+                    if (authLoading || completingAuthPromiseRef.current) return;
+                    authFlowVersionRef.current += 1;
+                    isCompletingAuthRef.current = false;
+                    setIsVerifying(false);
+                    setAuthError('');
+                    setVerificationCode('');
+                    setPhoneAuthSession(null);
+                    setResendCooldown(0);
+                    void cleanupPhoneAuthListeners(ACCOUNT_RECAPTCHA_ID);
+                  }}
+                  className="w-1/3 border border-stone-200 hover:bg-stone-50 text-stone-600 py-3.5 rounded-2xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {language === 'ar' ? 'السابق' : 'Back'}
                 </button>
